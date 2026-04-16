@@ -631,7 +631,7 @@ async function handleModelChange(e) {
 async function updateCostEstimate() {
     const modelSelect = document.getElementById('model-select');
     const modelId = modelSelect.value;
-    const maxFrames = parseInt(document.getElementById('max-frames-input').value) || 500;
+    const maxFrames = parseInt(document.getElementById('max-frames-input').value) || 10000;
     
     if (!modelId || !state.openRouterKey) return;
     
@@ -708,7 +708,7 @@ async function handleStartAnalysis(e) {
         priority: parseInt(document.getElementById('priority-input').value) || 0,
         temperature: parseFloat(document.getElementById('temperature-input').value) || 0.0,
         duration: parseInt(document.getElementById('duration-input').value) || 0,
-        max_frames: parseInt(document.getElementById('max-frames-input').value) || 500,
+        max_frames: parseInt(document.getElementById('max-frames-input').value) || 10000,
         frames_per_minute: parseInt(document.getElementById('fpm-input').value) || 60,
         whisper_model: document.getElementById('whisper-select').value,
         language: document.getElementById('language-input').value,
