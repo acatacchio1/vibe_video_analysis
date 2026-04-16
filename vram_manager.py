@@ -81,6 +81,7 @@ class VRAMManager:
     VRAM_BUFFER = 1.2  # 20% buffer for safety
     CHECK_INTERVAL = 5  # seconds
     MAX_JOBS_PER_GPU = 2  # Maximum concurrent jobs per GPU
+    CONTEXT_VRAM_OVERHEAD = 1 * (1024**3)  # 1GB for KV cache/context when model already loaded
 
     def __init__(self):
         self.jobs: Dict[str, Job] = {}
@@ -90,6 +91,7 @@ class VRAMManager:
         self.lock = threading.RLock()
         self.callbacks: List[Callable] = []
         self.gpus: List[GPUInfo] = []  # List of all GPUs
+        self._ollama_running_models_provider: Optional[Callable[[], set]] = None
         self._init_nvml()
         self._start_monitor()
 
@@ -124,6 +126,40 @@ class VRAMManager:
                 logger.warning(f"Failed to initialize NVML: {e}")
                 HAS_NVML = False
 
+    def set_ollama_running_models_provider(self, provider: Callable[[], set]):
+        """Set a callable that returns a set of currently loaded Ollama model names"""
+        self._ollama_running_models_provider = provider
+
+    def _get_loaded_ollama_models(self) -> set:
+        """Get set of model names currently loaded in Ollama via /api/ps"""
+        if not self._ollama_running_models_provider:
+            return set()
+        try:
+            return self._ollama_running_models_provider()
+        except Exception as e:
+            logger.error(f"Error getting loaded Ollama models: {e}")
+            return set()
+
+    def _get_effective_vram_required(self, job: Job) -> int:
+        """Get effective VRAM required, accounting for already-loaded models.
+
+        If the model is already loaded in Ollama, only a small context
+        overhead is needed instead of the full model size.
+        """
+        if job.provider_type != "ollama" or job.vram_required == 0:
+            return job.vram_required
+
+        loaded_models = self._get_loaded_ollama_models()
+        if job.model_id in loaded_models:
+            logger.info(
+                f"Model {job.model_id} already loaded in Ollama, "
+                f"reducing VRAM requirement from {job.vram_required / (1024**3):.2f}GB "
+                f"to {self.CONTEXT_VRAM_OVERHEAD / (1024**3):.2f}GB"
+            )
+            return self.CONTEXT_VRAM_OVERHEAD
+
+        return job.vram_required
+
     def _get_gpu_status(self) -> List[GPUInfo]:
         """Get current status of all GPUs"""
         if not HAS_NVML:
@@ -150,7 +186,7 @@ class VRAMManager:
         return gpus
 
     def _find_best_gpu(
-        self, vram_required: int, vram_allocated: Dict[int, int] = None
+        self, vram_required: int, vram_allocated: Dict[int, int] = None, job: Job = None
     ) -> Optional[int]:
         """Find the best GPU with enough VRAM available"""
         if vram_required == 0:
@@ -159,27 +195,42 @@ class VRAMManager:
         if not HAS_NVML or not self.gpus:
             return 0  # No GPU info available, start on GPU 0
 
+        effective_vram = vram_required
+        if job is not None:
+            effective_vram = self._get_effective_vram_required(job)
+
+        # Get loaded Ollama models to avoid double-counting with nvidia-smi
+        loaded_ollama_models = self._get_loaded_ollama_models()
+
         # Get current VRAM usage for all GPUs
         gpus = self._get_gpu_status()
 
-        # Calculate VRAM used by running jobs per GPU
+        # Calculate VRAM used by running jobs per GPU.
+        # Skip jobs whose models are already loaded in Ollama — nvidia-smi
+        # already accounts for their VRAM, so subtracting again would double-count.
         vram_used_by_gpu = {}
-        for job in self.running.values():
-            if job.gpu_assigned is not None:
-                vram_used_by_gpu[job.gpu_assigned] = (
-                    vram_used_by_gpu.get(job.gpu_assigned, 0) + job.vram_required
+        for running_job in self.running.values():
+            if running_job.gpu_assigned is not None:
+                if (
+                    running_job.provider_type == "ollama"
+                    and running_job.model_id in loaded_ollama_models
+                ):
+                    continue
+                vram_used_by_gpu[running_job.gpu_assigned] = (
+                    vram_used_by_gpu.get(running_job.gpu_assigned, 0)
+                    + running_job.vram_required
                 )
 
         # Find GPU with most free VRAM that can fit the job
         best_gpu = None
         best_free = 0
-        required_with_buffer = int(vram_required * self.VRAM_BUFFER)
+        required_with_buffer = int(effective_vram * self.VRAM_BUFFER)
 
         for gpu in gpus:
             # Calculate actual free VRAM considering running jobs
             actual_free = gpu.free_vram
 
-            # Subtract VRAM used by running jobs
+            # Subtract VRAM used by running jobs (only those not yet reflected in nvidia-smi)
             actual_free -= vram_used_by_gpu.get(gpu.index, 0)
 
             # Subtract VRAM allocated to jobs in current batch if provided
@@ -216,12 +267,12 @@ class VRAMManager:
         gpus = self._get_gpu_status()
         return sum(gpu.free_vram for gpu in gpus)
 
-    def _can_fit(self, vram_required: int) -> bool:
+    def _can_fit(self, vram_required: int, job: Job = None) -> bool:
         """Check if job can fit in available VRAM on any GPU"""
         if vram_required == 0:
             return True  # Cloud provider
 
-        return self._find_best_gpu(vram_required) is not None
+        return self._find_best_gpu(vram_required, job=job) is not None
 
     def submit_job(
         self,
@@ -250,8 +301,9 @@ class VRAMManager:
             self.jobs[job_id] = job
 
             # Check if we can start immediately
-            if vram_required == 0 or self._can_fit(vram_required):
-                gpu_id = self._find_best_gpu(vram_required) if vram_required > 0 else 0
+            effective_vram = self._get_effective_vram_required(job)
+            if effective_vram == 0 or self._can_fit(effective_vram, job=job):
+                gpu_id = self._find_best_gpu(effective_vram, job=job) if effective_vram > 0 else 0
                 self._start_job(job, gpu_id)
             else:
                 self._add_to_queue(job)
@@ -320,13 +372,22 @@ class VRAMManager:
             if not self.queue:
                 return
 
+            # Get loaded Ollama models to avoid double-counting
+            loaded_ollama_models = self._get_loaded_ollama_models()
+
             # Get current GPU status
             gpus = self._get_gpu_status() if HAS_NVML and self.gpus else []
 
-            # Track VRAM already allocated to running jobs per GPU
+            # Track VRAM already allocated to running jobs per GPU.
+            # Skip jobs whose models are already loaded — nvidia-smi accounts for them.
             vram_allocated = {}
             for job in self.running.values():
                 if job.gpu_assigned is not None:
+                    if (
+                        job.provider_type == "ollama"
+                        and job.model_id in loaded_ollama_models
+                    ):
+                        continue
                     vram_allocated[job.gpu_assigned] = (
                         vram_allocated.get(job.gpu_assigned, 0) + job.vram_required
                     )
@@ -350,10 +411,13 @@ class VRAMManager:
                     # Use GPU 0 as default for tracking
                     to_start.append((job, 0))
                 else:
+                    # Use effective VRAM (reduced if model already loaded)
+                    effective_vram = self._get_effective_vram_required(job)
+                    required_with_buffer = int(effective_vram * self.VRAM_BUFFER)
+
                     # Find best GPU for this job considering VRAM already allocated in this batch
                     best_gpu = None
                     best_free = -1
-                    required_with_buffer = int(job.vram_required * self.VRAM_BUFFER)
 
                     for gpu_index, available_vram in gpu_vram_available.items():
                         # Check per-GPU job limit
@@ -372,7 +436,7 @@ class VRAMManager:
                         # Found a GPU with enough VRAM
                         to_start.append((job, best_gpu))
                         # Update available VRAM on this GPU for subsequent jobs in batch
-                        gpu_vram_available[best_gpu] -= job.vram_required
+                        gpu_vram_available[best_gpu] -= effective_vram
                     else:
                         # Not enough VRAM, keep in queue
                         remaining_queue.append(job_id)
