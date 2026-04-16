@@ -212,102 +212,6 @@ class TestFindBestGPU:
             # 3GB fits: 8GB free - 4GB allocated = 4GB available >= 3GB * 1.2 buffer = 3.6GB
             assert result == 0
 
-    def test_find_best_gpu_insufficient_vram(self, setup_vram_manager):
-        """Test finding GPU with insufficient VRAM"""
-        manager = setup_vram_manager
-
-        mock_gpu0 = GPUInfo(
-            index=0,
-            name="RTX 3080",
-            total_vram=10 * (1024**3),
-            used_vram=8 * (1024**3),
-            free_vram=2 * (1024**3),
-        )
-
-        with patch.object(manager, "_get_gpu_status", return_value=[mock_gpu0]):
-            result = manager._find_best_gpu(5 * (1024**3))
-            assert result is None
-
-    def test_find_best_gpu_prefers_larger_free(self, setup_vram_manager):
-        """Test that manager prefers GPU with more free VRAM"""
-        manager = setup_vram_manager
-
-        mock_gpu0 = GPUInfo(
-            index=0,
-            name="RTX 3080",
-            total_vram=10 * (1024**3),
-            used_vram=2 * (1024**3),
-            free_vram=8 * (1024**3),
-        )
-        mock_gpu1 = GPUInfo(
-            index=1,
-            name="RTX 3090",
-            total_vram=24 * (1024**3),
-            used_vram=4 * (1024**3),
-            free_vram=20 * (1024**3),
-        )
-
-        with patch.object(
-            manager, "_get_gpu_status", return_value=[mock_gpu0, mock_gpu1]
-        ):
-            result = manager._find_best_gpu(5 * (1024**3))
-            assert result == 1  # GPU 1 has more free VRAM
-
-    def test_find_best_gpu_job_limit(self, setup_vram_manager):
-        """Test that MAX_JOBS_PER_GPU limit is respected"""
-        manager = setup_vram_manager
-
-        mock_gpu0 = GPUInfo(
-            index=0,
-            name="RTX 3080",
-            total_vram=10 * (1024**3),
-            used_vram=2 * (1024**3),
-            free_vram=8 * (1024**3),
-        )
-
-        # Simulate GPU at job limit
-        manager.running_per_gpu[0] = ["job1", "job2"]
-
-        with patch.object(manager, "_get_gpu_status", return_value=[mock_gpu0]):
-            result = manager._find_best_gpu(5 * (1024**3))
-            assert result is None  # GPU at limit
-
-    def test_find_best_gpu_cloud_provider(self, setup_vram_manager):
-        """Test that cloud providers (vram_required=0) get GPU 0"""
-        manager = setup_vram_manager
-
-        mock_gpu0 = GPUInfo(
-            index=0,
-            name="RTX 3080",
-            total_vram=10 * (1024**3),
-            used_vram=9 * (1024**3),
-            free_vram=1 * (1024**3),
-        )
-
-        with patch.object(manager, "_get_gpu_status", return_value=[mock_gpu0]):
-            result = manager._find_best_gpu(0)
-            assert result == 0
-
-    def test_find_best_gpu_with_allocated_vram(self, setup_vram_manager):
-        """Test GPU selection considering batch allocation"""
-        manager = setup_vram_manager
-
-        mock_gpu0 = GPUInfo(
-            index=0,
-            name="RTX 3080",
-            total_vram=10 * (1024**3),
-            used_vram=2 * (1024**3),
-            free_vram=8 * (1024**3),
-        )
-
-        with patch.object(manager, "_get_gpu_status", return_value=[mock_gpu0]):
-            # Allocate 4GB in batch
-            result = manager._find_best_gpu(
-                3 * (1024**3), vram_allocated={0: 4 * (1024**3)}
-            )
-            # 3GB fits: 8GB free - 4GB allocated = 4GB available >= 3GB * 1.2 buffer = 3.6GB
-            assert result == 0
-
 
 class TestJobQueue:
     """Tests for job queue management"""
@@ -527,7 +431,7 @@ class TestCancelJob:
         job.status = JobStatus.RUNNING
         job.gpu_assigned = 0
         manager.running["running_job"] = job
-        manager.jobs = {"running_job": job}
+        manager.jobs["running_job"] = job
 
         result = manager.cancel_job("running_job")
 
@@ -542,7 +446,7 @@ class TestCancelJob:
         job = MagicMock()
         job.job_id = "completed_job"
         job.status = JobStatus.COMPLETED
-        manager.jobs = {"completed_job": job}
+        manager.jobs["completed_job"] = job
 
         result = manager.cancel_job("completed_job")
 
