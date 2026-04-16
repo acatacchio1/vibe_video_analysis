@@ -1215,6 +1215,20 @@ def init_providers():
             name = f"Ollama-{url.split('//')[1].split(':')[0]}"
             providers[name] = OllamaProvider(name, url)
 
+    # Wire up ollama ps check so VRAM manager knows which models are already loaded
+    def get_loaded_ollama_models() -> set:
+        loaded = set()
+        for p in providers.values():
+            if hasattr(p, "get_running_models"):
+                try:
+                    for m in p.get_running_models():
+                        loaded.add(m.get("name", ""))
+                except Exception:
+                    pass
+        return loaded
+
+    vram_manager.set_ollama_running_models_provider(get_loaded_ollama_models)
+
 
 # Set up Ollama URL provider for monitor
 monitor.set_ollama_url_provider(
