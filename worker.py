@@ -244,16 +244,11 @@ def run_analysis(job_dir: Path):
         total_prompt_tokens = 0
         total_completion_tokens = 0
 
-        # Define max frames limit locally (fallback if not in config)
-        try:
-            from video_analyzer.config import MAX_FRAMES_PER_JOB
-        except ImportError:
-            MAX_FRAMES_PER_JOB = 50  # Default limit
+        max_frames_limit = params.get("max_frames", 2147483647)
 
         for i, frame in enumerate(frames):
-            # Check max frames limit
-            if i >= MAX_FRAMES_PER_JOB:
-                logger.info(f"Reached max frames limit ({MAX_FRAMES_PER_JOB})")
+            if i >= max_frames_limit:
+                logger.info(f"Reached max frames limit ({max_frames_limit})")
                 break
 
             # Analyze frame
@@ -267,7 +262,7 @@ def run_analysis(job_dir: Path):
                 total_completion_tokens += usage.get("completion_tokens", 0)
 
             # Progress: 20% to 80% for frame analysis
-            progress = 20 + int((i + 1) / min(total_frames, MAX_FRAMES_PER_JOB) * 60)
+            progress = 20 + int((i + 1) / min(total_frames, max_frames_limit) * 60)
 
             # Write frame analysis for real-time display
             frame_result = {
