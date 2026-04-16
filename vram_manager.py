@@ -154,39 +154,23 @@ class VRAMManager:
     ) -> Optional[int]:
         """Find the best GPU with enough VRAM available"""
         if vram_required == 0:
-            return 0  # Cloud provider, any GPU is fine
+            return 0
 
         if not HAS_NVML or not self.gpus:
-            return 0  # No GPU info available, start on GPU 0
+            return 0
 
-        # Get current VRAM usage for all GPUs
         gpus = self._get_gpu_status()
 
-        # Calculate VRAM used by running jobs per GPU
-        vram_used_by_gpu = {}
-        for job in self.running.values():
-            if job.gpu_assigned is not None:
-                vram_used_by_gpu[job.gpu_assigned] = (
-                    vram_used_by_gpu.get(job.gpu_assigned, 0) + job.vram_required
-                )
-
-        # Find GPU with most free VRAM that can fit the job
         best_gpu = None
         best_free = 0
         required_with_buffer = int(vram_required * self.VRAM_BUFFER)
 
         for gpu in gpus:
-            # Calculate actual free VRAM considering running jobs
             actual_free = gpu.free_vram
 
-            # Subtract VRAM used by running jobs
-            actual_free -= vram_used_by_gpu.get(gpu.index, 0)
-
-            # Subtract VRAM allocated to jobs in current batch if provided
             if vram_allocated:
                 actual_free -= vram_allocated.get(gpu.index, 0)
 
-            # Check per-GPU job limit
             current_jobs_on_gpu = len(self.running_per_gpu.get(gpu.index, []))
             if current_jobs_on_gpu >= self.MAX_JOBS_PER_GPU:
                 logger.debug(
@@ -320,23 +304,11 @@ class VRAMManager:
             if not self.queue:
                 return
 
-            # Get current GPU status
             gpus = self._get_gpu_status() if HAS_NVML and self.gpus else []
 
-            # Track VRAM already allocated to running jobs per GPU
-            vram_allocated = {}
-            for job in self.running.values():
-                if job.gpu_assigned is not None:
-                    vram_allocated[job.gpu_assigned] = (
-                        vram_allocated.get(job.gpu_assigned, 0) + job.vram_required
-                    )
-
-            # Initialize available VRAM per GPU (accounting for running jobs)
             gpu_vram_available = {}
             for gpu in gpus:
-                gpu_vram_available[gpu.index] = gpu.free_vram - vram_allocated.get(
-                    gpu.index, 0
-                )
+                gpu_vram_available[gpu.index] = gpu.free_vram
 
             # Try to start as many jobs as possible
             to_start = []
