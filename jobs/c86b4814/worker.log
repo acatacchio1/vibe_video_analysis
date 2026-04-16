@@ -1,0 +1,20 @@
+2026-04-15 22:11:21,873 - INFO - Starting job c86b4814 with ollama/qwen3.5:35b-a3b-q8_0
+/usr/local/lib/python3.10/dist-packages/video_analyzer/config.py:6: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+2026-04-15 22:11:22,639 - INFO - HTTP Request: GET https://huggingface.co/api/models/Systran/faster-whisper-tiny/revision/main "HTTP/1.1 200 OK"
+2026-04-15 22:11:23,113 - INFO - Initiation Input: Model size or path: tiny, Device: cuda, Compute type: float32, Language: en
+2026-04-15 22:11:23,436 - INFO - Processing audio with duration 06:35.134
+2026-04-15 22:11:23,806 - INFO - VAD filter removed 03:18.142 of audio
+2026-04-15 22:11:23,851 - ERROR - Error transcribing audio: Library libcublas.so.12 is not found or cannot be loaded
+2026-04-15 22:11:23,851 - ERROR - Library libcublas.so.12 is not found or cannot be loaded
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.10/dist-packages/video_analyzer/audio_processor.py", line 124, in transcribe
+    segments_list = list(segments)
+  File "/usr/local/lib/python3.10/dist-packages/faster_whisper/transcribe.py", line 1851, in restore_speech_timestamps
+    for segment in segments:
+  File "/usr/local/lib/python3.10/dist-packages/faster_whisper/transcribe.py", line 1190, in generate_segments
+    encoder_output = self.encode(segment)
+  File "/usr/local/lib/python3.10/dist-packages/faster_whisper/transcribe.py", line 1400, in encode
+    return self.model.encode(features, to_cpu=to_cpu)
+RuntimeError: Library libcublas.so.12 is not found or cannot be loaded
+2026-04-15 22:11:25,016 - INFO - Extracted 395 frames from video (target was 397)

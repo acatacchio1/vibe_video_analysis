@@ -1,0 +1,58 @@
+"""
+Constant configuration values for Video Analyzer Web
+"""
+
+# Application
+APP_NAME = "Video Analyzer Web"
+VERSION = "1.0.0"
+
+# VRAM Manager
+VRAM_BUFFER = 1.2  # 20% safety buffer
+CHECK_INTERVAL = 5  # seconds between queue checks
+MAX_JOBS_PER_GPU = 2  # Maximum concurrent jobs per GPU
+
+# Chat Queue
+MAX_CONCURRENT_JOBS = 5  # Maximum concurrent chat jobs
+MAX_JOBS_PER_MINUTE = 30  # Rate limit
+CHECK_INTERVAL_CHATS = 1  # seconds between queue checks
+
+# LLM Configuration
+LLM_TIMEOUT = 300  # seconds (5 minutes)
+MIN_NUM_PREDICT = 2048
+DEFAULT_TEMPERATURE = 0.2
+
+# Video Processing
+MAX_FRAMES_PER_JOB = 10000  # Maximum frames in frames.jsonl per job
+DEFAULT_FRAMES_PER_MINUTE = 60
+DEFAULT_FRAMERATE = 1  # Transcoded framerate
+
+# Frame Extraction
+FRAME_ANALYSIS_BATCH_SIZE = 10  # Batch size for frame analysis
+FRAME_RETENTION_DAYS = 30  # Days to keep frame data
+
+# Upload Limits
+MAX_UPLOAD_FILE_SIZE = 1024 * 1024 * 1024  # 1GB
+ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
+
+# Transcoding
+MAX_TRANSCODE_TIMEOUT = 3600  # 1 hour max for transcoding
+DEFAULT_TRANSCODE_WIDTH = 1280  # 720p width
+DEFAULT_TRANSCODE_HEIGHT = 720  # 720p height
+DEFAULT_TRANSCODE_FPS = 1  # 1 fps for analysis
+
+# WebSocket Configuration
+SOCKETIO_MAX_BUFFER_SIZE = 16 * 1024 * 1024  # 16MB per room
+SOCKETIO_HEARTBEAT_TIMEOUT = 60
+SOCKETIO_PING_INTERVAL = 5
+
+# Job Limits
+MAX_JOBS_PER_USER = 10
+MAX_CONCURRENT_JOBS_PER_USER = 3
+
+# API Rate Limiting
+API_REQUEST_LIMIT = 100
+API_REQUEST_WINDOW = 60  # seconds
+
+# Logging
+LOG_LEVEL = "INFO"
+LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"

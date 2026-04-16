@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Analyzer Web</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+</head>
+<body>
+    <header class="app-header">
+        <h1>Video Analyzer Web</h1>
+        <div class="header-actions">
+            <button id="notifications-btn" class="icon-btn" title="Enable Notifications">🔔</button>
+        </div>
+    </header>
+
+    <main class="app-container">
+        <!-- Left Sidebar: Videos & System Status -->
+        <aside class="sidebar">
+            <!-- Upload Section -->
+            <section class="upload-section">
+                <h2>Upload Video</h2>
+                <div class="upload-area" id="upload-area">
+                    <input type="file" id="video-upload" accept="video/*" hidden>
+                    <div class="upload-prompt">
+                        <span class="upload-icon">📤</span>
+                        <p>Drag & drop or click to upload</p>
+                        <small>Auto-transcodes to 720p@1fps on upload</small>
+                    </div>
+                    <div class="upload-progress" hidden>
+                        <div class="progress-bar">
+                            <div class="progress-fill"></div>
+                        </div>
+                        <span class="progress-text">0%</span>
+                    </div>
+                </div>
+
+                <!-- Transcode Progress -->
+                <div id="transcode-status" class="transcode-status hidden">
+                    <div class="transcode-header">
+                        <span id="transcode-label">Transcoding...</span>
+                        <span id="transcode-pct">0%</span>
+                    </div>
+                    <div class="transcode-bar">
+                        <div id="transcode-fill" class="transcode-fill"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Videos List -->
+            <section class="videos-section">
+                <h2>Videos</h2>
+                <div id="videos-list" class="videos-list">
+                    <div class="loading">Loading videos...</div>
+                </div>
+            </section>
+
+            <!-- System Status -->
+            <section class="system-section">
+                <h2>System Status</h2>
+                <div id="system-status" class="system-status">
+                    <div id="vram-display" class="vram-display">
+                        <div class="gpu-card"><span class="gpu-title">Waiting for GPU data...</span></div>
+                    </div>
+                    
+                    <div class="monitor-output">
+                        <div class="monitor-tabs">
+                            <button class="tab-btn active" data-tab="nvidia">nvidia-smi</button>
+                            <button class="tab-btn" data-tab="ollama">ollama ps</button>
+                        </div>
+                        <div class="monitor-content">
+                            <pre id="nvidia-output" class="monitor-pre active">Waiting for data...</pre>
+                            <pre id="ollama-output" class="monitor-pre">Waiting for data...</pre>
+                        </div>
+                    </div>
+                    
+                    <div class="refresh-info">
+                        <small>nvidia-smi: every 10s | ollama ps: every 15s</small>
+                    </div>
+                </div>
+            </section>
+        </aside>
+
+        <!-- Main Content -->
+        <section class="main-content">
+            <!-- Tab navigation -->
+            <nav class="main-tabs">
+                <button class="main-tab-btn active" data-tab="analyze">New Analysis</button>
+                <button class="main-tab-btn" data-tab="results">Stored Results</button>
+            </nav>
+
+            <!-- ===== ANALYZE TAB ===== -->
+            <div id="tab-analyze" class="main-tab-content">
+
+                <!-- Jobs Section -->
+                <div class="jobs-container">
+                    <h2>Analysis Jobs</h2>
+                    <div id="jobs-list" class="jobs-list">
+                        <div class="empty-state">No jobs yet. Upload a video and start an analysis.</div>
+                    </div>
+                </div>
+
+                <!-- New Analysis Form -->
+                <div class="new-analysis-container" id="new-analysis-section">
+                    <h2>New Analysis</h2>
+                    
+                    <form id="analysis-form" class="analysis-form">
+                        <div class="form-group">
+                            <label for="video-select">Video</label>
+                            <select id="video-select" required>
+                                <option value="">Select a video...</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="provider-select">AI Provider</label>
+                            <div class="provider-controls">
+                                <select id="provider-select" required>
+                                    <option value="">Select provider...</option>
+                                </select>
+                                <button type="button" id="discover-btn" class="btn secondary">🔄 Discover</button>
+                            </div>
+                            <div id="provider-status" class="provider-status"></div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="model-select">Model</label>
+                            <select id="model-select" required disabled>
+                                <option value="">Select provider first...</option>
+                            </select>
+                        </div>
+
+                        <div id="cost-estimate" class="cost-estimate hidden">
+                            <div class="cost-row">
+                                <span>Estimated Cost:</span>
+                                <span id="cost-value">$--.--</span>
+                            </div>
+                            <div class="cost-row">
+                                <span>VRAM Required:</span>
+                                <span id="vram-required">-- GB</span>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="priority-input">Priority (higher = runs sooner)</label>
+                            <input type="number" id="priority-input" value="0" min="0" max="100">
+                        </div>
+
+                        <div class="advanced-toggle">
+                            <button type="button" id="advanced-toggle-btn" class="link-btn">Advanced Options ▼</button>
+                        </div>
+
+                        <div id="advanced-options" class="advanced-options hidden">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="duration-input">Duration (seconds, 0 = all)</label>
+                                    <input type="number" id="duration-input" value="0" min="0">
+                                </div>
+                                <div class="form-group">
+                                    <label for="max-frames-input">Max Frames</label>
+                                    <input type="number" id="max-frames-input" value="50" min="1">
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="fpm-input">Frames Per Minute</label>
+                                    <input type="number" id="fpm-input" value="60" min="1">
+                                </div>
+                                <div class="form-group">
+                                    <label for="temperature-input">Temperature</label>
+                                    <input type="number" id="temperature-input" value="0.0" min="0" max="2" step="0.1">
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="whisper-select">Whisper Model</label>
+                                    <select id="whisper-select">
+                                        <option value="tiny">tiny (fastest)</option>
+                                        <option value="base">base</option>
+                                        <option value="small">small</option>
+                                        <option value="medium">medium</option>
+                                        <option value="large" selected>large (most accurate)</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="device-select">Audio Device</label>
+                                    <select id="device-select">
+                                        <option value="gpu" selected>GPU</option>
+                                        <option value="cpu">CPU</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="language-input">Audio Language</label>
+                                <input type="text" id="language-input" value="en" placeholder="e.g., en, es, fr">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="prompt-input">User Question / Prompt</label>
+                                <textarea id="prompt-input" rows="3" placeholder="Ask a specific question about the video..."></textarea>
+                            </div>
+
+                            <div class="form-group checkbox">
+                                <label>
+                                    <input type="checkbox" id="keep-frames-checkbox">
+                                    Keep extracted frames after analysis
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="form-actions">
+                            <button type="submit" id="start-btn" class="btn primary" disabled>
+                                Start Analysis
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Live Analysis Display -->
+                <div id="live-analysis" class="live-analysis hidden">
+                    <h3>Live Frame Analysis</h3>
+                    <div id="frames-log" class="frames-log"></div>
+                    
+                    <h3>Transcript</h3>
+                    <div id="transcript-panel" class="collapsible-panel">
+                        <div class="panel-content">Waiting for transcription...</div>
+                    </div>
+                    
+                    <h3>Video Description</h3>
+                    <div id="description-panel" class="collapsible-panel">
+                        <div class="panel-content">Waiting for final reconstruction...</div>
+                    </div>
+
+                    <!-- LLM Chat for current job -->
+                    <div id="live-llm-panel" class="llm-chat-panel">
+                        <h3>Send to LLM</h3>
+                        <div class="llm-chat-controls">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Provider</label>
+                                    <select id="chat-provider-select" onchange="handleChatProviderChange()">
+                                        <option value="">Select provider...</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Model</label>
+                                    <select id="chat-model-select" disabled>
+                                        <option value="">Select provider first...</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Content to send</label>
+                                <select id="chat-content-select">
+                                    <option value="transcript">Transcript</option>
+                                    <option value="description">Video Description</option>
+                                    <option value="both">Transcript + Description</option>
+                                    <option value="frames">All Frame Analyses</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Prompt / Instruction</label>
+                                <textarea id="chat-prompt" rows="3" placeholder="e.g. Summarize this into 5 bullet points..."></textarea>
+                            </div>
+                            <button class="btn primary" onclick="sendToLLM('live')">Send to LLM</button>
+                        </div>
+                        <div id="live-llm-response" class="llm-response hidden">
+                            <div class="llm-response-header">
+                                <span>Response</span>
+                                <button class="link-btn" onclick="document.getElementById('live-llm-response').classList.add('hidden')">✕</button>
+                            </div>
+                            <div id="live-llm-text" class="llm-response-text"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ===== RESULTS TAB ===== -->
+            <div id="tab-results" class="main-tab-content hidden">
+                <div class="results-browser">
+                    <div class="results-sidebar">
+                        <h2>Stored Results</h2>
+                        <button class="btn secondary small" onclick="loadStoredResults()" style="margin-bottom:0.75rem">Refresh</button>
+                        <div id="results-list" class="results-list">
+                            <div class="loading">Loading...</div>
+                        </div>
+                    </div>
+                    <div class="results-detail" id="results-detail">
+                        <div class="empty-state">Select a result from the list to view details.</div>
+                    </div>
+                </div>
+            </div>
+
+        </section>
+    </main>
+
+    <!-- Job Detail Modal -->
+    <div id="job-modal" class="modal hidden">
+        <div class="modal-content modal-wide">
+            <header class="modal-header">
+                <h2 id="modal-title">Job Details</h2>
+                <button class="close-btn" onclick="closeModal()">&times;</button>
+            </header>
+            <div id="job-detail-content" class="modal-body"></div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

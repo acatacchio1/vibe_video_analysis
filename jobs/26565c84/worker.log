@@ -1,0 +1,18 @@
+2026-04-16 12:11:36,545 - INFO - Starting job 26565c84 with ollama/qwen3.5:35b-a3b-q8_0_2
+/home/anthony/venvs/video-analyzer/lib/python3.13/site-packages/video_analyzer/config.py:6: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+/home/anthony/venvs/video-analyzer/lib/python3.13/site-packages/torch/cuda/__init__.py:61: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+2026-04-16 12:11:37,313 - INFO - HTTP Request: GET https://huggingface.co/api/models/Systran/faster-whisper-tiny/revision/main "HTTP/1.1 200 OK"
+2026-04-16 12:11:37,659 - INFO - Initiation Input: Model size or path: tiny, Device: cuda, Compute type: float32, Language: en
+2026-04-16 12:11:38,057 - INFO - Processing audio with duration 06:35.134
+2026-04-16 12:11:38,406 - INFO - VAD filter removed 03:19.006 of audio
+2026-04-16 12:11:40,083 - INFO - Extracted 50 frames from video (target was 50)
+2026-04-16 12:12:05,251 - INFO - Frame 3/50 | Avg time/frame: 8.4s | ETA: 6.6 min (394s)
+2026-04-16 12:12:56,938 - INFO - Frame 10/50 | Avg time/frame: 7.7s | ETA: 5.1 min (307s)
+2026-04-16 12:14:28,563 - INFO - Frame 20/50 | Avg time/frame: 8.4s | ETA: 4.2 min (253s)
+2026-04-16 12:16:24,646 - INFO - Frame 30/50 | Avg time/frame: 9.5s | ETA: 3.2 min (190s)
+2026-04-16 12:18:42,998 - INFO - Frame 40/50 | Avg time/frame: 10.6s | ETA: 1.8 min (106s)
+2026-04-16 12:21:22,073 - INFO - Frame 50/50 | Avg time/frame: 11.6s | ETA: 0.0 min (0s)
+2026-04-16 12:21:43,831 - INFO - Successfully reconstructed video description
+2026-04-16 12:21:43,832 - INFO - Job 26565c84 completed successfully

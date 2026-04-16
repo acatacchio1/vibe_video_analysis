@@ -1,0 +1,1 @@
+{"status": "failed", "stage": "error", "progress": 20, "current_frame": 0, "total_frames": 50, "last_update": 1776354797.3884885, "error": "cannot import name 'MAX_FRAMES_PER_JOB' from 'video_analyzer.config' (/home/anthony/venvs/video-analyzer/lib/python3.13/site-packages/video_analyzer/config.py)"}

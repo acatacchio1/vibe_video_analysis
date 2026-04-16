@@ -1,0 +1,69 @@
+{
+  "metadata": {
+    "job_id": "331ea361",
+    "provider": "ollama",
+    "model": "qwen3.5:35b-a3b-q8_0",
+    "frames_processed": 3,
+    "transcription_successful": false
+  },
+  "transcript": null,
+  "frame_analyses": [
+    {
+      "model": "qwen3.5:35b-a3b-q8_0",
+      "created_at": "2026-04-15T16:23:34.087925307Z",
+      "response": "",
+      "thinking": "The user wants me to describe the first frame of a video sequence.\nThe frame shows a close-up of a blue industrial vehicle, likely a street sweeper or snow plow, in a snowy environment.\nI need to follow the specific format provided:\n- Frame [X] (This is Frame 0)\n- Setting/Scene\n- Action/Movement\n- New Information\n- Continuity Points\n- Key continuation points\n\n**Analysis of the Image:**\n- **Subject:** A large blue machine. It looks like a street sweeper or a snow removal vehicle.\n- **Details:**\n    - Blue body panels.\n    - A large, rugged tire with a silver rim.\n    - A black brush or plow attachment near the ground (bottom right).\n    - Another brush visible on the far left edge (bottom left).\n    - A white tank or container on the upper left.\n    - A control panel or dashboard area on the right side with stickers/warnings.\n    - A person is partially visible sitting in the driver's seat (legs and boots visible).\n- **Environment:** The ground is covered in white snow.\n- **Action:** The vehicle appears stationary or moving very slowly. The camera is close to the side of the vehicle.\n- **Timestamp:** 4.50 seconds (This is a bit confusing. Usually, Frame 0 is at 0.00s. The prompt says",
+      "done": true,
+      "done_reason": "length",
+      "total_duration": 7453759204,
+      "load_duration": 117359864,
+      "prompt_eval_count": 644,
+      "prompt_eval_duration": 99471405,
+      "eval_count": 300,
+      "eval_duration": 3338640322
+    },
+    {
+      "model": "qwen3.5:35b-a3b-q8_0",
+      "created_at": "2026-04-15T16:23:41.44496543Z",
+      "response": "",
+      "thinking": "The user wants me to describe Frame 1 of a video sequence.\nI need to follow a specific structure:\n1.  **Quick Scan:** Compare with the previous frame (Frame 0). Since I don't have Frame 0's text, I have to assume this is the start or a continuation. Wait, the prompt says \"This is frame 1 captured at 6.00 seconds.\" and \"If there are no existing frames you are Frame 0\". This implies I should treat it as the first frame I'm seeing, or perhaps the prompt implies there was a Frame 0. Let's look at the \"Previous Notes Section\". It says \"[Previous frame descriptions will appear here in chronological order]\" and then \"Frame 0\". This suggests Frame 0 exists but is empty or just a placeholder in the prompt structure. Wait, actually, the prompt says \"This is frame 1 captured at 6.00 seconds.\" This is a bit confusing. Usually, Frame 0 is the first frame. Let's assume the user is providing Frame 1 and I need to describe it. The prompt says \"If there are no existing frames you are Frame 0\". Since the prompt explicitly says \"This is frame 1\", I will treat it as Frame 1.\n\n**Observation of the Image:**\n-   **Setting:** An indoor ice hockey rink.\n-   **Foreground:** The bottom left corner shows part of a Zamb",
+      "done": true,
+      "done_reason": "length",
+      "total_duration": 7354183905,
+      "load_duration": 110095319,
+      "prompt_eval_count": 648,
+      "prompt_eval_duration": 100146773,
+      "eval_count": 300,
+      "eval_duration": 3353481499
+    },
+    {
+      "model": "qwen3.5:35b-a3b-q8_0",
+      "created_at": "2026-04-15T16:23:48.824518135Z",
+      "response": "",
+      "thinking": "The user wants me to describe Frame 2 of a video sequence.\nI need to look at the provided image and describe it based on the instructions.\nThe instructions ask for:\n- Setting/Scene (if changed)\n- Action/Movement\n- New Information\n- Continuity Points\n- Key continuation points\n\n**Analysis of the Image:**\n- **Subject:** An ice resurfacer (Zamboni-like machine) is visible on the left side. It's blue and black.\n- **Action:** The machine is moving across the ice. It appears to be in the process of resurfacing the ice. The camera angle is low, near the boards.\n- **Setting:** An indoor ice rink. There are boards in the foreground (bottom left). The ice is white and smooth. In the background, there's glass shielding, a wall with some posters/signs, and the ceiling structure.\n- **Lighting:** Bright, typical indoor rink lighting.\n- **Specific Details:** The machine has a red light or reflector on the side. There's a driver visible inside the cab (wearing a dark jacket/hat). The machine is moving from left to right, or perhaps slightly away from the camera towards the right. Wait, looking closely at the machine, it's facing somewhat towards the right but angled slightly away. It's moving along the boards.\n- **Timestamp:** 7.50 seconds.\n\n**Drafting",
+      "done": true,
+      "done_reason": "length",
+      "total_duration": 7376499215,
+      "load_duration": 111739802,
+      "prompt_eval_count": 652,
+      "prompt_eval_duration": 102081812,
+      "eval_count": 300,
+      "eval_duration": 3363755237
+    }
+  ],
+  "video_description": {
+    "model": "qwen3.5:35b-a3b-q8_0",
+    "created_at": "2026-04-15T16:24:12.204347419Z",
+    "response": "",
+    "thinking": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *   **Task:** Create a video summary based on provided materials.\n    *   **Available Materials:**\n        *   Frame 1 of the video (viewable) - *Wait, the prompt says \"Frame 1 of the video (viewable)\" but then lists \"Frame 0 (4.50s)\", \"Frame 1 (6.00s)\", \"Frame 2 (7.50s)\" under \"Available Materials\" with empty descriptions.*\n        *   Complete set of chronological frame descriptions from all previous viewers - *The prompt lists Frame 0, 1, 2 but the descriptions are empty.*\n        *   Video Transcript - *Empty.*\n    *   **Problem:** The user has provided the *instructions* for the task, but the actual content (the video frames, descriptions, transcript) is missing or empty. The fields for Frame 0, Frame 1, Frame 2, and Video Transcript are blank.\n    *   **Constraint:** I need to follow the instructions provided in the prompt to generate a summary. However, I cannot generate a specific summary without the actual video content.\n    *   **Interpretation:** This looks like a template or a test case where the user expects me to acknowledge the instructions or perhaps they made a mistake and forgot to paste the content. However, looking closely at the prompt structure, it seems like a system instruction for *me* to act as the summarizer, but the data is missing.\n    *   **Alternative Interpretation:** Is this a trick? Or is the user asking me to *acknowledge* the instructions? No, the prompt says \"Your Task... Create your summary following this structure\".\n    *   **Critical Observation:** The prompt contains placeholders like `Frame 0 (4.50s):` with nothing after the colon. There is no actual video content to summarize.\n    *   **Action:** I must inform the user that the content is missing. I cannot hallucinate a summary. However, sometimes in these scenarios, the user expects me to simulate the output based on the *structure* provided, or they made an error.\n    *   **Wait, looking closer at the prompt:** The prompt *is* the instructions. The user is likely testing my ability to follow the formatting instructions, but since there is no data, I cannot fulfill the core task (summarizing a video).\n    *   **Best Approach:** I should politely inform the user that the video content (frame descriptions, transcript, etc.) is missing from the input, so I cannot generate the specific summary. However, to be helpful, I can demonstrate that I understand the instructions by providing a *template* or asking them to provide the content.\n    *   **Wait, another possibility:** Is this a meta-prompt where I am supposed to act as the AI that *receives* this task? Yes. But I need the data.\n    *   **Decision:** Since I cannot invent video content, I must state that the necessary information is missing. I will explain *why* I can't complete the task (empty fields) and offer to do it once the data is provided.\n    *   **Wait, one more check:** Is it possible the user wants me to acknowledge the *instructions* themselves? No, the prompt says \"Your Task... Create your summary\".\n    *   **Hypothesis:** The user might have copied a template but forgot to fill in the data.\n    *   **Response Strategy:** I will acknowledge the instructions and the structure required, but clearly state that the specific video data (Frame descriptions, Transcript) is empty, preventing me from generating the actual summary. I will offer a placeholder example to show I understand the format.\n\n    *   **Correction:** Actually, looking at the interface, sometimes users paste instructions *for* the AI to follow for *future* tasks, or they expect the AI to realize it's missing data. If I just say \"I can't do this\", it's accurate but maybe not helpful. If I generate a dummy summary, it violates \"Avoid speculation beyond provided notes\".\n    *   **Strict Adherence:** The instructions say \"Avoid speculation beyond provided notes\". Since there are no notes, I cannot write a summary.\n    *   **Refined Plan:** I will inform the user that the input data is missing. I will not generate a fake summary.\n\n    *   **Wait, let me re-read the prompt again.**\n    *   \"Available Materials Frame 1 of the video (viewable)\" -> This implies I should see a frame. But I am a text model. I cannot see images unless they are uploaded.\n    *   \"Frame 0 (4",
+    "done": true,
+    "done_reason": "length",
+    "total_duration": 23376325996,
+    "load_duration": 102053447,
+    "prompt_eval_count": 459,
+    "prompt_eval_duration": 217061926,
+    "eval_count": 1000,
+    "eval_duration": 11262831354
+  },
+  "token_usage": null
+}

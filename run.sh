@@ -1,0 +1,24 @@
+#!/bin/bash
+# Run video-analyzer-web directly on port 11000 (no Docker)
+
+cd "$(dirname "$0")"
+
+LOG=/tmp/video-analyzer.log
+PID_FILE=/tmp/video-analyzer.pid
+
+# Kill existing instance if running
+if [ -f "$PID_FILE" ]; then
+    OLD_PID=$(cat "$PID_FILE")
+    if kill -0 "$OLD_PID" 2>/dev/null; then
+        echo "Stopping existing instance (PID $OLD_PID)..."
+        kill "$OLD_PID"
+        sleep 1
+    fi
+fi
+
+mkdir -p uploads thumbs jobs cache output
+
+echo "Starting video-analyzer-web on port 11000..."
+setsid python3 app.py >> "$LOG" 2>&1 &
+echo $! > "$PID_FILE"
+echo "Started PID $(cat $PID_FILE) — logs at $LOG"

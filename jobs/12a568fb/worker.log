@@ -1,0 +1,27 @@
+2026-04-15 16:10:52,369 - INFO - Starting job 12a568fb with ollama/qwen3.5:35b-a3b-q8_0
+/usr/local/lib/python3.10/dist-packages/video_analyzer/config.py:6: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+2026-04-15 16:10:53,034 - ERROR - Failed to update status: Extra data: line 1 column 135 (char 134)
+2026-04-15 16:10:53,248 - INFO - HTTP Request: GET https://huggingface.co/api/models/Systran/faster-whisper-tiny/revision/main "HTTP/1.1 200 OK"
+2026-04-15 16:10:53,656 - INFO - Initiation Input: Model size or path: tiny, Device: cuda, Compute type: float32, Language: en
+2026-04-15 16:10:53,699 - ERROR - Failed to update status: Extra data: line 1 column 135 (char 134)
+2026-04-15 16:10:53,770 - INFO - Processing audio with duration 00:08.940
+2026-04-15 16:10:53,789 - INFO - VAD filter removed 00:08.940 of audio
+2026-04-15 16:10:53,790 - WARNING - No speech detected in audio
+2026-04-15 16:10:53,790 - ERROR - Failed to update status: Extra data: line 1 column 135 (char 134)
+2026-04-15 16:10:54,125 - INFO - Extracted 10 frames from video (target was 10)
+2026-04-15 16:10:54,126 - ERROR - Failed to update status: Extra data: line 1 column 135 (char 134)
+2026-04-15 16:11:12,164 - ERROR - Failed to update status: Extra data: line 1 column 135 (char 134)
+2026-04-15 16:11:31,616 - ERROR - Failed to update status: Extra data: line 1 column 135 (char 134)
+2026-04-15 16:11:51,110 - ERROR - Failed to update status: Extra data: line 1 column 135 (char 134)
+2026-04-15 16:12:10,605 - ERROR - Failed to update status: Extra data: line 1 column 135 (char 134)
+2026-04-15 16:12:30,130 - ERROR - Failed to update status: Extra data: line 1 column 135 (char 134)
+2026-04-15 16:12:49,639 - ERROR - Failed to update status: Extra data: line 1 column 135 (char 134)
+2026-04-15 16:13:09,164 - ERROR - Failed to update status: Extra data: line 1 column 135 (char 134)
+2026-04-15 16:13:36,408 - ERROR - Failed to update status: Extra data: line 1 column 135 (char 134)
+2026-04-15 16:13:51,501 - ERROR - Failed to update status: Extra data: line 1 column 135 (char 134)
+2026-04-15 16:14:06,633 - ERROR - Failed to update status: Extra data: line 1 column 135 (char 134)
+2026-04-15 16:14:06,633 - ERROR - Failed to update status: Extra data: line 1 column 135 (char 134)
+2026-04-15 16:14:37,854 - INFO - Successfully reconstructed video description
+2026-04-15 16:14:37,855 - ERROR - Failed to update status: Extra data: line 1 column 135 (char 134)
+2026-04-15 16:14:37,855 - INFO - Job 12a568fb completed successfully

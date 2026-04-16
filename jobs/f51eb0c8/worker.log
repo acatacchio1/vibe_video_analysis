@@ -1,0 +1,39 @@
+2026-04-15 16:28:34,746 - INFO - Starting job f51eb0c8 with ollama/qwen3.5:35b-a3b-q8_0
+/usr/local/lib/python3.10/dist-packages/video_analyzer/config.py:6: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+2026-04-15 16:28:35,660 - INFO - HTTP Request: GET https://huggingface.co/api/models/Systran/faster-whisper-tiny/revision/main "HTTP/1.1 200 OK"
+2026-04-15 16:28:36,067 - INFO - Initiation Input: Model size or path: tiny, Device: cuda, Compute type: float32, Language: en
+2026-04-15 16:28:36,102 - ERROR - FFmpeg error: ffmpeg version 4.4.2-0ubuntu0.22.04.1 Copyright (c) 2000-2021 the FFmpeg developers
+  built with gcc 11 (Ubuntu 11.2.0-19ubuntu1)
+  configuration: --prefix=/usr --extra-version=0ubuntu0.22.04.1 --toolchain=hardened --libdir=/usr/lib/x86_64-linux-gnu --incdir=/usr/include/x86_64-linux-gnu --arch=amd64 --enable-gpl --disable-stripping --enable-gnutls --enable-ladspa --enable-libaom --enable-libass --enable-libbluray --enable-libbs2b --enable-libcaca --enable-libcdio --enable-libcodec2 --enable-libdav1d --enable-libflite --enable-libfontconfig --enable-libfreetype --enable-libfribidi --enable-libgme --enable-libgsm --enable-libjack --enable-libmp3lame --enable-libmysofa --enable-libopenjpeg --enable-libopenmpt --enable-libopus --enable-libpulse --enable-librabbitmq --enable-librubberband --enable-libshine --enable-libsnappy --enable-libsoxr --enable-libspeex --enable-libsrt --enable-libssh --enable-libtheora --enable-libtwolame --enable-libvidstab --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libx265 --enable-libxml2 --enable-libxvid --enable-libzimg --enable-libzmq --enable-libzvbi --enable-lv2 --enable-omx --enable-openal --enable-opencl --enable-opengl --enable-sdl2 --enable-pocketsphinx --enable-librsvg --enable-libmfx --enable-libdc1394 --enable-libdrm --enable-libiec61883 --enable-chromaprint --enable-frei0r --enable-libx264 --enable-shared
+  libavutil      56. 70.100 / 56. 70.100
+  libavcodec     58.134.100 / 58.134.100
+  libavformat    58. 76.100 / 58. 76.100
+  libavdevice    58. 13.100 / 58. 13.100
+  libavfilter     7.110.100 /  7.110.100
+  libswscale      5.  9.100 /  5.  9.100
+  libswresample   3.  9.100 /  3.  9.100
+  libpostproc    55.  9.100 / 55.  9.100
+Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'uploads/IMG_4270_720p10fps.mp4':
+  Metadata:
+    major_brand     : isom
+    minor_version   : 512
+    compatible_brands: isomiso2avc1mp41
+    encoder         : Lavf58.76.100
+  Duration: 00:00:19.80, start: 0.000000, bitrate: 1554 kb/s
+  Stream #0:0(und): Video: h264 (High) (avc1 / 0x31637661), yuvj420p(pc), 406x720, 1554 kb/s, 10 fps, 10 tbr, 10240 tbn, 20 tbc (default)
+    Metadata:
+      handler_name    : Core Media Video
+      vendor_id       : [0][0][0][0]
+Output #0, wav, to 'jobs/f51eb0c8/output/audio.wav':
+Output file #0 does not contain any stream
+
+2026-04-15 16:28:36,103 - INFO - Falling back to pydub for audio extraction...
+2026-04-15 16:28:36,122 - ERROR - Error extracting audio using pydub: list index out of range
+2026-04-15 16:28:36,122 - WARNING - Audio processing failed: Failed to extract audio. Please install ffmpeg using:
+Ubuntu/Debian: sudo apt-get update && sudo apt-get install -y ffmpeg
+MacOS: brew install ffmpeg
+Windows: choco install ffmpeg
+2026-04-15 16:28:36,189 - INFO - Extracted 3 frames from video (target was 3)
+2026-04-15 16:29:08,019 - INFO - Successfully reconstructed video description
+2026-04-15 16:29:08,019 - INFO - Job f51eb0c8 completed successfully

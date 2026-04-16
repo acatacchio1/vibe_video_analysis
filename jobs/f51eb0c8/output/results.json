@@ -1,0 +1,37 @@
+{
+  "metadata": {
+    "job_id": "f51eb0c8",
+    "provider": "ollama",
+    "model": "qwen3.5:35b-a3b-q8_0",
+    "frames_processed": 3,
+    "transcription_successful": false
+  },
+  "transcript": null,
+  "frame_analyses": [
+    {
+      "response": "```\nFrame 0\n[9.90 seconds]\n\nSetting/Scene\nThe scene is indoors, featuring a bright blue carpet with a grid pattern. To the left is a white radiator against a wall. To the right is a large wooden cabinet or wardrobe with vertical slats and drawers.\n\nAction/Movement\nA toddler with blonde hair stands in profile, facing the wooden cabinet. The child is wearing a green sweater and grey trousers. The toddler's right arm is raised, and their hand is touching or reaching for the handle of the cabinet door. The child appears to be standing still, focused on the furniture.\n\nNew Information\n- First appearance of the toddler and the specific furniture piece.\n- No audio or dialogue is available for this frame.\n\nContinuity Points\n- This frame establishes the subject (the toddler) and their immediate interaction with the environment (the cabinet).\n- The next viewer should watch for whether the toddler successfully opens the cabinet or moves away.\n\nKey continuation points:\n- Whether the toddler opens the cabinet door.\n- If the toddler moves away from the cabinet or interacts with other objects.\n- Any changes in the toddler's expression or body language.\n```",
+      "done": true,
+      "eval_count": 247,
+      "prompt_eval_count": 646
+    },
+    {
+      "response": "```\nFrame 1\n[13.20 seconds]\n\nSetting/Scene\nThe setting has changed significantly from the previous frame. The background is now a dark, wood-paneled wall, likely the interior of an elevator. The floor is a dark, textured rubber mat with a raised circular pattern.\n\nAction/Movement\nThe toddler is now facing the camera directly, looking slightly upward. The child is standing still with their arms down by their sides. The child's expression is neutral, with wide eyes looking forward.\n\nNew Information\n- The environment has shifted from a room with a cabinet to an enclosed space with wood paneling.\n- The child's orientation has changed from profile to facing the camera.\n\nContinuity Points\n- The toddler remains the central subject, but the context of their location has changed.\n- The previous interaction with the cabinet is no longer visible; the child is now standing alone in the new space.\n\nKey continuation points:\n- Whether the toddler remains in this position or begins to move.\n- If the child interacts with the camera or the surrounding environment.\n- Any changes in the child's expression or body language.\n```",
+      "done": true,
+      "eval_count": 241,
+      "prompt_eval_count": 898
+    },
+    {
+      "response": "```\nFrame 2\n[16.50 seconds]\n\nSetting/Scene\nThe setting has changed again from the elevator. The child is now standing on a blue carpet with a grid pattern, similar to the first frame but in a different location. To the right, a white radiator is visible against a wall. In the background, there is a wooden door frame and what appears to be a hallway or another room.\n\nAction/Movement\nThe toddler is facing the camera directly, looking down at the floor. The child is wearing a green sweater with a yellow dog design and grey trousers. The child's arms are down by their sides, and they appear to be standing still or taking a small step forward. The child's expression is focused, with their gaze directed downward.\n\nNew Information\n- The environment has shifted from the elevator to a room with a blue carpet and a radiator.\n- The child's orientation remains facing the camera, but their gaze is now directed downward.\n\nContinuity Points\n- The toddler remains the central subject, but the context of their location has changed once more.\n- The previous interaction with the elevator is no longer visible; the child is now standing in a new space.\n\nKey continuation points:\n- Whether the toddler remains in this position or begins to move.\n- If the child interacts with the camera or the surrounding environment.\n- Any changes in the child's expression or body language.\n```",
+      "done": true,
+      "eval_count": 297,
+      "prompt_eval_count": 1143
+    }
+  ],
+  "video_description": {
+    "response": "VIDEO SUMMARY\nDuration: Approx. 6.6 seconds (based on frame timestamps 9.90s to 16.50s)\n\nThe video opens in a brightly lit indoor room featuring a distinctive blue carpet with a grid pattern. To the left, a white radiator is mounted against a wall, while a large wooden cabinet with vertical slats and drawers stands to the right. A toddler with blonde hair, dressed in a green sweater and grey trousers, stands in profile facing the cabinet. The child's right arm is raised, with their hand touching or reaching for the cabinet door handle. The toddler appears stationary and focused on the furniture, establishing an initial tone of quiet exploration.\n\nThe scene then cuts abruptly to a completely different environment. The setting shifts to a dark, wood-paneled interior, likely an elevator, with a dark, textured rubber mat on the floor featuring a raised circular pattern. The toddler is now facing the camera directly, standing still with arms at their sides. The child's expression is neutral, characterized by wide eyes looking slightly upward, marking a stark contrast in lighting and atmosphere from the previous bright room.\n\nFollowing this, the video transitions again to a new location that resembles the initial setting but is distinct. The child stands on a blue grid-patterned carpet, with a white radiator visible against a wall to the right. In the background, a wooden door frame suggests a hallway or adjacent room. The toddler, now clearly seen wearing a green sweater with a yellow dog design, faces the camera directly but has their gaze directed downward at the floor. The child remains relatively still, appearing to take a small step forward or simply observing the ground, maintaining a focused expression.\n\nThroughout the sequence, the toddler remains the central subject, though the context shifts rapidly between three distinct environments: a room with a cabinet, an elevator, and a hallway or room with a radiator. The narrative progression is defined by these abrupt environmental changes rather than continuous movement within a single space. The video concludes with the child standing in the final location, looking down, leaving the outcome of the initial cabinet interaction and the purpose of the location changes open to interpretation based on the provided visual notes.\n\nNote: This summary is based on direct observation of the first frame combined with detailed notes from subsequent frames.",
+    "done": true,
+    "eval_count": 466,
+    "prompt_eval_count": 1248
+  },
+  "token_usage": null
+}
