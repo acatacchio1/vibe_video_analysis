@@ -22,5 +22,6 @@ jobs:
         uses: anomalyco/opencode/github@latest
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
         with:
-          model: openrouter/anthropic/claude-3.5-sonnet
+          model: openrouter/z-ai/glm-5.1
