@@ -54,7 +54,6 @@ def run_analysis(job_dir: Path):
     model = config["model"]
     params = config.get("params", {})
     job_id = config["job_id"]
-    video_frames_dir = config.get("video_frames_dir", "")
 
     logger.info(f"Starting job {job_id} with {provider_type}/{model}")
 
@@ -155,70 +154,14 @@ def run_analysis(job_dir: Path):
         # Stage 2: Frame extraction
         update_status(job_dir, {"stage": "extracting_frames", "progress": 15})
 
-        pre_extracted_dir = Path(video_frames_dir) if video_frames_dir else None
-        use_pre_extracted = (
-            pre_extracted_dir
-            and pre_extracted_dir.exists()
-            and any(pre_extracted_dir.glob("frame_*.jpg"))
+        processor = VideoProcessor(Path(video_path), frames_dir, model)
+        frames = processor.extract_keyframes(
+            frames_per_minute=config_data["frames"]["per_minute"],
+            duration=params.get("duration"),
+            max_frames=params.get("max_frames", 2147483647),
         )
 
-        if use_pre_extracted:
-            meta_path = pre_extracted_dir.parent / "frames_meta.json"
-            meta = {}
-            if meta_path.exists():
-                try:
-                    meta = json.loads(meta_path.read_text())
-                except Exception:
-                    pass
-
-            all_frame_files = sorted(pre_extracted_dir.glob("frame_*.jpg"))
-            total_available = len(all_frame_files)
-            video_fps = meta.get("fps", 1)
-
-            start_frame = params.get("start_frame", 0) or 0
-            end_frame = params.get("end_frame") or total_available
-
-            start_frame = max(0, min(start_frame, total_available - 1))
-            end_frame = max(start_frame + 1, min(end_frame, total_available))
-
-            selected_files = all_frame_files[start_frame:end_frame]
-
-            fpm = params.get("frames_per_minute", 60)
-            step = 1
-            if video_fps > 0 and fpm < (video_fps * 60):
-                step = max(1, int(video_fps * 60 / fpm))
-                selected_files = selected_files[::step]
-
-            frames = []
-            for i, fp in enumerate(selected_files):
-                original_index = start_frame + i * step
-                timestamp = original_index / video_fps if video_fps > 0 else float(i)
-                frames.append(
-                    type(
-                        "Frame",
-                        (),
-                        {
-                            "number": i,
-                            "path": fp,
-                            "timestamp": timestamp,
-                            "score": 0,
-                        },
-                    )()
-                )
-
-            total_frames = len(frames)
-            logger.info(
-                f"Using {total_frames} pre-extracted frames "
-                f"(range {start_frame}-{end_frame} of {total_available}, "
-                f"step={step if fpm < (video_fps * 60) else 1})"
-            )
-        else:
-            processor = VideoProcessor(Path(video_path), frames_dir, model)
-            frames = processor.extract_keyframes(
-                frames_per_minute=config_data["frames"]["per_minute"],
-                max_frames=config_data["frames"]["max_count"],
-            )
-            total_frames = len(frames)
+        total_frames = len(frames)
         update_status(
             job_dir,
             {"stage": "analyzing_frames", "progress": 20, "total_frames": total_frames},
@@ -301,7 +244,14 @@ def run_analysis(job_dir: Path):
         total_prompt_tokens = 0
         total_completion_tokens = 0
 
+        max_frames_limit = params.get("max_frames", 2147483647)
+
         for i, frame in enumerate(frames):
+            if i >= max_frames_limit:
+                logger.info(f"Reached max frames limit ({max_frames_limit})")
+                break
+
+            # Analyze frame
             analysis = analyzer.analyze_frame(frame)
             frame_analyses.append(analysis)
 
@@ -312,7 +262,7 @@ def run_analysis(job_dir: Path):
                 total_completion_tokens += usage.get("completion_tokens", 0)
 
             # Progress: 20% to 80% for frame analysis
-            progress = 20 + int((i + 1) / total_frames * 60)
+            progress = 20 + int((i + 1) / min(total_frames, max_frames_limit) * 60)
 
             # Write frame analysis for real-time display
             frame_result = {

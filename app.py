@@ -105,7 +105,6 @@ def list_videos():
                     "duration_formatted": probed.get("duration_formatted", "0s"),
                     "thumbnail": thumb_path if Path(thumb_path).exists() else None,
                     "has_analysis": has_analysis,
-                    "frame_count": _get_frame_count(video_file),
                 }
             )
 
@@ -158,13 +157,8 @@ def upload_video():
 
     logger.info(f"Video uploaded: {filepath}")
 
-    whisper_model = request.form.get("whisper_model", "base")
-    language = request.form.get("language", "en")
-
-    # Auto-transcode to 720p@1fps, extract frames, then transcribe
-    socketio.start_background_task(
-        _transcode_and_delete_with_cleanup, str(filepath), whisper_model, language
-    )
+    # Auto-transcode to 720p@1fps then delete source
+    socketio.start_background_task(_transcode_and_delete_with_cleanup, str(filepath))
 
     return jsonify({"success": True, "filename": filepath.name, "path": str(filepath)})
 
@@ -420,101 +414,16 @@ def get_gpu_list():
     )
 
 
-@app.route("/api/videos/<filename>/frames")
-def get_video_frames_meta(filename):
-    safe_name = secure_filename_util(filename)
-    stem = Path(safe_name).stem
-    meta_path = Path(__file__).parent / "uploads" / stem / "frames_meta.json"
-
-    if not meta_path.exists():
-        return jsonify({"frame_count": 0, "fps": 0, "duration": 0})
-
-    try:
-        return jsonify(json.loads(meta_path.read_text()))
-    except Exception:
-        return jsonify({"frame_count": 0, "fps": 0, "duration": 0})
-
-
-@app.route("/api/videos/<filename>/frames/<int:frame_num>")
-def get_video_frame(filename, frame_num):
-    safe_name = secure_filename_util(filename)
-    stem = Path(safe_name).stem
-    frame_path = (
-        Path(__file__).parent
-        / "uploads"
-        / stem
-        / "frames"
-        / f"frame_{frame_num:06d}.jpg"
-    )
-
-    if not frame_path.exists():
-        return api_error("Frame not found", 404)
-
-    return send_file(frame_path, mimetype="image/jpeg")
-
-
-@app.route("/api/videos/<filename>/frames/<int:frame_num>/thumb")
-def get_video_frame_thumb(filename, frame_num):
-    safe_name = secure_filename_util(filename)
-    stem = Path(safe_name).stem
-    thumb_path = (
-        Path(__file__).parent
-        / "uploads"
-        / stem
-        / "frames"
-        / "thumbs"
-        / f"thumb_{frame_num:06d}.jpg"
-    )
-
-    if not thumb_path.exists():
-        frame_path = (
-            Path(__file__).parent
-            / "uploads"
-            / stem
-            / "frames"
-            / f"frame_{frame_num:06d}.jpg"
-        )
-        if frame_path.exists():
-            return send_file(frame_path, mimetype="image/jpeg")
-        return api_error("Frame not found", 404)
-
-    return send_file(thumb_path, mimetype="image/jpeg")
-
-
-@app.route("/api/videos/<filename>/transcript")
-def get_video_transcript(filename):
-    """Get transcript for a video"""
-    safe_name = secure_filename_util(filename)
-    stem = Path(safe_name).stem
-    transcript_path = Path(__file__).parent / "uploads" / stem / "transcript.json"
-
-    if not transcript_path.exists():
-        return jsonify(
-            {"segments": [], "text": "", "language": None, "whisper_model": None}
-        )
-
-    try:
-        return jsonify(json.loads(transcript_path.read_text()))
-    except Exception:
-        return jsonify(
-            {"segments": [], "text": "", "language": None, "whisper_model": None}
-        )
-
-
 @app.route("/api/videos/transcode", methods=["POST"])
 def transcode_video():
     """Manually trigger transcode for an already-uploaded video"""
     data = request.json
     video_path = data.get("video_path")
-    whisper_model = data.get("whisper_model", "base")
-    language = data.get("language", "en")
 
     if not video_path or not Path(video_path).exists():
         return jsonify({"error": "Video not found"}), 404
 
-    socketio.start_background_task(
-        _transcode_and_delete_with_cleanup, video_path, whisper_model, language
-    )
+    socketio.start_background_task(_transcode_and_delete_with_cleanup, video_path)
     return jsonify({"success": True, "message": "Transcoding started"})
 
 
@@ -814,13 +723,6 @@ def handle_start_analysis(data):
     job_dir.mkdir(parents=True)
 
     # Write input config
-    video_stem = Path(video_path).stem if video_path else ""
-    video_frames_dir = (
-        str(Path(__file__).parent / "uploads" / video_stem / "frames")
-        if video_stem
-        else ""
-    )
-
     config = {
         "job_id": job_id,
         "video_path": video_path,
@@ -828,11 +730,10 @@ def handle_start_analysis(data):
         "provider_name": provider_name,
         "provider_config": provider_config,
         "model": model_id,
-        "video_frames_dir": video_frames_dir,
         "params": {
             "temperature": data.get("temperature", 0.0),
-            "start_frame": data.get("start_frame", 0),
-            "end_frame": data.get("end_frame"),
+            "duration": data.get("duration"),
+            "max_frames": data.get("max_frames", 2147483647),
             "frames_per_minute": data.get("frames_per_minute", 60),
             "whisper_model": data.get("whisper_model", "large"),
             "language": data.get("language", "en"),
@@ -1091,13 +992,11 @@ monitor.register_callback(on_monitor_update)
 # ==================== Transcode Helper ====================
 
 
-def _transcode_and_delete_with_cleanup(
-    src_path: str, whisper_model: str = "base", language: str = "en"
-):
+def _transcode_and_delete_with_cleanup(src_path: str):
     """
-    Background task: transcode src_path to 720p@1fps, extract frames + thumbnails,
-    transcribe audio, emit progress via socket, delete the source file on success,
-    then refresh the video list. Includes proper cleanup in finally block.
+    Background task: transcode src_path to 720p@1fps, emit progress via socket,
+    delete the source file on success, then refresh the video list.
+    Includes proper cleanup in finally block.
     """
     input_path = Path(src_path)
     output_name = f"{input_path.stem}_720p1fps.mp4"
@@ -1228,10 +1127,6 @@ def _transcode_and_delete_with_cleanup(
 
                 logger.info(f"Transcode complete: {output_name}")
                 _emit("complete", 100)
-
-                # Extract frames and thumbnails from the transcoded video
-                _extract_frames(str(output_path))
-                _transcribe_video(str(output_path), whisper_model, language)
             else:
                 logger.warning(f"Transcode failed for {src_name}: {err_content}")
                 _emit("failed", 0, error=err_content)
@@ -1253,422 +1148,7 @@ def _transcode_and_delete_with_cleanup(
     socketio.emit("videos_updated", {})
 
 
-def _extract_frames(video_path: str):
-    """
-    Extract all frames and thumbnails from a transcoded (1fps) video.
-    Creates:
-        <stem>/frames/frame_000001.jpg ... frame_NNNNNN.jpg
-        <stem>/frames/thumbs/thumb_000001.jpg ... thumb_NNNNNN.jpg
-        <stem>/frames_meta.json
-    """
-    video = Path(video_path)
-    stem = video.stem
-    frames_dir = video.parent / stem / "frames"
-    thumbs_dir = frames_dir / "thumbs"
-    frames_dir.mkdir(parents=True, exist_ok=True)
-    thumbs_dir.mkdir(parents=True, exist_ok=True)
-
-    # Get video info
-    duration_s = 0.0
-    fps = 1.0
-    total_video_frames = 0
-    try:
-        probe = subprocess.run(
-            [
-                "ffprobe",
-                "-v",
-                "error",
-                "-show_entries",
-                "format=duration",
-                "-show_entries",
-                "stream=r_frame_rate,nb_frames",
-                "-of",
-                "json",
-                str(video),
-            ],
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-        if probe.returncode == 0:
-            info = json.loads(probe.stdout)
-            fmt = info.get("format", {})
-            streams = info.get("streams", [])
-            duration_s = float(fmt.get("duration", 0))
-            if streams:
-                nb = streams[0].get("nb_frames")
-                if nb:
-                    total_video_frames = int(nb)
-                r_fr = streams[0].get("r_frame_rate", "1/1")
-                if "/" in r_fr:
-                    num, den = r_fr.split("/")
-                    fps = float(num) / float(den) if float(den) else 1.0
-    except Exception as e:
-        logger.warning(f"Failed to probe video for frame extraction: {e}")
-
-    if total_video_frames == 0 and duration_s > 0:
-        total_video_frames = int(duration_s * fps)
-
-    src_name = video.name
-
-    def _emit(stage, progress, error=None):
-        socketio.emit(
-            "frame_extraction_progress",
-            {
-                "source": src_name,
-                "stage": stage,
-                "progress": progress,
-                "current_frame": 0,
-                "total_frames": total_video_frames,
-                "error": error,
-            },
-        )
-
-    _emit("extracting_frames", 0)
-    logger.info(f"Extracting frames from {src_name} ({total_video_frames} frames)")
-
-    # Extract full-res frames
-    try:
-        extract_cmd = [
-            "ffmpeg",
-            "-y",
-            "-i",
-            str(video),
-            "-q:v",
-            "5",
-            str(frames_dir / "frame_%06d.jpg"),
-        ]
-        logger.info(f"Frame extraction command: {' '.join(extract_cmd)}")
-        proc = subprocess.Popen(
-            extract_cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        proc.wait(timeout=1800)  # 30 min timeout
-
-        if proc.returncode != 0:
-            err = proc.stderr.read()[-400:] if proc.stderr else "unknown"
-            logger.error(f"Frame extraction failed: {err}")
-            _emit("failed", 0, error=err)
-            return
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        _emit("failed", 0, error="Frame extraction timed out")
-        return
-    except Exception as e:
-        logger.error(f"Frame extraction error: {e}")
-        _emit("failed", 0, error=str(e))
-        return
-
-    # Count actually extracted frames
-    extracted_frames = sorted(frames_dir.glob("frame_*.jpg"))
-    actual_count = len(extracted_frames)
-    logger.info(f"Extracted {actual_count} frames from {src_name}")
-
-    _emit("generating_thumbnails", 50)
-
-    # Extract thumbnails (320px wide)
-    try:
-        thumb_cmd = [
-            "ffmpeg",
-            "-y",
-            "-i",
-            str(video),
-            "-vf",
-            "scale=320:-1",
-            "-q:v",
-            "5",
-            str(thumbs_dir / "thumb_%06d.jpg"),
-        ]
-        logger.info(f"Thumbnail extraction command: {' '.join(thumb_cmd)}")
-        proc = subprocess.Popen(
-            thumb_cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        proc.wait(timeout=1800)
-
-        if proc.returncode != 0:
-            err = proc.stderr.read()[-400:] if proc.stderr else "unknown"
-            logger.warning(f"Thumbnail extraction failed (non-fatal): {err}")
-    except Exception as e:
-        logger.warning(f"Thumbnail extraction error (non-fatal): {e}")
-
-    # Write frames_meta.json
-    meta = {
-        "frame_count": actual_count,
-        "fps": fps,
-        "duration": duration_s,
-    }
-    meta_path = video.parent / stem / "frames_meta.json"
-    meta_path.write_text(json.dumps(meta))
-    logger.info(f"Wrote frame metadata: {meta_path} ({meta})")
-
-    _emit("complete", 100)
-
-
-def _transcribe_video(
-    video_path: str, whisper_model: str = "base", language: str = "en"
-):
-    """
-    Transcribe audio from a transcoded video using faster-whisper.
-    Saves transcript.json alongside the video:
-        <stem>/transcript.json
-    Emits transcription_progress socket events.
-    Non-fatal: if transcription fails, the upload still succeeds.
-    """
-    video = Path(video_path)
-    stem = video.stem
-    video_dir = video.parent / stem
-    video_dir.mkdir(parents=True, exist_ok=True)
-    src_name = video.name
-
-    def _emit(stage, progress, error=None):
-        socketio.emit(
-            "transcription_progress",
-            {
-                "source": src_name,
-                "stage": stage,
-                "progress": progress,
-                "error": error,
-            },
-        )
-
-    _emit("extracting_audio", 0)
-    logger.info(
-        f"Starting transcription for {src_name} (model={whisper_model}, lang={language})"
-    )
-
-    audio_path = video_dir / "audio.wav"
-    try:
-        extract_cmd = [
-            "ffmpeg",
-            "-y",
-            "-i",
-            str(video),
-            "-vn",
-            "-acodec",
-            "pcm_s16le",
-            "-ar",
-            "16000",
-            "-ac",
-            "1",
-            str(audio_path),
-        ]
-        proc = subprocess.run(
-            extract_cmd,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-        if proc.returncode != 0:
-            stderr = proc.stderr or ""
-            if "does not contain any stream" in stderr or "no audio" in stderr.lower():
-                logger.info(f"No audio stream in {src_name}, skipping transcription")
-                _emit("complete", 100)
-                return
-            logger.warning(f"Audio extraction failed for {src_name}: {stderr[-300:]}")
-            _emit("failed", 0, error="Audio extraction failed")
-            return
-
-        if not audio_path.exists() or audio_path.stat().st_size == 0:
-            logger.info(f"No audio extracted from {src_name}, skipping transcription")
-            _emit("complete", 100)
-            return
-    except subprocess.TimeoutExpired:
-        _emit("failed", 0, error="Audio extraction timed out")
-        return
-    except Exception as e:
-        logger.warning(f"Audio extraction error for {src_name}: {e}")
-        _emit("failed", 0, error=str(e))
-        return
-
-    _emit("transcribing", 10)
-
-    try:
-        from faster_whisper import WhisperModel
-
-        device = "cuda"
-        compute_type = "int8"
-        try:
-            import torch
-
-            if not torch.cuda.is_available():
-                device = "cpu"
-                compute_type = "int8"
-        except Exception:
-            device = "cpu"
-
-        logger.info(f"Loading Whisper model '{whisper_model}' on {device}")
-        model = WhisperModel(whisper_model, device=device, compute_type=compute_type)
-
-        _emit("transcribing", 30)
-
-        accepted_languages = {
-            "af",
-            "am",
-            "ar",
-            "as",
-            "az",
-            "ba",
-            "be",
-            "bg",
-            "bn",
-            "bo",
-            "br",
-            "bs",
-            "ca",
-            "cs",
-            "cy",
-            "da",
-            "de",
-            "el",
-            "en",
-            "es",
-            "et",
-            "eu",
-            "fa",
-            "fi",
-            "fo",
-            "fr",
-            "gl",
-            "gu",
-            "ha",
-            "haw",
-            "he",
-            "hi",
-            "hr",
-            "ht",
-            "hu",
-            "hy",
-            "id",
-            "is",
-            "it",
-            "ja",
-            "jw",
-            "ka",
-            "kk",
-            "km",
-            "kn",
-            "ko",
-            "la",
-            "lb",
-            "ln",
-            "lo",
-            "lt",
-            "lv",
-            "mg",
-            "mi",
-            "mk",
-            "ml",
-            "mn",
-            "mr",
-            "ms",
-            "mt",
-            "my",
-            "ne",
-            "nl",
-            "nn",
-            "no",
-            "oc",
-            "pa",
-            "pl",
-            "ps",
-            "pt",
-            "ro",
-            "ru",
-            "sa",
-            "sd",
-            "si",
-            "sk",
-            "sl",
-            "sn",
-            "so",
-            "sq",
-            "sr",
-            "su",
-            "sv",
-            "sw",
-            "ta",
-            "te",
-            "tg",
-            "th",
-            "tk",
-            "tl",
-            "tr",
-            "tt",
-            "uk",
-            "ur",
-            "uz",
-            "vi",
-            "yi",
-            "yo",
-            "zh",
-            "yue",
-        }
-        lang_param = language if language in accepted_languages else None
-
-        segments_iter, info = model.transcribe(
-            str(audio_path),
-            beam_size=5,
-            word_timestamps=False,
-            vad_filter=True,
-            vad_parameters=dict(min_silence_duration_ms=500),
-            language=lang_param,
-        )
-
-        _emit("transcribing", 50)
-
-        segments = []
-        full_text_parts = []
-        for seg in segments_iter:
-            segments.append({"text": seg.text, "start": seg.start})
-            full_text_parts.append(seg.text)
-
-        _emit("transcribing", 90)
-
-        transcript_data = {
-            "text": " ".join(full_text_parts),
-            "segments": segments,
-            "language": info.language if hasattr(info, "language") else language,
-            "whisper_model": whisper_model,
-        }
-
-        transcript_path = video_dir / "transcript.json"
-        transcript_path.write_text(json.dumps(transcript_data))
-        logger.info(
-            f"Transcription complete for {src_name}: "
-            f"{len(segments)} segments, model={whisper_model}"
-        )
-
-        _emit("complete", 100)
-
-    except Exception as e:
-        logger.warning(f"Transcription failed for {src_name}: {e}")
-        _emit("failed", 0, error=str(e))
-    finally:
-        try:
-            if audio_path.exists():
-                audio_path.unlink()
-        except Exception:
-            pass
-
-
 # ==================== Utilities ====================
-
-
-def _get_frame_count(video_path: Path) -> int:
-    """Get the number of pre-extracted frames for a video"""
-    meta_path = video_path.parent / video_path.stem / "frames_meta.json"
-    if meta_path.exists():
-        try:
-            meta = json.loads(meta_path.read_text())
-            return meta.get("frame_count", 0)
-        except Exception:
-            pass
-    return 0
 
 
 def api_error(message: str, code: int = 400):
