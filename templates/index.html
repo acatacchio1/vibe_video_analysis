@@ -20,7 +20,28 @@
         <aside class="sidebar">
             <!-- Upload Section -->
             <section class="upload-section">
-                <h2>Upload Video</h2>
+                <div class="upload-section-header">
+                    <h2>Upload Video</h2>
+                    <button type="button" id="upload-settings-btn" class="icon-btn" title="Upload settings">⚙️</button>
+                </div>
+                <div id="upload-settings-popover" class="upload-settings-popover hidden">
+                    <div class="popover-title">Upload Settings</div>
+                    <div class="form-group">
+                        <label for="upload-whisper-select">Whisper Model (initial transcript)</label>
+                        <select id="upload-whisper-select">
+                            <option value="tiny">tiny (fastest)</option>
+                            <option value="base" selected>base (fast, good for browsing)</option>
+                            <option value="small">small</option>
+                            <option value="medium">medium</option>
+                            <option value="large">large (most accurate)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="upload-language-input">Audio Language</label>
+                        <input type="text" id="upload-language-input" value="en" placeholder="e.g., en, es, fr">
+                    </div>
+                    <div class="popover-hint">Applied to next upload. A different model can be chosen for the full analysis in Advanced Options.</div>
+                </div>
                 <div class="upload-area" id="upload-area">
                     <input type="file" id="video-upload" accept="video/*" hidden>
                     <div class="upload-prompt">
@@ -113,6 +134,58 @@
                             </select>
                         </div>
 
+                        <div id="frame-range-section" class="frame-range-section hidden">
+                            <h3>Frame Range</h3>
+                            <div class="frame-range-slider-container">
+                                <div class="dual-range-track">
+                                    <div id="range-highlight" class="range-highlight"></div>
+                                    <input type="range" id="start-frame-slider" class="range-slider start-slider" min="1" max="1" value="1">
+                                    <input type="range" id="end-frame-slider" class="range-slider end-slider" min="1" max="1" value="1">
+                                </div>
+                                <div class="range-labels">
+                                    <span id="start-label">Start</span>
+                                    <span id="end-label">End</span>
+                                </div>
+                            </div>
+                            <div class="frame-range-cards">
+                                <div class="frame-range-card">
+                                    <div class="frame-card-label">Start Frame</div>
+                                    <div class="frame-card-thumb">
+                                        <img id="start-frame-thumb" src="" alt="">
+                                        <div id="start-thumb-placeholder" class="thumb-placeholder">--</div>
+                                    </div>
+                                    <div class="frame-card-controls">
+                                        <div class="frame-number-row">
+                                            <button type="button" class="frame-step-btn" id="start-dec-btn" title="Previous frame">-1</button>
+                                            <input type="number" id="start-frame-input" class="frame-number-input" min="1" value="1">
+                                            <button type="button" class="frame-step-btn" id="start-inc-btn" title="Next frame">+1</button>
+                                        </div>
+                                        <div class="frame-time" id="start-frame-time">0:00</div>
+                                    </div>
+                                    <div class="frame-transcript-context" id="start-frame-transcript"></div>
+                                </div>
+                                <div class="frame-range-card">
+                                    <div class="frame-card-label">End Frame</div>
+                                    <div class="frame-card-thumb">
+                                        <img id="end-frame-thumb" src="" alt="">
+                                        <div id="end-thumb-placeholder" class="thumb-placeholder">--</div>
+                                    </div>
+                                    <div class="frame-card-controls">
+                                        <div class="frame-number-row">
+                                            <button type="button" class="frame-step-btn" id="end-dec-btn" title="Previous frame">-1</button>
+                                            <input type="number" id="end-frame-input" class="frame-number-input" min="1" value="1">
+                                            <button type="button" class="frame-step-btn" id="end-inc-btn" title="Next frame">+1</button>
+                                        </div>
+                                        <div class="frame-time" id="end-frame-time">0:00</div>
+                                    </div>
+                                    <div class="frame-transcript-context" id="end-frame-transcript"></div>
+                                </div>
+                            </div>
+                            <div class="frame-range-summary" id="frame-range-summary">
+                                Select a video to choose frame range
+                            </div>
+                        </div>
+
                         <div class="form-group">
                             <label for="provider-select">AI Provider</label>
                             <div class="provider-controls">
@@ -152,17 +225,6 @@
                         </div>
 
                         <div id="advanced-options" class="advanced-options hidden">
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label for="duration-input">Duration (seconds, 0 = all)</label>
-                                    <input type="number" id="duration-input" value="0" min="0">
-                                </div>
-                                <div class="form-group">
-                                    <label for="max-frames-input">Max Frames</label>
-                                    <input type="number" id="max-frames-input" value="10000" min="1">
-                                </div>
-                            </div>
-
                             <div class="form-row">
                                 <div class="form-group">
                                     <label for="fpm-input">Frames Per Minute</label>
