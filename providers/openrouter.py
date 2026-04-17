@@ -61,25 +61,31 @@ class OpenRouterProvider(BaseProvider):
         except Exception as e:
             logger.warning(f"Failed to load pricing cache: {e}")
 
+    @staticmethod
+    def _safe_float(value, default=0.0):
+        try:
+            return float(value) if value is not None else default
+        except (TypeError, ValueError):
+            return default
+
     def _update_pricing_cache(self, models_data: List[Dict]):
         """Update pricing cache from API response"""
         self.pricing_cache = {}
         for model in models_data:
             model_id = model.get("id")
             if model_id:
+                pricing = model.get("pricing") or {}
                 self.pricing_cache[model_id] = {
                     "name": model.get("name", model_id),
                     "description": model.get("description", ""),
                     "context_length": model.get("context_length", 0),
                     "pricing": {
-                        "prompt": float(model.get("pricing", {}).get("prompt", 0)),
-                        "completion": float(
-                            model.get("pricing", {}).get("completion", 0)
-                        ),
-                        "image": float(model.get("pricing", {}).get("image", 0)),
+                        "prompt": self._safe_float(pricing.get("prompt")),
+                        "completion": self._safe_float(pricing.get("completion")),
+                        "image": self._safe_float(pricing.get("image")),
                     },
-                    "architecture": model.get("architecture", {}),
-                    "top_provider": model.get("top_provider", {}),
+                    "architecture": model.get("architecture") or {},
+                    "top_provider": model.get("top_provider") or {},
                 }
 
         # Save to cache

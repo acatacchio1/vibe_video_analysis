@@ -559,20 +559,24 @@ async function loadOpenRouterModels() {
         const response = await fetch(`/api/providers/openrouter/models?api_key=${encodeURIComponent(state.openRouterKey)}`);
         const data = await response.json();
         
-        if (data.models) {
+        if (data.models && data.models.length > 0) {
             modelSelect.innerHTML = '<option value="">Select model...</option>' +
                 data.models.map(m => 
                     `<option value="${m.id}" data-prompt="${m.pricing_prompt}" data-completion="${m.pricing_completion}">${m.name}</option>`
                 ).join('');
             modelSelect.disabled = false;
             
-            statusDiv.textContent = 'Status: online';
-            statusDiv.className = 'provider-status online';
+            statusDiv.textContent = `Status: ${data.status || 'online'}`;
+            statusDiv.className = 'provider-status ' + (data.status || 'online');
             
             costEstimate.classList.remove('hidden');
             loadOpenRouterBalance();
         } else {
-            throw new Error('No models returned');
+            const errMsg = data.error ? (data.error.message || data.error) : (data.status === 'offline' ? 'Connection failed' : 'No models returned');
+            statusDiv.textContent = `Status: ${data.status || 'error'} - ${errMsg}`;
+            statusDiv.className = 'provider-status error';
+            modelSelect.innerHTML = '<option value="">No models available</option>';
+            showToast(`Failed to load OpenRouter models: ${errMsg}`, 'error');
         }
     } catch (error) {
         statusDiv.textContent = 'Error: Invalid API key or connection failed';
@@ -1227,10 +1231,12 @@ async function handleChatProviderChange(context = 'live') {
             const response = await fetch(`/api/providers/openrouter/models?api_key=${encodeURIComponent(state.openRouterKey)}`);
             const data = await response.json();
             
-            if (data.models) {
+            if (data.models && data.models.length > 0) {
                 modelSelect.innerHTML = '<option value="">Select model...</option>' +
                     data.models.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
                 modelSelect.disabled = false;
+            } else {
+                modelSelect.innerHTML = '<option value="">No models available</option>';
             }
         } catch (error) {
             console.error('Failed to load OpenRouter models for chat:', error);
