@@ -1,1 +1,0 @@
-{"status": "failed", "stage": "error", "progress": 5, "current_frame": 0, "total_frames": 0, "last_update": 1776297110.6364467, "error": "CUDA failed with error no CUDA-capable device is detected"}
