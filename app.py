@@ -348,6 +348,68 @@ def on_monitor_update(data: dict):
 monitor.register_callback(on_monitor_update)
 
 
+def recover_stale_jobs():
+    """On startup, find jobs with status 'running' that have no live worker and mark them failed."""
+    jobs_dir = Path("jobs")
+    if not jobs_dir.exists():
+        return
+    for job_dir in jobs_dir.iterdir():
+        if not job_dir.is_dir():
+            continue
+        status_file = job_dir / "status.json"
+        if not status_file.exists():
+            continue
+        try:
+            status = json.loads(status_file.read_text())
+        except Exception:
+            continue
+        if status.get("status") not in ("running", "queued"):
+            continue
+        # Check if worker process is still alive
+        pid_file = job_dir / "pid"
+        if pid_file.exists():
+            try:
+                pid = int(pid_file.read_text().strip())
+                os.kill(pid, 0)  # Check if process exists
+                logger.info(f"Recovering monitor for running job {job_dir.name} (PID {pid})")
+                _spawned_jobs.discard(job_dir.name)  # Allow re-spawn
+                # Clean stale pid/pgid so spawn_worker doesn't skip
+                pid_file.unlink(missing_ok=True)
+                (job_dir / "pgid").unlink(missing_ok=True)
+                # Re-queue the job with VRAM manager
+                input_file = job_dir / "input.json"
+                if input_file.exists():
+                    try:
+                        config = json.loads(input_file.read_text())
+                        vram_manager.submit_job(
+                            job_id=job_dir.name,
+                            provider_type=config.get("provider_type", "ollama"),
+                            provider_name=config.get("provider_name", ""),
+                            model_id=config.get("model", ""),
+                            vram_required=0,
+                            video_path=config.get("video_path", ""),
+                            params=config.get("params", {}),
+                            priority=0,
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to re-queue job {job_dir.name}: {e}")
+            except ProcessLookupError:
+                logger.info(f"Job {job_dir.name} has stale PID, marking failed")
+                status["status"] = "failed"
+                status["stage"] = "error"
+                status["error"] = "Worker process died (container restart)"
+                status_file.write_text(json.dumps(status))
+                pid_file.unlink(missing_ok=True)
+                (job_dir / "pgid").unlink(missing_ok=True)
+            except PermissionError:
+                pass
+            except Exception as e:
+                logger.warning(f"Error checking stale job {job_dir.name}: {e}")
+
+
+recover_stale_jobs()
+
+
 # ==================== Transcode Helpers ====================
 
 

@@ -207,11 +207,13 @@ async function viewJobResults(jobId) {
 }
 
 async function cancelJob(jobId) {
+    if (state.debug) console.log('[DEBUG:JOBS] cancelJob called for', jobId);
     if (!confirm(`Cancel job ${jobId}?`)) return;
 
     try {
         const response = await fetch(`/api/jobs/${jobId}`, { method: 'DELETE' });
         const result = await response.json();
+        if (state.debug) console.log('[DEBUG:JOBS] cancelJob response', result);
 
         if (result.success) {
             showToast(`Job ${jobId} cancelled`);
