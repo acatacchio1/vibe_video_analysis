@@ -40,6 +40,52 @@ socketio = SocketIO(
     max_http_buffer_size=1024 * 1024 * 100,
 )
 
+# Socket log handler - emits log records to connected clients
+class SocketLogHandler(logging.Handler):
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            socketio.emit('log_message', {
+                'level': record.levelname,
+                'message': msg,
+                'timestamp': self.formatTime(record),
+            })
+        except Exception:
+            pass
+
+socket_log_handler = SocketLogHandler()
+socket_log_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+logger.addHandler(socket_log_handler)
+logger = logging.getLogger(__name__)
+
+# Flask app
+app = Flask(__name__)
+app.config["SECRET_KEY"] = os.urandom(24)
+socketio = SocketIO(
+    app,
+    cors_allowed_origins="*",
+    ping_timeout=60,
+    ping_interval=25,
+    max_http_buffer_size=1024 * 1024 * 100,
+)
+
+# Socket log handler - emits log records to connected clients
+class SocketLogHandler(logging.Handler):
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            socketio.emit('log_message', {
+                'level': record.levelname,
+                'message': msg,
+                'timestamp': self.formatTime(record),
+            })
+        except Exception:
+            pass
+
+socket_log_handler = SocketLogHandler()
+socket_log_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+logger.addHandler(socket_log_handler)
+
 # Provider registry
 providers: Dict[str, Any] = {}
 
@@ -512,6 +558,56 @@ def _extract_frames(video_path: str, dedup_threshold: int = 10):
                 logger.info(f"Dedup removed {removed} similar frames (threshold={dedup_threshold}), {actual_count} remaining")
         except Exception as e:
             logger.warning(f"Frame dedup failed (non-fatal): {e}")
+
+    # Renumber frames sequentially and build timestamp index
+    # This ensures frame numbers are contiguous (1,2,3...) and each maps to
+    # the correct video timestamp for transcript synchronization.
+    _emit("renumbering", 45)
+    kept_frames = sorted(frames_dir.glob("frame_*.jpg"))
+    actual_count = len(kept_frames)
+    frames_index = {}
+    for new_idx, old_frame in enumerate(kept_frames, start=1):
+        old_num = int(old_frame.stem.split("_")[1])
+        timestamp_s = (old_num - 1) / fps
+        frames_index[new_idx] = round(timestamp_s, 3)
+        if new_idx != old_num:
+            new_name = f"frame_{new_idx:06d}.jpg"
+            new_path = frames_dir / new_name
+            old_frame.rename(new_path)
+            old_thumb = thumbs_dir / old_frame.name.replace("frame_", "thumb_")
+            new_thumb = thumbs_dir / new_name.replace("frame_", "thumb_")
+            if old_thumb.exists():
+                old_thumb.rename(new_thumb)
+    logger.info(f"Renumbered {actual_count} frames sequentially with timestamp index")
+
+    # Save frames_index.json: {frame_num: timestamp_seconds}
+    index_path = video.parent / stem / "frames_index.json"
+    index_path.write_text(json.dumps(frames_index))
+
+    # Renumber frames sequentially and build timestamp index
+    # This ensures frame numbers are contiguous (1,2,3...) and each maps to
+    # the correct video timestamp for transcript synchronization.
+    _emit("renumbering", 45)
+    kept_frames = sorted(frames_dir.glob("frame_*.jpg"))
+    actual_count = len(kept_frames)
+    frames_index = {}
+    for new_idx, old_frame in enumerate(kept_frames, start=1):
+        old_num = int(old_frame.stem.split("_")[1])
+        timestamp_s = (old_num - 1) / fps
+        frames_index[new_idx] = round(timestamp_s, 3)
+        if new_idx != old_num:
+            new_name = f"frame_{new_idx:06d}.jpg"
+            new_path = frames_dir / new_name
+            old_frame.rename(new_path)
+            old_thumb = thumbs_dir / old_frame.name.replace("frame_", "thumb_")
+            new_thumb = thumbs_dir / new_name.replace("frame_", "thumb_")
+            if old_thumb.exists():
+                old_thumb.rename(new_thumb)
+    logger.info(f"Renumbered {actual_count} frames sequentially with timestamp index")
+
+    # Save frames_index.json: {frame_num: timestamp_seconds}
+    index_path = video.parent / stem / "frames_index.json"
+    index_path.write_text(json.dumps(frames_index))
 
     _emit("generating_thumbnails", 50)
     try:

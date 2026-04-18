@@ -14,7 +14,8 @@ def register_socket_handlers(socketio):
 
     @socketio.on("connect")
     def handle_connect(auth=None):
-        from flask_socketio import emit, request
+        from flask_socketio import emit
+        from flask import request
         from monitor import monitor
         logger.info(f"Client connected: {request.sid}")
         emit("connected", {"message": "Connected to Video Analyzer Web"})
@@ -34,12 +35,13 @@ def register_socket_handlers(socketio):
 
     @socketio.on("disconnect")
     def handle_disconnect(auth=None):
-        from flask_socketio import request
+        from flask import request
         logger.info(f"Client disconnected: {request.sid}")
 
     @socketio.on("subscribe_job")
     def handle_subscribe_job(data):
-        from flask_socketio import emit, join_room, request
+        from flask_socketio import emit, join_room
+        from flask import request
         job_id = data.get("job_id")
         if not job_id:
             return
@@ -92,7 +94,8 @@ def register_socket_handlers(socketio):
 
     @socketio.on("start_analysis")
     def handle_start_analysis(data):
-        from flask_socketio import emit, request
+        from flask_socketio import emit
+        from flask import request
         from vram_manager import vram_manager
 
         job_id = str(uuid.uuid4())[:8]

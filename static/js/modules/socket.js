@@ -57,6 +57,10 @@ function initSocket() {
     state.socket.on('vram_event', (data) => {
         handleVramEvent(data);
     });
+
+    state.socket.on('log_message', (data) => {
+        appendServerLog(data);
+    });
 }
 
 function subscribeToJob(jobId) {

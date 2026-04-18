@@ -1,6 +1,6 @@
 # Video Analyzer Web - Agent Development Guide
 
-> Version 0.2.0 | Last updated: 2026-04-18
+> Version 0.2.1 | Last updated: 2026-04-18
 
 This document provides essential context for AI agents working on this codebase.
 
@@ -18,12 +18,13 @@ This document provides essential context for AI agents working on this codebase.
 - **Deployment**: Docker (nvidia/cuda base), docker-compose
 
 ### Key Design Decisions
-- **Port 1000** - All services run on port 1000 (Docker maps 1000:1000)
+- **Port 10000** - All services run on port 10000 (non-privileged, Docker maps 10000:10000)
 - **Source videos preserved** - Upload transcodes to 720p but keeps original
 - **Whisper models baked into Docker image** - HF cache at `/root/.cache/huggingface` (NOT under volume mount)
-- **Compute type**: `float16` for CUDA, `int8` for CPU (in `app.py` transcribe and `worker.py`)
+- **Compute type**: `float16` for CUDA, `int8` for CPU (in `app.py` transcribe)
 - **Job execution**: VRAM-aware scheduler → spawns worker subprocess per job
-- **Real-time updates**: SocketIO for job progress, frame analysis, system monitoring
+- **Real-time updates**: SocketIO for job progress, frame analysis, system monitoring, server logs
+- **Frame renumbering**: After dedup, frames are renumbered sequentially (1,2,3...) with a `frames_index.json` mapping each frame to its actual video timestamp for accurate transcript sync
 
 ---
 
@@ -31,10 +32,11 @@ This document provides essential context for AI agents working on this codebase.
 
 ```
 video-analyzer-web/
-├── app.py                          # Flask entry point (697 lines)
+├── app.py                          # Flask entry point (~700 lines)
 │   ├── Flask app + SocketIO setup
 │   ├── Blueprint registration (src/api/*)
 │   ├── SocketIO handler registration (src/websocket/*)
+│   ├── SocketLogHandler - emits logs to UI via SocketIO
 │   ├── spawn_worker() / monitor_job() - worker lifecycle
 │   ├── VRAM manager + monitor callbacks
 │   └── _transcode_and_delete_with_cleanup(), _extract_frames(), _transcribe_video()
@@ -59,13 +61,13 @@ video-analyzer-web/
 │
 ├── src/                            # Refactored modules (v0.2.0+)
 │   ├── api/                        # Flask blueprints (routes only)
-│   │   ├── videos.py               # /api/videos, upload, delete, frames, transcript
+│   │   ├── videos.py               # /api/videos, upload, delete, frames, transcript, frames_index
 │   │   ├── providers.py            # /api/providers, discover, models, cost, balance
 │   │   ├── jobs.py                 # /api/jobs, cancel, priority, results
 │   │   ├── llm.py                  # /api/llm/chat, queue stats
 │   │   ├── results.py              # /api/results (stored results browser)
 │   │   ├── system.py               # /api/vram, /api/gpus
-│   │   └── transcode.py            # /api/videos/transcode (manual trigger)
+│   │   └── transcode.py            # /api/videos/transcode, /api/videos/reprocess
 │   │
 │   ├── websocket/
 │   │   └── handlers.py             # SocketIO events (connect, subscribe_job, start_analysis)
@@ -92,11 +94,11 @@ video-analyzer-web/
 │       └── modules/
 │           ├── state.js            # Global state object, localStorage helpers
 │           ├── socket.js           # Socket.IO connection, event registrations
-│           ├── videos.js           # Upload, list, delete, transcode progress
+│           ├── videos.js           # Upload, list, delete, reprocess, transcode progress, server log
 │           ├── providers.js        # Discovery, model loading, OpenRouter key/balance
 │           ├── jobs.js             # Job rendering, cancellation, details modal
 │           ├── llm.js              # LLM chat (live/modal/results contexts), polling
-│           ├── frame-browser.js    # Frame range sliders, thumbnails, transcript context
+│           ├── frame-browser.js    # Frame range sliders, thumbnails, transcript context (timestamp-aware)
 │           ├── system.js           # GPU status display, monitor tabs
 │           ├── results.js          # Stored results browser, detail view
 │           ├── settings.js         # Settings persistence, toggle handlers
@@ -107,7 +109,7 @@ video-analyzer-web/
 ├── Dockerfile                      # nvidia/cuda:12.1.0-base-ubuntu22.04
 ├── docker-compose.yml
 ├── requirements.txt
-├── VERSION                         # Current: 0.2.0
+├── VERSION                         # Current: 0.2.1
 └── AGENTS.md                       # This file
 ```
 
@@ -138,14 +140,17 @@ These files are part of the `video-analyzer` Python package or are external util
 1. **Blueprints** - All routes live in `src/api/*.py` as Flask blueprints. The main `app.py` only registers them.
 2. **Error responses** - Use `api_error(message, code)` which returns `{"error": {"code": N, "message": "..."}}`.
 3. **SocketIO events** - Registered via `register_socket_handlers(socketio)` in `src/websocket/handlers.py`.
-4. **Job lifecycle**:
+4. **SocketIO handlers must accept `auth=None` parameter** - Flask-SocketIO passes an auth argument on connect/disconnect.
+5. **Socket log handler** - `SocketLogHandler` in `app.py` emits all log records to clients via `socketio.emit('log_message', ...)`. Must be instantiated AFTER `socketio` is created.
+6. **Job lifecycle**:
    ```
    Client emits "start_analysis" → VRAM manager queues job → 
    on_vram_event("started") → spawn_worker() → monitor_job() → 
    worker.py runs stages → results.json saved → emit job_complete
    ```
-5. **Worker stages**: Get frames → Analyze each frame (Ollama/OpenRouter) → Load transcript → Generate video description → Save results → Auto-LLM (if configured).
-6. **Transcode flow**: Upload → `_transcode_and_delete_with_cleanup()` → `_extract_frames()` → `_transcribe_video()` → emit `videos_updated`.
+7. **Worker stages**: Get frames → Analyze each frame (Ollama/OpenRouter) → Load transcript → Generate video description → Save results → Auto-LLM (if configured).
+8. **Transcode flow**: Upload → `_transcode_and_delete_with_cleanup()` → `_extract_frames()` → `_transcribe_video()` → emit `videos_updated`.
+9. **Frame renumbering**: After dedup, frames are renamed sequentially (frame_000001, frame_000002, ...) and `frames_index.json` maps each new frame number to its actual video timestamp. This ensures transcript context is always accurate.
 
 ### Frontend
 
@@ -154,11 +159,12 @@ These files are part of the `video-analyzer` Python package or are external util
 3. **SocketIO** - Connection established in `socket.js`, all event handlers registered there.
 4. **No build step** - Plain script tags in `index.html`. No ES modules, no bundler.
 5. **CSS custom properties** - All colors, spacing, radii defined as `--var-*` in `:root`.
+6. **Frame browser uses `frames_index.json`** - `getFrameTimestamp(frameNum)` reads from the index for accurate transcript sync, falling back to `(frameNum-1)/fps` if unavailable.
 
 ### Docker
 
 1. **HF_HOME removed** - Whisper models cache to `/root/.cache/huggingface` (default), NOT under volume mount.
-2. **Port 1000** everywhere - Dockerfile EXPOSE, HEALTHCHECK, CMD, docker-compose, app.py.
+2. **Port 10000** everywhere - Dockerfile EXPOSE, HEALTHCHECK, CMD, docker-compose, app.py.
 3. **Volume mounts**: `uploads`, `jobs`, `cache`, `config`, `output` - these persist across restarts.
 4. **GPU access**: `deploy.resources.reservations.devices` with `driver: nvidia`.
 
@@ -173,8 +179,9 @@ These files are part of the `video-analyzer` Python package or are external util
 
 ### Add a new SocketIO event
 1. Add handler in `src/websocket/handlers.py` inside `register_socket_handlers()`
-2. Add client-side listener in `static/js/modules/socket.js`
-3. Add handler function in appropriate module
+2. Handler signature must accept `auth=None` parameter: `def handle_event(data, auth=None):`
+3. Add client-side listener in `static/js/modules/socket.js`
+4. Add handler function in appropriate module
 
 ### Change Whisper model behavior
 - **app.py transcription** (upload flow): Lines with `WhisperModel(whisper_model, device=device, compute_type=compute_type)`
@@ -194,9 +201,12 @@ These files are part of the `video-analyzer` Python package or are external util
 2. **`socketio` and `app`** are also globals imported by blueprints and handlers
 3. **Double-spawn guard**: `_spawned_jobs` set in `app.py` prevents worker from being spawned twice
 4. **Ollama patch in worker**: Monkey-patches `ollama.chat` to add `think:false` - this is runtime, not a file change
-5. **Frame dedup**: Uses perceptual hashing (`imagehash.phash`) with configurable threshold
+5. **Frame dedup**: Uses perceptual hashing (`imagehash.phash`) with configurable threshold. After dedup, frames are renumbered sequentially and `frames_index.json` is saved.
 6. **Audio cleanup**: `audio.wav` is always deleted after transcription (finally block)
 7. **Source video preserved**: The original uploaded file is NOT deleted after transcode (changed in v0.2.0)
+8. **SocketLogHandler must be created after socketio** - Otherwise `socketio.emit()` silently fails
+9. **Port 10000** - Non-privileged port. Port 1000 requires root on Linux.
+10. **`request` comes from `flask`, NOT `flask_socketio`** - Common import error in SocketIO handlers
 
 ---
 
@@ -212,9 +222,9 @@ python3 app.py
 docker compose up --build
 
 # Test endpoints
-curl http://localhost:1000/api/vram
-curl http://localhost:1000/api/providers
-curl http://localhost:1000/api/jobs
+curl http://localhost:10000/api/vram
+curl http://localhost:10000/api/providers
+curl http://localhost:10000/api/jobs
 ```
 
 ---

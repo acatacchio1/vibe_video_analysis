@@ -70,6 +70,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Save settings on change
     document.querySelectorAll('#spf-input, #temperature-input, #dedup-sensitivity-input, #whisper-select, #language-input, #device-select, #keep-frames-checkbox')
         .forEach(el => el.addEventListener('change', saveSettings));
+
+    // Clear server log
+    document.getElementById('clear-log-btn')?.addEventListener('click', clearServerLog);
 });
 
 async function submitAnalysis() {

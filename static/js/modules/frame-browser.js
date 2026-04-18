@@ -1,4 +1,6 @@
 // Frame browser: range selection, thumbnails, transcript context
+// Uses frames_index.json (frame_num -> timestamp_seconds) for accurate
+// transcript synchronization after dedup renumbering.
 async function initFrameBrowserForSelectedVideo() {
     const select = document.getElementById('video-select');
     const option = select.selectedOptions[0];
@@ -17,6 +19,7 @@ async function initFrameBrowser(videoName) {
     fb.videoName = videoName;
     fb.thumbCache.clear();
     fb.transcript = null;
+    fb.framesIndex = {};
 
     try {
         const response = await fetch(`/api/videos/${encodeURIComponent(videoName)}/frames`);
@@ -33,6 +36,17 @@ async function initFrameBrowser(videoName) {
         fb.duration = meta.duration || 0;
         fb.startFrame = 1;
         fb.endFrame = fb.totalFrames;
+
+        // Load the frames_index for accurate timestamp lookup
+        try {
+            const indexResp = await fetch(`/api/videos/${encodeURIComponent(videoName)}/frames_index`);
+            if (indexResp.ok) {
+                fb.framesIndex = await indexResp.json();
+            }
+        } catch (e) {
+            console.warn('No frames_index found, falling back to computed timestamps:', e);
+            fb.framesIndex = {};
+        }
 
         const startSlider = document.getElementById('start-frame-slider');
         const endSlider = document.getElementById('end-frame-slider');
@@ -101,7 +115,9 @@ function updateFrameRangeSummary() {
     if (!summary) return;
 
     const rangeCount = fb.endFrame - fb.startFrame + 1;
-    const rangeDuration = rangeCount / fb.fps;
+    const startTs = getFrameTimestamp(fb.startFrame);
+    const endTs = getFrameTimestamp(fb.endFrame);
+    const rangeDuration = endTs - startTs;
     summary.textContent = `Selected: ${rangeCount} frames (${formatDurationShort(rangeDuration)}) of ${fb.totalFrames} total`;
 }
 
@@ -198,9 +214,19 @@ function handleFrameStep(which, direction) {
     updateFrameRangeSummary();
 }
 
-function updateFrameTime(which, frameNum) {
+// Get the actual video timestamp for a frame number.
+// Uses frames_index.json if available (accurate after dedup),
+// otherwise falls back to computed (frameNum - 1) / fps.
+function getFrameTimestamp(frameNum) {
     const fb = state.frameBrowser;
-    const seconds = (frameNum - 1) / fb.fps;
+    if (fb.framesIndex && fb.framesIndex[frameNum] !== undefined) {
+        return fb.framesIndex[frameNum];
+    }
+    return (frameNum - 1) / fb.fps;
+}
+
+function updateFrameTime(which, frameNum) {
+    const seconds = getFrameTimestamp(frameNum);
     const el = document.getElementById(`${which}-frame-time`);
     if (el) el.textContent = formatDurationShort(seconds);
 }
@@ -248,7 +274,8 @@ function updateTranscriptContext(which, frameNum) {
         return;
     }
 
-    const timestamp = (frameNum - 1) / fb.fps;
+    // Use actual timestamp from frames_index, not computed
+    const timestamp = getFrameTimestamp(frameNum);
     const windowBefore = 3;
     const windowAfter = 3;
     const windowStart = timestamp - windowBefore;

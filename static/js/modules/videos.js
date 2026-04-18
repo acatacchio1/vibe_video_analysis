@@ -32,6 +32,7 @@ function renderVideosList(videos) {
                 </div>
             </div>
             <div class="video-actions">
+                <button onclick="openReprocessModal('${video.name}', '${video.path}')" title="Reprocess with new settings">🔄</button>
                 <button onclick="deleteVideo('${video.name}')" title="Delete video">🗑️</button>
             </div>
         </div>
@@ -177,3 +178,127 @@ function handleFrameExtractionProgress(data) {
 function handleTranscriptionProgress(data) {
     console.log(`Transcription: ${data.stage} - ${data.progress}%`);
 }
+
+function appendServerLog(data) {
+    const container = document.getElementById('server-log-content');
+    if (!container) return;
+
+    const entry = document.createElement('div');
+    entry.className = `log-entry log-${data.level}`;
+
+    const ts = data.timestamp ? data.timestamp.split('.')[0].split(' ')[1] || data.timestamp : '';
+    entry.innerHTML = `<span class="log-timestamp">${ts}</span><span class="log-level">[${data.level}]</span>${escapeHtml(data.message)}`;
+
+    container.appendChild(entry);
+    container.scrollTop = container.scrollHeight;
+
+    while (container.children.length > 500) {
+        container.removeChild(container.firstChild);
+    }
+}
+
+function clearServerLog() {
+    const container = document.getElementById('server-log-content');
+    if (container) container.innerHTML = '';
+}
+
+function openReprocessModal(name, path) {
+    const modal = document.getElementById('reprocess-modal');
+    document.getElementById('reprocess-video-name').textContent = name;
+    document.getElementById('reprocess-video-path').value = path;
+    modal.classList.remove('hidden');
+}
+
+async function submitReprocess() {
+    const path = document.getElementById('reprocess-video-path').value;
+    const fps = document.getElementById('reprocess-fps').value || '1';
+    const whisper = document.getElementById('reprocess-whisper').value || 'base';
+    const language = document.getElementById('reprocess-language').value || 'en';
+    const dedup = document.getElementById('reprocess-dedup').value || '10';
+
+    try {
+        const response = await fetch('/api/videos/reprocess', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                video_path: path,
+                fps: parseFloat(fps),
+                whisper_model: whisper,
+                language: language,
+                dedup_threshold: parseInt(dedup),
+            }),
+        });
+        const result = await response.json();
+        if (result.success) {
+            showToast(`Reprocessing started for ${path.split('/').pop()}`);
+            closeModal();
+        } else {
+            showToast(result.error?.message || 'Reprocess failed', 'error');
+        }
+    } catch (error) {
+        showToast('Reprocess failed: ' + error.message, 'error');
+    }
+}
+
+
+function appendServerLog(data) {
+    const container = document.getElementById('server-log-content');
+    if (!container) return;
+
+    const entry = document.createElement('div');
+    entry.className = `log-entry log-${data.level}`;
+
+    const ts = data.timestamp ? data.timestamp.split('.')[0].split(' ')[1] || data.timestamp : '';
+    entry.innerHTML = `<span class="log-timestamp">${ts}</span><span class="log-level">[${data.level}]</span>${escapeHtml(data.message)}`;
+
+    container.appendChild(entry);
+    container.scrollTop = container.scrollHeight;
+
+    while (container.children.length > 500) {
+        container.removeChild(container.firstChild);
+    }
+}
+
+function clearServerLog() {
+    const container = document.getElementById('server-log-content');
+    if (container) container.innerHTML = '';
+}
+
+function openReprocessModal(name, path) {
+    const modal = document.getElementById('reprocess-modal');
+    document.getElementById('reprocess-video-name').textContent = name;
+    document.getElementById('reprocess-video-path').value = path;
+    modal.classList.remove('hidden');
+}
+
+async function submitReprocess() {
+    const path = document.getElementById('reprocess-video-path').value;
+    const fps = document.getElementById('reprocess-fps').value || '1';
+    const whisper = document.getElementById('reprocess-whisper').value || 'base';
+    const language = document.getElementById('reprocess-language').value || 'en';
+    const dedup = document.getElementById('reprocess-dedup').value || '10';
+
+    try {
+        const response = await fetch('/api/videos/reprocess', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                video_path: path,
+                fps: parseFloat(fps),
+                whisper_model: whisper,
+                language: language,
+                dedup_threshold: parseInt(dedup),
+            }),
+        });
+        const result = await response.json();
+        if (result.success) {
+            showToast(`Reprocessing started for ${path.split('/').pop()}`);
+            closeModal();
+        } else {
+            showToast(result.error?.message || 'Reprocess failed', 'error');
+        }
+    } catch (error) {
+        showToast('Reprocess failed: ' + error.message, 'error');
+    }
+}
+
