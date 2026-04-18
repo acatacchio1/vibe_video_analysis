@@ -25,6 +25,7 @@ DEFAULT_TEMPERATURE = 0.2
 MAX_FRAMES_PER_JOB = 10000  # Maximum frames in frames.jsonl per job
 DEFAULT_FRAMES_PER_MINUTE = 60
 DEFAULT_FRAMERATE = 1  # Transcoded framerate
+DEFAULT_SIMILARITY_THRESHOLD = 10
 
 # Frame Extraction
 FRAME_ANALYSIS_BATCH_SIZE = 10  # Batch size for frame analysis

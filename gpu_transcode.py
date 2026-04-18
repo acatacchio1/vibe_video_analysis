@@ -195,7 +195,7 @@ def build_transcode_command(
     output_path: str,
     width: int = 1280,
     height: int = 720,
-    fps: int = 1,
+    fps: float = 1,
     gpu_index: int = 0,
 ) -> List[str]:
     """
