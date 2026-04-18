@@ -56,3 +56,28 @@ function closeUploadSettings(e) {
         popover.classList.add('hidden');
     }
 }
+
+async function toggleDebugMode() {
+    try {
+        const response = await fetch('/api/debug', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enable: !state.debug }),
+        });
+        const result = await response.json();
+        state.debug = result.debug;
+        localStorage.setItem('va_debug', state.debug);
+        updateDebugButton();
+        showToast(result.message);
+    } catch (error) {
+        console.error('Failed to toggle debug:', error);
+    }
+}
+
+function updateDebugButton() {
+    const btn = document.getElementById('debug-btn');
+    if (btn) {
+        btn.style.opacity = state.debug ? '1' : '0.5';
+        btn.title = state.debug ? 'Debug Mode ON - click to disable' : 'Debug Mode OFF - click to enable';
+    }
+}

@@ -100,19 +100,23 @@ def upload_video():
 def delete_video(filename):
     """Delete a video and its thumbnail"""
     import shutil
-    from app import api_error
+    from app import api_error, _fix_permissions
     safe_name = secure_filename_util(filename)
     base = Path(__file__).parent.parent.parent
     filepath = base / "uploads" / safe_name
     if not filepath.exists():
         return api_error("Video not found", 404)
+    _fix_permissions(base / "uploads")
     filepath.unlink()
     thumb = base / "uploads" / "thumbs" / f"{Path(safe_name).stem}.jpg"
     if thumb.exists():
-        thumb.unlink()
+        try:
+            thumb.unlink()
+        except PermissionError:
+            pass
     job_dir = base / "jobs" / Path(safe_name).stem
     if job_dir.exists():
-        shutil.rmtree(job_dir)
+        shutil.rmtree(job_dir, ignore_errors=True)
     return jsonify({"success": True})
 
 

@@ -1,7 +1,8 @@
 """
 System API routes
 """
-from flask import Blueprint, jsonify
+import logging
+from flask import Blueprint, jsonify, request
 from vram_manager import vram_manager
 
 system_bp = Blueprint("system", __name__)
@@ -27,3 +28,28 @@ def get_gpu_list():
         }
         for gpu in gpus
     ])
+
+
+@system_bp.route("/api/debug", methods=["GET"])
+def get_debug_status():
+    """Get current debug mode status"""
+    from config.constants import DEBUG
+    return jsonify({"debug": DEBUG})
+
+
+@system_bp.route("/api/debug", methods=["POST"])
+def toggle_debug():
+    """Toggle debug logging at runtime"""
+    from config.constants import DEBUG
+    data = request.json or {}
+    enable = data.get("enable", not DEBUG)
+    level = logging.DEBUG if enable else logging.INFO
+    logging.getLogger().setLevel(level)
+    for name in ("src.websocket.handlers", "src.api.videos", "src.api.providers",
+                  "src.api.jobs", "src.api.transcode", "worker", __name__):
+        logging.getLogger(name).setLevel(level)
+    import config.constants as _c
+    _c.DEBUG = enable
+    msg = f"Debug mode {'enabled' if enable else 'disabled'}"
+    logging.getLogger(__name__).info(msg)
+    return jsonify({"debug": enable, "message": msg})

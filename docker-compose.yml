@@ -16,6 +16,8 @@ services:
       - ./output:/app/output
     environment:
       - PYTHONUNBUFFERED=1
+      - DEBUG=true
+      - LOG_LEVEL=DEBUG
       - NVIDIA_VISIBLE_DEVICES=all
       - OLLAMA_HOST=http://host.docker.internal:11434
     # GPU support for whisper and other CUDA operations

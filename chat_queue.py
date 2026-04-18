@@ -36,8 +36,7 @@ class ChatJob:
     prompt: str
     content: str
     api_key: str = ""
-    ollama_url: str = "http://host.docker.internal:11434"
-    created_at: float = field(default_factory=time.time)
+    ollama_url: str = "http://localhost:11434"
     started_at: Optional[float] = None
     completed_at: Optional[float] = None
     status: ChatJobStatus = ChatJobStatus.PENDING
@@ -219,7 +218,7 @@ class ChatQueueManager:
         prompt: str,
         content: str = "",
         api_key: str = "",
-        ollama_url: str = "http://host.docker.internal:11434",
+        ollama_url: str = "http://localhost:11434",
         priority: int = 0,
     ) -> str:
         """Submit a chat job and return job_id"""

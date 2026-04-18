@@ -62,6 +62,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // Notifications
     document.getElementById('notifications-btn')?.addEventListener('click', requestNotificationPermission);
 
+    // Debug toggle
+    document.getElementById('debug-btn')?.addEventListener('click', toggleDebugMode);
+    updateDebugButton();
+
     // Close modal on backdrop click
     document.getElementById('job-modal')?.addEventListener('click', (e) => {
         if (e.target.id === 'job-modal') closeModal();

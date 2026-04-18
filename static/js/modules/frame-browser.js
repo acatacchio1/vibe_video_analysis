@@ -16,6 +16,8 @@ async function initFrameBrowser(videoName) {
     const section = document.getElementById('frame-range-section');
     const fb = state.frameBrowser;
 
+    if (state.debug) console.log('[DEBUG:FRAME-BROWSER] initFrameBrowser', videoName);
+
     fb.videoName = videoName;
     fb.thumbCache.clear();
     fb.transcript = null;

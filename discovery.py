@@ -16,6 +16,7 @@ class OllamaDiscovery:
     PORT = 11434
     SCAN_TIMEOUT = 2
     REFRESH_INTERVAL = 30
+    ADDITIONAL_SUBNETS = ["192.168.1"]  # Always scan this subnet in addition to auto-detected
 
     def __init__(self):
         self.discovered: Set[str] = set()
@@ -48,33 +49,37 @@ class OllamaDiscovery:
             if self._check_server(url):
                 found.append(url)
 
-        # Scan subnet (1-254)
-        subnet = self._get_subnet()
-        logger.info(f"Scanning subnet {subnet}.0/24 for Ollama...")
+        # Collect all subnets to scan
+        subnets = set()
+        subnets.add(self._get_subnet())
+        subnets.update(self.ADDITIONAL_SUBNETS)
 
-        threads = []
-        results = []
+        for subnet in subnets:
+            logger.info(f"Scanning subnet {subnet}.0/24 for Ollama...")
 
-        def check_ip(i):
-            url = f"http://{subnet}.{i}:{self.PORT}"
-            if self._check_server(url, timeout=self.SCAN_TIMEOUT):
-                results.append(url)
+            threads = []
+            results = []
 
-        for i in range(1, 255):
-            t = threading.Thread(target=check_ip, args=(i,))
-            threads.append(t)
-            t.start()
+            def check_ip(sub, i):
+                url = f"http://{sub}.{i}:{self.PORT}"
+                if self._check_server(url, timeout=self.SCAN_TIMEOUT):
+                    results.append(url)
 
-            # Limit concurrent threads
-            if len(threads) >= 50:
-                for t in threads:
-                    t.join(timeout=self.SCAN_TIMEOUT + 1)
-                threads = []
+            for i in range(1, 255):
+                t = threading.Thread(target=check_ip, args=(subnet, i))
+                threads.append(t)
+                t.start()
 
-        for t in threads:
-            t.join(timeout=self.SCAN_TIMEOUT + 1)
+                # Limit concurrent threads
+                if len(threads) >= 50:
+                    for t in threads:
+                        t.join(timeout=self.SCAN_TIMEOUT + 1)
+                    threads = []
 
-        found.extend(results)
+            for t in threads:
+                t.join(timeout=self.SCAN_TIMEOUT + 1)
+
+            found.extend(results)
 
         with self.lock:
             self.discovered = set(found)

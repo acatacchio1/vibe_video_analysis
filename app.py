@@ -22,12 +22,17 @@ from monitor import monitor
 from providers.ollama import OllamaProvider
 from thumbnail import ensure_thumbnail
 from gpu_transcode import build_transcode_command, get_transcode_progress_parser
+from config.constants import DEBUG, LOG_LEVEL, LOG_FORMAT
 
 # Setup logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=getattr(logging, LOG_LEVEL, logging.INFO), format=LOG_FORMAT)
 logger = logging.getLogger(__name__)
+if DEBUG:
+    logging.getLogger().setLevel(logging.DEBUG)
+    for name in ("src.websocket.handlers", "src.api.videos", "src.api.providers",
+                  "src.api.jobs", "src.api.transcode", "worker"):
+        logging.getLogger(name).setLevel(logging.DEBUG)
+    logger.info("DEBUG mode enabled - all loggers set to DEBUG")
 
 # Flask app
 app = Flask(__name__)
@@ -39,6 +44,15 @@ socketio = SocketIO(
     ping_interval=25,
     max_http_buffer_size=1024 * 1024 * 100,
 )
+
+# Debug: wrap socketio.emit to log every emission
+_original_emit = socketio.emit
+def _debug_emit(event, *args, **kwargs):
+    if DEBUG and event != 'log_message':
+        room = kwargs.get("room", "broadcast")
+        logger.debug(f"[SOCKET EMIT] event={event} room={room} args_preview={str(args)[:200]}")
+    return _original_emit(event, *args, **kwargs)
+socketio.emit = _debug_emit
 
 # Socket log handler - emits log records to connected clients
 # Uses a thread-safe queue + background emitter to work with eventlet
@@ -70,6 +84,7 @@ def _log_emitter():
             pass
 
 socket_log_handler = SocketLogHandler()
+socket_log_handler.setLevel(logging.INFO)  # Only send INFO+ to browser, DEBUG stays in terminal
 socket_log_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
 logging.getLogger().addHandler(socket_log_handler)
 
@@ -182,6 +197,8 @@ def monitor_job(job_id: str, job_dir: Path, proc: subprocess.Popen):
 
                 if status != last_status:
                     last_status = status.copy()
+                    if DEBUG:
+                        logger.debug(f"[MONITOR] job={job_id} status changed: stage={status.get('stage')} progress={status.get('progress')} current_frame={status.get('current_frame')}")
                     socketio.emit(
                         "job_status", {"job_id": job_id, **status}, room=f"job_{job_id}"
                     )
@@ -214,6 +231,13 @@ def monitor_job(job_id: str, job_dir: Path, proc: subprocess.Popen):
                             logger.debug(
                                 f"Emitting {len(new_frames)} new frames for job {job_id}"
                             )
+                            if DEBUG:
+                                for nl in new_frames:
+                                    try:
+                                        fd = json.loads(nl)
+                                        logger.debug(f"[MONITOR] job={job_id} frame={fd.get('frame_number')} analysis_len={len(str(fd.get('analysis','')))}")
+                                    except Exception:
+                                        pass
                         for line in new_frames:
                             try:
                                 frame_data = json.loads(line)
@@ -246,6 +270,8 @@ def monitor_job(job_id: str, job_dir: Path, proc: subprocess.Popen):
             logger.debug(f"PGID cleanup for job {job_id}: {e}")
 
     success = proc.returncode == 0
+    if DEBUG:
+        logger.debug(f"[MONITOR] job={job_id} worker exited returncode={proc.returncode} success={success}")
     job_obj = vram_manager.get_job(job_id)
     if job_obj and job_obj.status in (
         JobStatus.COMPLETED,

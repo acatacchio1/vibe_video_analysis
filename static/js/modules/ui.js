@@ -73,7 +73,8 @@ function showToast(message, type = 'info') {
 }
 
 function closeModal() {
-    document.getElementById('job-modal').classList.add('hidden');
+    document.getElementById('job-modal')?.classList.add('hidden');
+    document.getElementById('reprocess-modal')?.classList.add('hidden');
 }
 
 function updateStartButton() {

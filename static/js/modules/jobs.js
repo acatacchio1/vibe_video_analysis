@@ -54,16 +54,19 @@ function renderJobsList(jobs) {
 }
 
 function handleJobCreated(data) {
+    if (state.debug) console.log('[DEBUG:JOBS] handleJobCreated', data);
     state.currentJob = data.job_id;
     subscribeToJob(data.job_id);
     loadJobs();
 }
 
 function handleJobUpdate(data) {
+    if (state.debug) console.log('[DEBUG:JOBS] handleJobUpdate', data);
     updateJobCard(data);
 }
 
 function handleJobStatus(data) {
+    if (state.debug) console.log('[DEBUG:JOBS] handleJobStatus stage=' + data.stage + ' progress=' + data.progress);
     updateJobCard(data);
     if (data.stage === 'analyzing_frames') {
         updateLiveAnalysis(data);
@@ -89,6 +92,7 @@ function handleJobDescription(data) {
 }
 
 function handleJobComplete(data) {
+    if (state.debug) console.log('[DEBUG:JOBS] handleJobComplete', data);
     if (data.success) {
         showToast(`Job ${data.job_id} completed`);
         loadStoredResults();
@@ -100,7 +104,10 @@ function handleJobComplete(data) {
 
 function updateJobCard(data) {
     const card = document.querySelector(`[data-job-id="${data.job_id}"]`);
-    if (!card) return;
+    if (!card) {
+        if (state.debug) console.log('[DEBUG:JOBS] updateJobCard: no card found for job', data.job_id);
+        return;
+    }
 
     const progressFill = card.querySelector('.job-progress-fill');
     const progressText = card.querySelector('.job-progress-text');
@@ -124,7 +131,10 @@ function updateLiveAnalysis(data) {
 
 function appendFrameLog(data) {
     const log = document.getElementById('frames-log');
-    if (!log) return;
+    if (!log) {
+        if (state.debug) console.log('[DEBUG:JOBS] appendFrameLog: no frames-log element');
+        return;
+    }
 
     const entry = document.createElement('div');
     entry.className = 'frame-entry';

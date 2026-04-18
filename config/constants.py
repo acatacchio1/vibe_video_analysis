@@ -2,6 +2,8 @@
 Constant configuration values for Video Analyzer Web
 """
 
+import os
+
 # Application
 APP_NAME = "Video Analyzer Web"
 VERSION = "1.0.0"
@@ -55,5 +57,6 @@ API_REQUEST_LIMIT = 100
 API_REQUEST_WINDOW = 60  # seconds
 
 # Logging
-LOG_LEVEL = "INFO"
+LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
+DEBUG = os.environ.get("DEBUG", "").lower() in ("1", "true", "yes")

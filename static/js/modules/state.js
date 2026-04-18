@@ -1,5 +1,7 @@
 // Global state for Video Analyzer Web
 const state = {
+    debug: new URLSearchParams(window.location.search).has('debug') ||
+            localStorage.getItem('va_debug') === 'true',
     providers: {},
     currentJob: null,
     currentJobResults: null,

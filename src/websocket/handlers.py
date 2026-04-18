@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 def register_socket_handlers(socketio):
     """Register all SocketIO event handlers"""
+    from config.constants import DEBUG
 
     @socketio.on("connect")
     def handle_connect(auth=None):
@@ -18,6 +19,8 @@ def register_socket_handlers(socketio):
         from flask import request
         from monitor import monitor
         logger.info(f"Client connected: {request.sid}")
+        if DEBUG:
+            logger.debug(f"[SOCKET RECV] connect auth={auth}")
         emit("connected", {"message": "Connected to Video Analyzer Web"})
         latest = monitor.get_latest()
         if latest["nvidia_smi"]:
@@ -37,6 +40,8 @@ def register_socket_handlers(socketio):
     def handle_disconnect(auth=None):
         from flask import request
         logger.info(f"Client disconnected: {request.sid}")
+        if DEBUG:
+            logger.debug(f"[SOCKET RECV] disconnect sid={request.sid}")
 
     @socketio.on("subscribe_job")
     def handle_subscribe_job(data):
@@ -47,6 +52,8 @@ def register_socket_handlers(socketio):
             return
         join_room(f"job_{job_id}")
         logger.info(f"Client {request.sid} subscribed to job {job_id}")
+        if DEBUG:
+            logger.debug(f"[SOCKET RECV] subscribe_job data={data}")
         job_dir = Path("jobs") / job_id
         status_file = job_dir / "status.json"
         frames_file = job_dir / "frames.jsonl"
@@ -91,6 +98,8 @@ def register_socket_handlers(socketio):
         job_id = data.get("job_id")
         if job_id:
             leave_room(f"job_{job_id}")
+            if DEBUG:
+                logger.debug(f"[SOCKET RECV] unsubscribe_job job_id={job_id}")
 
     @socketio.on("start_analysis")
     def handle_start_analysis(data):
@@ -105,6 +114,9 @@ def register_socket_handlers(socketio):
         model_id = data.get("model")
         priority = data.get("priority", 0)
         provider_config = data.get("provider_config", {})
+
+        if DEBUG:
+            logger.debug(f"[SOCKET RECV] start_analysis video={video_path} provider={provider_name}/{provider_type} model={model_id} params_keys={list(data.keys())}")
 
         vram_required = 0
         if provider_type == "ollama":
@@ -143,6 +155,9 @@ def register_socket_handlers(socketio):
             },
         }
         (job_dir / "input.json").write_text(json.dumps(config))
+
+        if DEBUG:
+            logger.debug(f"[JOB CREATED] job_id={job_id} video_frames_dir={video_frames_dir} start_frame={config['params']['start_frame']} end_frame={config['params']['end_frame']}")
 
         job = vram_manager.submit_job(
             job_id=job_id,

@@ -16,7 +16,7 @@ def llm_chat():
     prompt = data.get("prompt", "")
     content = data.get("content", "")
     api_key = data.get("api_key", "")
-    ollama_url = data.get("ollama_url", "http://host.docker.internal:11434")
+    ollama_url = data.get("ollama_url", "http://localhost:11434")
 
     if not model_id:
         return jsonify({"error": "Model is required"}), 400
