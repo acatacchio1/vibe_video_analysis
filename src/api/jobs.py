@@ -14,7 +14,19 @@ jobs_bp = Blueprint("jobs", __name__)
 @jobs_bp.route("/api/jobs")
 def list_jobs():
     jobs = vram_manager.get_all_jobs()
-    return jsonify([job.to_dict() for job in jobs])
+    result = []
+    for job in jobs:
+        job_dict = job.to_dict()
+        job_dir = Path("jobs") / job.job_id
+        status_file = job_dir / "status.json"
+        if status_file.exists():
+            try:
+                status_data = json.loads(status_file.read_text())
+                job_dict.update(status_data)
+            except Exception:
+                pass
+        result.append(job_dict)
+    return jsonify(result)
 
 
 @jobs_bp.route("/api/jobs/running")

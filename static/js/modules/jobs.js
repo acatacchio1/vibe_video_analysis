@@ -74,6 +74,8 @@ function handleJobStatus(data) {
 }
 
 function handleFrameAnalysis(data) {
+    const liveSection = document.getElementById('live-analysis');
+    if (liveSection) liveSection.classList.remove('hidden');
     appendFrameLog(data);
 }
 
@@ -117,9 +119,16 @@ function updateJobCard(data) {
     if (progressText) {
         progressText.innerHTML = `<span>${data.stage || 'queued'}</span><span>${data.progress || 0}%</span>`;
     }
-    if (statusBadge && data.status) {
-        statusBadge.className = `job-status ${data.status}`;
-        statusBadge.textContent = data.status.toUpperCase();
+    if (data.status) {
+        if (statusBadge) {
+            statusBadge.className = `job-status ${data.status}`;
+            statusBadge.textContent = data.status.toUpperCase();
+        }
+        card.className = `job-card ${data.status}`;
+        const cancelBtn = card.querySelector('.btn.danger');
+        if (cancelBtn) {
+            cancelBtn.style.display = (data.status === 'running' || data.status === 'queued') ? '' : 'none';
+        }
     }
 }
 
