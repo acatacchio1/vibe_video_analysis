@@ -22,7 +22,7 @@ function renderJobsList(jobs) {
         const statusClass = job.status || 'queued';
         const progress = job.progress || 0;
         const model = job.model_id || job.model || 'unknown';
-        const video = job.video_path ? Path(job.video_path).name : '';
+        const video = job.video_path ? job.video_path.split('/').pop() : '';
 
         return `
             <div class="job-card ${statusClass}" data-job-id="${job.job_id}">
@@ -130,9 +130,9 @@ function appendFrameLog(data) {
     entry.className = 'frame-entry';
     entry.innerHTML = `
         <div class="frame-header">
-            <span class="frame-number">Frame ${data.frame}</span>
+            <span class="frame-number">Frame ${data.frame_number || data.frame}</span>
         </div>
-        <div class="frame-text">${formatFrameAnalysis(data.response || '')}</div>
+        <div class="frame-text">${formatFrameAnalysis(data.analysis || data.response || '')}</div>
     `;
     log.appendChild(entry);
     log.scrollTop = log.scrollHeight;

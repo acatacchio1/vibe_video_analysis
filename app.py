@@ -41,50 +41,41 @@ socketio = SocketIO(
 )
 
 # Socket log handler - emits log records to connected clients
+# Uses a thread-safe queue + background emitter to work with eventlet
+import queue as _queue
+import time as _time
+_log_queue = _queue.Queue(maxsize=500)
+
 class SocketLogHandler(logging.Handler):
     def emit(self, record):
         try:
             msg = self.format(record)
-            socketio.emit('log_message', {
+            _log_queue.put_nowait({
                 'level': record.levelname,
                 'message': msg,
-                'timestamp': self.formatTime(record),
+                'timestamp': _time.strftime('%Y-%m-%d %H:%M:%S', _time.localtime(record.created)),
             })
+        except _queue.Full:
+            pass  # Drop oldest if queue full
+
+def _log_emitter():
+    """Background thread that drains the log queue and emits via SocketIO"""
+    while True:
+        try:
+            data = _log_queue.get(timeout=1)
+            socketio.emit('log_message', data)
+        except _queue.Empty:
+            continue
         except Exception:
             pass
 
 socket_log_handler = SocketLogHandler()
 socket_log_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-logger.addHandler(socket_log_handler)
-logger = logging.getLogger(__name__)
+logging.getLogger().addHandler(socket_log_handler)
 
-# Flask app
-app = Flask(__name__)
-app.config["SECRET_KEY"] = os.urandom(24)
-socketio = SocketIO(
-    app,
-    cors_allowed_origins="*",
-    ping_timeout=60,
-    ping_interval=25,
-    max_http_buffer_size=1024 * 1024 * 100,
-)
-
-# Socket log handler - emits log records to connected clients
-class SocketLogHandler(logging.Handler):
-    def emit(self, record):
-        try:
-            msg = self.format(record)
-            socketio.emit('log_message', {
-                'level': record.levelname,
-                'message': msg,
-                'timestamp': self.formatTime(record),
-            })
-        except Exception:
-            pass
-
-socket_log_handler = SocketLogHandler()
-socket_log_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-logger.addHandler(socket_log_handler)
+# Start the log emitter background thread
+_log_thread = threading.Thread(target=_log_emitter, daemon=True, name='log-emitter')
+_log_thread.start()
 
 # Provider registry
 providers: Dict[str, Any] = {}
@@ -136,10 +127,13 @@ _spawned_jobs: set = set()
 
 def spawn_worker(job_id: str, job_dir: Path, gpu_assigned: Optional[int] = None):
     """Spawn worker subprocess for a job"""
+    # Guard against double-spawn: check pid file and in-memory set
+    pid_file = job_dir / "pid"
+    if pid_file.exists():
+        logger.warning(f"spawn_worker: pid file already exists for {job_id}, skipping")
+        return
     if job_id in _spawned_jobs:
-        logger.warning(
-            f"spawn_worker called twice for job {job_id} — ignoring duplicate"
-        )
+        logger.warning(f"spawn_worker called twice for job {job_id} — ignoring duplicate")
         return
     _spawned_jobs.add(job_id)
 
@@ -164,7 +158,7 @@ def spawn_worker(job_id: str, job_dir: Path, gpu_assigned: Optional[int] = None)
     )
 
     pgid = os.getpgid(proc.pid)
-    (job_dir / "pid").write_text(str(proc.pid))
+    pid_file.write_text(str(proc.pid))
     (job_dir / "pgid").write_text(str(pgid))
 
     logger.info(f"Spawned worker for job {job_id} (PID: {proc.pid}, PGID: {pgid})")
@@ -432,6 +426,8 @@ def _transcode_and_delete_with_cleanup(src_path: str, fps: float = 1, whisper_mo
                 ensure_thumbnail(str(output_path))
                 logger.info(f"Transcode complete: {output_name}")
                 _emit("complete", 100)
+                # Fix permissions on any root-owned dirs from Docker
+                _fix_permissions(input_path.parent)
                 _extract_frames(str(output_path), dedup_threshold)
                 _transcribe_video(str(output_path), whisper_model, language)
             else:
@@ -454,12 +450,36 @@ def _transcode_and_delete_with_cleanup(src_path: str, fps: float = 1, whisper_mo
     socketio.emit("videos_updated", {})
 
 
+def _fix_permissions(base_dir: Path):
+    """Fix root-owned files/dirs created by Docker to be user-writable."""
+    try:
+        import os
+        uid = os.getuid()
+        for item in base_dir.rglob("*"):
+            try:
+                stat = item.stat()
+                if stat.st_uid == 0:  # owned by root
+                    if item.is_dir():
+                        os.chmod(item, 0o775)
+                    else:
+                        os.chmod(item, 0o664)
+                    os.chown(item, uid, -1)
+            except (OSError, PermissionError):
+                pass
+    except Exception as e:
+        logger.warning(f"Permission fix failed: {e}")
+
+
 def _extract_frames(video_path: str, dedup_threshold: int = 10):
     """Extract all frames and thumbnails from a transcoded video."""
     video = Path(video_path)
     stem = video.stem
     frames_dir = video.parent / stem / "frames"
     thumbs_dir = frames_dir / "thumbs"
+
+    # Fix permissions on any root-owned dirs created by Docker
+    _fix_permissions(video.parent)
+
     frames_dir.mkdir(parents=True, exist_ok=True)
     thumbs_dir.mkdir(parents=True, exist_ok=True)
 
@@ -639,6 +659,8 @@ def _transcribe_video(video_path: str, whisper_model: str = "base", language: st
     video = Path(video_path)
     stem = video.stem
     video_dir = video.parent / stem
+    # Fix permissions before writing (Docker may have created as root)
+    _fix_permissions(video.parent)
     video_dir.mkdir(parents=True, exist_ok=True)
     src_name = video.name
 
@@ -754,7 +776,8 @@ def _transcribe_video(video_path: str, whisper_model: str = "base", language: st
 
 def init_providers():
     """Initialize default providers"""
-    ollama_local = OllamaProvider("Ollama-Local", "http://host.docker.internal:11434")
+    # Use localhost since we're running outside Docker
+    ollama_local = OllamaProvider("Ollama-Local", "http://localhost:11434")
     providers["Ollama-Local"] = ollama_local
 
     discovered = discovery.scan()

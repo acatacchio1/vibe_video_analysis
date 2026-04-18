@@ -241,29 +241,6 @@ async function submitReprocess() {
 }
 
 
-function appendServerLog(data) {
-    const container = document.getElementById('server-log-content');
-    if (!container) return;
-
-    const entry = document.createElement('div');
-    entry.className = `log-entry log-${data.level}`;
-
-    const ts = data.timestamp ? data.timestamp.split('.')[0].split(' ')[1] || data.timestamp : '';
-    entry.innerHTML = `<span class="log-timestamp">${ts}</span><span class="log-level">[${data.level}]</span>${escapeHtml(data.message)}`;
-
-    container.appendChild(entry);
-    container.scrollTop = container.scrollHeight;
-
-    while (container.children.length > 500) {
-        container.removeChild(container.firstChild);
-    }
-}
-
-function clearServerLog() {
-    const container = document.getElementById('server-log-content');
-    if (container) container.innerHTML = '';
-}
-
 function openReprocessModal(name, path) {
     const modal = document.getElementById('reprocess-modal');
     document.getElementById('reprocess-video-name').textContent = name;

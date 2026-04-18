@@ -78,15 +78,6 @@
                     <div id="server-log-content" class="server-log-content"></div>
                 </div>
 
-                <!-- Server Log -->
-                <div class="server-log">
-                    <div class="server-log-header">
-                        <span>Server Log</span>
-                        <button type="button" id="clear-log-btn" class="icon-btn" title="Clear log">🗑️</button>
-                    </div>
-                    <div id="server-log-content" class="server-log-content"></div>
-                </div>
-
                 <!-- Transcode Progress -->
                 <div id="transcode-status" class="transcode-status hidden">
                     <div class="transcode-header">
@@ -399,47 +390,6 @@
                 <button class="close-btn" onclick="closeModal()">&times;</button>
             </header>
             <div id="job-detail-content" class="modal-body"></div>
-        </div>
-    </div>
-
-    <!-- Reprocess Modal -->
-    <div id="reprocess-modal" class="modal hidden">
-        <div class="modal-content">
-            <header class="modal-header">
-                <h2>Reprocess Video</h2>
-                <button class="close-btn" onclick="closeModal()">&times;</button>
-            </header>
-            <div class="modal-body">
-                <p>Reprocess <strong id="reprocess-video-name"></strong> with new settings. This will re-transcode, re-extract frames, and re-transcribe.</p>
-                <input type="hidden" id="reprocess-video-path">
-                <div class="form-group">
-                    <label for="reprocess-fps">Seconds Per Frame</label>
-                    <input type="number" id="reprocess-fps" value="1" min="1" max="60">
-                </div>
-                <div class="form-group">
-                    <label for="reprocess-whisper">Whisper Model</label>
-                    <select id="reprocess-whisper">
-                        <option value="tiny">tiny (fastest)</option>
-                        <option value="base" selected>base</option>
-                        <option value="small">small</option>
-                        <option value="medium">medium</option>
-                        <option value="large">large (most accurate)</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="reprocess-language">Audio Language</label>
-                    <input type="text" id="reprocess-language" value="en" placeholder="e.g., en, es, fr">
-                </div>
-                <div class="form-group">
-                    <label for="reprocess-dedup">Dedup Sensitivity</label>
-                    <input type="number" id="reprocess-dedup" value="10" min="0" max="64">
-                    <small>0 = disabled, higher = remove more similar frames</small>
-                </div>
-                <div class="form-actions">
-                    <button class="btn primary" onclick="submitReprocess()">Reprocess</button>
-                    <button class="btn secondary" onclick="closeModal()">Cancel</button>
-                </div>
-            </div>
         </div>
     </div>
 

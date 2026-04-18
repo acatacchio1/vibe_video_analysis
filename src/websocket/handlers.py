@@ -155,4 +155,3 @@ def register_socket_handlers(socketio):
             priority=priority,
         )
         emit("job_created", {"job_id": job_id, "status": job.status.value})
-        emit("job_update", job.to_dict(), room=f"job_{job_id}")

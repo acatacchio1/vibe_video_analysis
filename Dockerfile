@@ -57,7 +57,7 @@ COPY . .
 RUN mkdir -p uploads thumbs jobs cache config output
 
 # Expose port
-EXPOSE 100000
+EXPOSE 10000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
