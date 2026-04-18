@@ -334,9 +334,10 @@ def run_analysis(job_dir: Path):
 
         if provider_type == "ollama":
             ollama_url = provider_config.get("url", "http://localhost:11434")
-            # If host.docker.internal, fall back to localhost (running outside Docker)
+            # Only replace host.docker.internal with localhost if NOT running in Docker
             if "host.docker.internal" in ollama_url:
-                ollama_url = ollama_url.replace("host.docker.internal", "localhost")
+                if not Path("/.dockerenv").exists():
+                    ollama_url = ollama_url.replace("host.docker.internal", "localhost")
             logger.info(f"Creating OllamaClient with url={ollama_url}")
             client = OllamaClient(ollama_url)
 
