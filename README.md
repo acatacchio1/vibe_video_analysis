@@ -51,13 +51,39 @@ pip3 install -r requirements.txt
 ./run.sh
 ```
 
-This runs the app directly on port 11000.
+This runs the app directly on port 10000.
+
+### Docker Installation
+
+```bash
+# Clone the directory
+mkdir -p ~/video-analyzer-web
+cd ~/video-analyzer-web
+
+# Start the service
+./start.sh
+```
+
+Or manually:
+
+```bash
+docker compose up --build -d
+```
+
+### Direct Installation (No Docker)
+
+```bash
+pip3 install -r requirements.txt
+./run.sh
+```
+
+This runs the app directly on port 10000.
 
 ### Access
 
 - Docker: http://localhost:10000
-- Direct: http://localhost:11000
-- Accessible from local network at http://your-ip:10000 (or :11000)
+- Direct: http://localhost:10000
+- Accessible from local network at http://your-ip:10000
 
 ## Configuration
 
@@ -236,7 +262,7 @@ Uploaded videos are automatically transcoded on upload:
 |----------|---------|-------------|
 | `OLLAMA_HOST` | `http://host.docker.internal:11434` | Default Ollama host |
 | `NVIDIA_VISIBLE_DEVICES` | `all` | GPU visibility |
-| `APP_URL` | `http://localhost:11000` | App URL for internal API calls (auto-LLM) |
+| `APP_URL` | `http://localhost:10000` | App URL for internal API calls (auto-LLM) |
 | `APP_ROOT` | `.` | Application root directory |
 | `PYTHONUNBUFFERED` | `1` | Unbuffered Python output |
 

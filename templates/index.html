@@ -9,7 +9,7 @@
 </head>
 <body>
     <header class="app-header">
-        <h1>Video Analyzer Web</h1>
+        <h1>Video Analyzer Web <span class="app-version">v{{ version }}</span></h1>
         <div class="header-actions">
             <button id="notifications-btn" class="icon-btn" title="Enable Notifications">🔔</button>
         </div>
@@ -384,6 +384,17 @@
         </div>
     </div>
 
-    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/modules/state.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/modules/ui.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/modules/socket.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/modules/videos.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/modules/providers.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/modules/jobs.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/modules/llm.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/modules/frame-browser.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/modules/system.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/modules/results.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/modules/settings.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/modules/init.js') }}"></script>
 </body>
 </html>

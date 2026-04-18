@@ -8,6 +8,9 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PATH="/usr/local/bin:${PATH}"
 
+# Hugging Face cache defaults to /root/.cache/huggingface (NOT under volume mount)
+# This ensures pre-downloaded Whisper models survive container startup
+
 # Install system dependencies with cache mounts and no-recommends to avoid pulling unnecessary packages
 # build-essential + python3-dev are required to compile C extensions (e.g. netifaces)
 # curl is required for the HEALTHCHECK below
@@ -35,6 +38,15 @@ COPY requirements.txt .
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip3 install -r requirements.txt
 
+# Pre-download Whisper models to avoid runtime downloads
+# This ensures models are baked into the image for offline/air-gapped operation
+RUN python3 -c "from faster_whisper import WhisperModel; \
+    print('Downloading Whisper base model...'); \
+    WhisperModel('base', device='cpu', compute_type='int8'); \
+    print('Downloading Whisper large model...'); \
+    WhisperModel('large', device='cpu', compute_type='int8'); \
+    print('All models downloaded successfully')"
+
 # Verify gunicorn is installed
 RUN which gunicorn && gunicorn --version
 
@@ -45,7 +57,7 @@ COPY . .
 RUN mkdir -p uploads thumbs jobs cache config output
 
 # Expose port
-EXPOSE 10000
+EXPOSE 100000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \

@@ -1,0 +1,19 @@
+"""
+Transcode API routes
+"""
+from pathlib import Path
+from flask import Blueprint, request, jsonify
+
+transcode_bp = Blueprint("transcode", __name__)
+
+
+@transcode_bp.route("/api/videos/transcode", methods=["POST"])
+def transcode_video():
+    """Manually trigger transcode for an already-uploaded video"""
+    from app import socketio, _transcode_and_delete_with_cleanup
+    data = request.json
+    video_path = data.get("video_path")
+    if not video_path or not Path(video_path).exists():
+        return jsonify({"error": "Video not found"}), 404
+    socketio.start_background_task(_transcode_and_delete_with_cleanup, video_path)
+    return jsonify({"success": True, "message": "Transcoding started"})

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run video-analyzer-web directly on port 11000 (no Docker)
+# Run video-analyzer-web directly on port 10000 (no Docker)
 
 cd "$(dirname "$0")"
 
@@ -18,7 +18,7 @@ fi
 
 mkdir -p uploads thumbs jobs cache output
 
-echo "Starting video-analyzer-web on port 11000..."
+echo "Starting video-analyzer-web on port 10000..."
 setsid python3 app.py >> "$LOG" 2>&1 &
 echo $! > "$PID_FILE"
 echo "Started PID $(cat $PID_FILE) — logs at $LOG"

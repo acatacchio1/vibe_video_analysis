@@ -117,6 +117,17 @@ body {
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
+    display: flex;
+    align-items: baseline;
+    gap: var(--spacing-sm);
+}
+
+.app-version {
+    font-size: 0.75rem;
+    font-weight: 400;
+    color: var(--text-muted);
+    -webkit-text-fill-color: var(--text-muted);
+    background: none;
 }
 
 .header-actions {
@@ -451,7 +462,7 @@ section > h2::before,
 
 .video-actions {
     display: flex;
-    gap: var(--spacing-md);
+    gap: var(--spacing-lg);
 }
 
 .video-actions button {
@@ -467,6 +478,23 @@ section > h2::before,
     transition: var(--transition);
     color: var(--text-secondary);
     font-size: 1.1rem;
+    margin: var(--spacing-xs);
+}
+
+.video-actions button {
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    width: 42px;
+    height: 42px;
+    border-radius: var(--border-radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: var(--transition);
+    color: var(--text-secondary);
+    font-size: 1.1rem;
+    margin: var(--spacing-xs);
 }
 
 .video-actions button:hover {
@@ -815,8 +843,9 @@ section > h2::before,
 
 .job-actions {
     display: flex;
-    gap: var(--spacing-md);
+    gap: var(--spacing-lg);
     margin-top: var(--spacing-md);
+    padding-top: var(--spacing-sm);
 }
 
 /* ========================================
@@ -886,7 +915,7 @@ section > h2::before,
 
 .provider-controls {
     display: flex;
-    gap: var(--spacing-sm);
+    gap: var(--spacing-md);
 }
 
 .provider-controls select {
@@ -929,6 +958,7 @@ section > h2::before,
 
 .advanced-toggle {
     text-align: center;
+    margin-top: var(--spacing-sm);
 }
 
 .link-btn {
@@ -1231,7 +1261,8 @@ section > h2::before,
 }
 
 .form-actions {
-    margin-top: var(--spacing-sm);
+    margin-top: var(--spacing-md);
+    padding-top: var(--spacing-sm);
 }
 
 /* ========================================
@@ -1239,7 +1270,7 @@ section > h2::before,
    ======================================== */
 
 .btn {
-    padding: var(--spacing-md) var(--spacing-lg);
+    padding: var(--spacing-md) var(--spacing-xl);
     border: none;
     border-radius: var(--border-radius);
     font-size: 0.95rem;
@@ -1302,7 +1333,7 @@ section > h2::before,
 }
 
 .btn.small {
-    padding: var(--spacing-sm) var(--spacing-md);
+    padding: var(--spacing-sm) var(--spacing-lg);
     font-size: 0.85rem;
 }
 
@@ -1813,5 +1844,269 @@ section > h2::before,
     to {
         opacity: 0;
         transform: translateX(100%);
+    }
+}/* ========================================
+   Transcode Progress
+   ======================================== */
+
+.transcode-status {
+    background: var(--bg-tertiary);
+    border-radius: var(--border-radius);
+    padding: 1rem;
+    margin-top: 1rem;
+    animation: fadeIn 0.5s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.transcode-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 0.5rem;
+    font-size: 0.9rem;
+}
+
+.transcode-bar {
+    height: 10px;
+    background: var(--bg-secondary);
+    border-radius: 5px;
+    overflow: hidden;
+}
+
+.transcode-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
+    width: 0%;
+    transition: width 0.5s ease;
+}
+
+/* ========================================
+   Main Tabs
+   ======================================== */
+
+.main-tabs {
+    display: flex;
+    background: var(--bg-tertiary);
+    border-radius: var(--border-radius);
+    padding: 0.25rem;
+    margin-bottom: 1.5rem;
+}
+
+.main-tab-btn {
+    flex: 1;
+    padding: 0.75rem;
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 500;
+    border-radius: calc(var(--border-radius) - 4px);
+    transition: var(--transition);
+}
+
+.main-tab-btn:hover {
+    background: var(--bg-hover);
+}
+
+.main-tab-btn.active {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+
+.main-tab-content {
+    display: block;
+}
+
+.main-tab-content.hidden {
+    display: none;
+}
+
+/* ========================================
+   Results Browser
+   ======================================== */
+
+.results-browser {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    gap: 1.5rem;
+    height: 600px;
+    max-height: 70vh;
+}
+
+.results-sidebar {
+    background: var(--bg-tertiary);
+    border-radius: var(--border-radius);
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+}
+
+.results-list {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.result-item {
+    background: var(--bg-secondary);
+    border-radius: calc(var(--border-radius) - 4px);
+    padding: 0.75rem;
+    cursor: pointer;
+    transition: var(--transition);
+    border-left: 3px solid var(--info);
+}
+
+.result-item:hover {
+    background: var(--bg-hover);
+}
+
+.result-item.active {
+    background: var(--bg-hover);
+    border-left-color: var(--accent-primary);
+}
+
+.result-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.result-meta {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.result-preview {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-top: 0.25rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.results-detail {
+    background: var(--bg-tertiary);
+    border-radius: var(--border-radius);
+    padding: 1.5rem;
+    overflow-y: auto;
+}
+
+.results-detail-content h3 {
+    margin-top: 1.5rem;
+    margin-bottom: 0.75rem;
+    font-size: 1.1rem;
+}
+
+.results-detail-content pre {
+    background: var(--bg-primary);
+    padding: 1rem;
+    border-radius: var(--border-radius);
+    font-size: 0.9rem;
+    line-height: 1.5;
+    overflow-x: auto;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+/* ========================================
+   LLM Chat Panel
+   ======================================== */
+
+.llm-chat-panel {
+    background: var(--bg-tertiary);
+    border-radius: var(--border-radius);
+    padding: 1.5rem;
+    margin-top: 1.5rem;
+}
+
+.llm-chat-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.llm-response {
+    background: var(--bg-primary);
+    border-radius: var(--border-radius);
+    margin-top: 1.5rem;
+    padding: 1rem;
+    animation: slideIn 0.3s ease;
+}
+
+.llm-response-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--bg-tertiary);
+    font-weight: 600;
+}
+
+.llm-response-text {
+    line-height: 1.6;
+    white-space: pre-wrap;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+/* ========================================
+   Modal Wide
+   ======================================== */
+
+.modal-wide {
+    max-width: 1000px;
+    max-height: 85vh;
+}
+
+/* ========================================
+   Responsive additions
+   ======================================== */
+
+@media (max-width: 900px) {
+    .results-browser {
+        grid-template-columns: 1fr;
+        height: auto;
+        max-height: none;
+    }
+    
+    .results-sidebar {
+        max-height: 300px;
+    }
+    
+    .modal-wide {
+        margin: 1rem;
+        max-height: 80vh;
+    }
+}
+
+@media (max-width: 600px) {
+    .main-tabs {
+        flex-direction: column;
+    }
+    
+    .main-tab-btn {
+        padding: 0.5rem;
+    }
+    
+    .results-detail {
+        padding: 1rem;
+    }
+    
+    .llm-chat-panel {
+        padding: 1rem;
     }
 }
