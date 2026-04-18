@@ -21,7 +21,18 @@ const state = {
     openRouterKey: localStorage.getItem('openrouter_api_key') || '',
     settings: JSON.parse(localStorage.getItem('va_settings') || '{}'),
     expandedPanels: JSON.parse(localStorage.getItem('va_expanded_panels') || '[]'),
-    transcodeActive: false
+    transcodeActive: false,
+    frameBrowser: {
+        totalFrames: 0,
+        fps: 1,
+        duration: 0,
+        startFrame: 1,
+        endFrame: 1,
+        videoName: '',
+        thumbCache: new Map(),
+        debounceTimer: null,
+        transcript: null,
+    },
 };
 
 // ========================================
@@ -119,6 +130,8 @@ function initSocket() {
     state.socket.on('frame_analysis', handleFrameAnalysis);
     state.socket.on('vram_event', handleVRAMEvent);
     state.socket.on('transcode_progress', handleTranscodeProgress);
+    state.socket.on('frame_extraction_progress', handleFrameExtractionProgress);
+    state.socket.on('transcription_progress', handleTranscriptionProgress);
     state.socket.on('video_transcoded', handleVideoTranscoded);
     state.socket.on('videos_updated', () => loadVideos());
 }
@@ -150,6 +163,27 @@ function initUI() {
     
     // Advanced options toggle
     document.getElementById('advanced-toggle-btn').addEventListener('click', toggleAdvancedOptions);
+    
+    // Video selection triggers frame browser
+    document.getElementById('video-select').addEventListener('change', handleVideoSelectChange);
+    
+    // Frame range sliders
+    document.getElementById('start-frame-slider').addEventListener('input', handleStartSliderChange);
+    document.getElementById('end-frame-slider').addEventListener('input', handleEndSliderChange);
+    
+    // Frame number inputs
+    document.getElementById('start-frame-input').addEventListener('change', handleStartInputChange);
+    document.getElementById('end-frame-input').addEventListener('change', handleEndInputChange);
+    
+    // Frame step buttons
+    document.getElementById('start-dec-btn').addEventListener('click', () => handleFrameStep('start', -1));
+    document.getElementById('start-inc-btn').addEventListener('click', () => handleFrameStep('start', 1));
+    document.getElementById('end-dec-btn').addEventListener('click', () => handleFrameStep('end', -1));
+    document.getElementById('end-inc-btn').addEventListener('click', () => handleFrameStep('end', 1));
+    
+    // Upload settings popover
+    document.getElementById('upload-settings-btn').addEventListener('click', toggleUploadSettings);
+    document.addEventListener('click', closeUploadSettings);
     
     // Analysis form
     document.getElementById('analysis-form').addEventListener('submit', handleStartAnalysis);
@@ -223,6 +257,10 @@ async function uploadFile(file) {
     
     const formData = new FormData();
     formData.append('video', file);
+    formData.append('fps', Math.round(1 / (parseInt(document.getElementById('spf-input').value) || 1)));
+    formData.append('whisper_model', document.getElementById('upload-whisper-select').value);
+    formData.append('language', document.getElementById('upload-language-input').value);
+    formData.append('dedup_threshold', document.getElementById('upload-dedup-input').value);
     
     // Use XMLHttpRequest for upload progress
     return new Promise((resolve, reject) => {
@@ -324,6 +362,56 @@ function handleVideoTranscoded(data) {
     loadVideos();
 }
 
+function handleFrameExtractionProgress(data) {
+    const statusDiv = document.getElementById('transcode-status');
+    const labelSpan = document.getElementById('transcode-label');
+    const pctSpan = document.getElementById('transcode-pct');
+    const fillDiv = document.getElementById('transcode-fill');
+
+    if (!statusDiv || !labelSpan || !pctSpan || !fillDiv) return;
+
+    if (data.stage === 'complete') {
+        showToast(`Frames extracted for ${data.source}`, 'success');
+    } else if (data.stage === 'failed') {
+        statusDiv.classList.add('hidden');
+        showToast(`Frame extraction failed for ${data.source}: ${data.error}`, 'error');
+    } else {
+        statusDiv.classList.remove('hidden');
+        const stageLabel = data.stage === 'extracting_frames' ? 'Extracting frames' :
+                          data.stage === 'deduplicating' ? 'Deduplicating similar frames' :
+                          data.stage === 'generating_thumbnails' ? 'Generating thumbnails' : data.stage;
+        labelSpan.textContent = `${stageLabel}: ${data.source}`;
+        pctSpan.textContent = `${data.progress}%`;
+        fillDiv.style.width = `${data.progress}%`;
+    }
+}
+
+function handleTranscriptionProgress(data) {
+    const statusDiv = document.getElementById('transcode-status');
+    const labelSpan = document.getElementById('transcode-label');
+    const pctSpan = document.getElementById('transcode-pct');
+    const fillDiv = document.getElementById('transcode-fill');
+
+    if (!statusDiv || !labelSpan || !pctSpan || !fillDiv) return;
+
+    if (data.stage === 'complete') {
+        statusDiv.classList.add('hidden');
+        showToast(`Transcription complete for ${data.source}`, 'success');
+        loadVideos();
+        initFrameBrowserForSelectedVideo();
+    } else if (data.stage === 'failed') {
+        statusDiv.classList.add('hidden');
+        showToast(`Transcription failed for ${data.source}: ${data.error}`, 'warning');
+    } else {
+        statusDiv.classList.remove('hidden');
+        const stageLabel = data.stage === 'extracting_audio' ? 'Extracting audio' :
+                          data.stage === 'transcribing' ? 'Transcribing audio' : data.stage;
+        labelSpan.textContent = `${stageLabel}: ${data.source}`;
+        pctSpan.textContent = `${data.progress}%`;
+        fillDiv.style.width = `${data.progress}%`;
+    }
+}
+
 // ========================================
 // Video Management
 // ========================================
@@ -359,7 +447,7 @@ function renderVideos() {
             </div>
             <div class="video-info">
                 <div class="video-name" title="${video.name}">${video.name}</div>
-                <div class="video-meta">${video.size_human} • ${video.duration_formatted}</div>
+                <div class="video-meta">${video.size_human} • ${video.duration_formatted}${video.frame_count ? ` • ${video.frame_count} frames` : ''}</div>
             </div>
             <div class="video-actions">
                 <button class="analyze-btn" title="Analyze" onclick="selectVideoForAnalysis('${video.path}', '${video.name}')">▶️</button>
@@ -371,7 +459,20 @@ function renderVideos() {
     
     // Update select
     select.innerHTML = '<option value="">Select a video...</option>' +
-        state.videos.map(v => `<option value="${v.path}">${v.name}</option>`).join('');
+        state.videos.map(v => `<option value="${v.path}" data-name="${v.name}">${v.name}${v.frame_count ? ` (${v.frame_count} frames)` : ''}</option>`).join('');
+}
+
+async function handleVideoSelectChange() {
+    const select = document.getElementById('video-select');
+    const option = select.selectedOptions[0];
+    if (!option || !select.value) {
+        hideFrameBrowser();
+        updateStartButton();
+        return;
+    }
+    const videoName = option.dataset.name || option.textContent;
+    await initFrameBrowser(videoName);
+    updateStartButton();
 }
 
 async function deleteVideo(filename) {
@@ -397,6 +498,7 @@ function selectVideoForAnalysis(path, name) {
     document.getElementById('video-select').value = path;
     switchMainTab('analyze');
     document.getElementById('new-analysis-section').scrollIntoView({ behavior: 'smooth' });
+    handleVideoSelectChange();
     showToast(`Selected: ${name}`);
 }
 
@@ -635,12 +737,13 @@ async function handleModelChange(e) {
 async function updateCostEstimate() {
     const modelSelect = document.getElementById('model-select');
     const modelId = modelSelect.value;
-    const maxFrames = parseInt(document.getElementById('max-frames-input').value) || 10000;
+    const fb = state.frameBrowser;
+    const frameCount = fb.totalFrames > 0 ? (fb.endFrame - fb.startFrame + 1) : 100;
     
     if (!modelId || !state.openRouterKey) return;
     
     try {
-        const response = await fetch(`/api/providers/openrouter/cost?api_key=${encodeURIComponent(state.openRouterKey)}&model=${encodeURIComponent(modelId)}&frames=${maxFrames}`);
+        const response = await fetch(`/api/providers/openrouter/cost?api_key=${encodeURIComponent(state.openRouterKey)}&model=${encodeURIComponent(modelId)}&frames=${frameCount}`);
         const data = await response.json();
         
         document.getElementById('cost-value').textContent = `$${data.min.toFixed(2)} - $${data.max.toFixed(2)}`;
@@ -681,7 +784,7 @@ async function handleStartAnalysis(e) {
         const maxCost = state.costEstimate.max;
         
         if (maxCost > balance) {
-            const costPerFrame = maxCost / parseInt(document.getElementById('max-frames-input').value);
+            const costPerFrame = maxCost / (state.frameBrowser.totalFrames > 0 ? (state.frameBrowser.endFrame - state.frameBrowser.startFrame + 1) : 100);
             const affordableFrames = Math.floor(balance / costPerFrame);
             
             const proceed = confirm(
@@ -689,11 +792,17 @@ async function handleStartAnalysis(e) {
                 `Estimated cost: $${maxCost.toFixed(2)}\n` +
                 `Your balance: $${balance.toFixed(2)}\n\n` +
                 `You can afford approximately ${affordableFrames} frames with the current model.\n\n` +
-                `Do you want to adjust max frames to ${affordableFrames} and continue?`
+                `Do you want to narrow the frame range and continue?`
             );
             
             if (proceed) {
-                document.getElementById('max-frames-input').value = Math.max(1, affordableFrames);
+                const fb = state.frameBrowser;
+                const newEnd = Math.min(fb.endFrame, fb.startFrame + affordableFrames - 1);
+                fb.endFrame = newEnd;
+                document.getElementById('end-frame-input').value = newEnd;
+                document.getElementById('end-frame-slider').value = newEnd;
+                updateRangeHighlight();
+                updateFrameRangeSummary();
                 updateCostEstimate();
             } else {
                 return;
@@ -701,6 +810,11 @@ async function handleStartAnalysis(e) {
         }
     }
     
+    const fb = state.frameBrowser;
+    const startFrame = fb.totalFrames > 0 ? (fb.startFrame - 1) : 0;
+    const endFrame = fb.totalFrames > 0 ? fb.endFrame : null;
+    const spf = parseInt(document.getElementById('spf-input').value) || 1;
+
     const params = {
         video_path: videoPath,
         provider_type: providerType,
@@ -711,9 +825,11 @@ async function handleStartAnalysis(e) {
         model: modelId,
         priority: parseInt(document.getElementById('priority-input').value) || 0,
         temperature: parseFloat(document.getElementById('temperature-input').value) || 0.0,
-        duration: parseInt(document.getElementById('duration-input').value) || 0,
-        max_frames: parseInt(document.getElementById('max-frames-input').value) || 10000,
-        frames_per_minute: parseInt(document.getElementById('fpm-input').value) || 60,
+        start_frame: startFrame,
+        end_frame: endFrame,
+        fps: 1 / spf,
+        frames_per_minute: 60 / spf,
+        similarity_threshold: parseInt(document.getElementById('dedup-sensitivity-input').value) || 10,
         whisper_model: document.getElementById('whisper-select').value,
         language: document.getElementById('language-input').value,
         device: document.getElementById('device-select').value,
@@ -1537,8 +1653,8 @@ function switchMonitorTab(tab) {
 function saveSettings() {
     const settings = {
         temperature: document.getElementById('temperature-input').value,
-        max_frames: document.getElementById('max-frames-input').value,
-        frames_per_minute: document.getElementById('fpm-input').value,
+        spf: document.getElementById('spf-input').value,
+        similarity_threshold: document.getElementById('dedup-sensitivity-input').value,
         whisper_model: document.getElementById('whisper-select').value,
         language: document.getElementById('language-input').value,
         device: document.getElementById('device-select').value,
@@ -1550,8 +1666,13 @@ function saveSettings() {
 
 function restoreSettings() {
     if (state.settings) {
+        const idMap = {
+            similarity_threshold: 'dedup-sensitivity-input',
+            spf: 'spf-input',
+        };
         Object.entries(state.settings).forEach(([key, value]) => {
-            const el = document.getElementById(key.replace(/_/g, '-') + '-input') ||
+            const elId = idMap[key] || key.replace(/_/g, '-') + '-input';
+            const el = document.getElementById(elId) ||
                       document.getElementById(key.replace(/_/g, '-') + '-select');
             if (el) {
                 if (el.type === 'checkbox') {
@@ -1783,6 +1904,297 @@ async function cancelChatJob(jobId) {
         }
     } catch (error) {
         showToast('Cancel failed: ' + error.message, 'error');
+    }
+}
+
+// ========================================
+// Frame Browser
+// ========================================
+
+async function initFrameBrowserForSelectedVideo() {
+    const select = document.getElementById('video-select');
+    const option = select.selectedOptions[0];
+    if (!option || !select.value) {
+        hideFrameBrowser();
+        return;
+    }
+    const videoName = option.dataset.name || option.textContent;
+    await initFrameBrowser(videoName);
+}
+
+async function initFrameBrowser(videoName) {
+    const section = document.getElementById('frame-range-section');
+    const fb = state.frameBrowser;
+
+    fb.videoName = videoName;
+    fb.thumbCache.clear();
+    fb.transcript = null;
+
+    try {
+        const response = await fetch(`/api/videos/${encodeURIComponent(videoName)}/frames`);
+        const meta = await response.json();
+
+        if (!meta.frame_count || meta.frame_count === 0) {
+            section.classList.add('hidden');
+            document.getElementById('frame-range-summary').textContent = 'No frames extracted yet for this video';
+            return;
+        }
+
+        fb.totalFrames = meta.frame_count;
+        fb.fps = meta.fps || 1;
+        fb.duration = meta.duration || 0;
+        fb.startFrame = 1;
+        fb.endFrame = fb.totalFrames;
+
+        const startSlider = document.getElementById('start-frame-slider');
+        const endSlider = document.getElementById('end-frame-slider');
+        const startInput = document.getElementById('start-frame-input');
+        const endInput = document.getElementById('end-frame-input');
+
+        startSlider.min = 1;
+        startSlider.max = fb.totalFrames;
+        startSlider.value = 1;
+        endSlider.min = 1;
+        endSlider.max = fb.totalFrames;
+        endSlider.value = fb.totalFrames;
+
+        startInput.min = 1;
+        startInput.max = fb.totalFrames;
+        startInput.value = 1;
+        endInput.min = 1;
+        endInput.max = fb.totalFrames;
+        endInput.value = fb.totalFrames;
+
+        section.classList.remove('hidden');
+        updateRangeHighlight();
+        updateFrameRangeSummary();
+        loadFrameThumb('start', 1);
+        loadFrameThumb('end', fb.totalFrames);
+
+        try {
+            const transcriptResp = await fetch(`/api/videos/${encodeURIComponent(videoName)}/transcript`);
+            fb.transcript = await transcriptResp.json();
+        } catch (e) {
+            console.warn('Failed to load transcript for frame browser:', e);
+            fb.transcript = null;
+        }
+
+        updateTranscriptContext('start', 1);
+        updateTranscriptContext('end', fb.totalFrames);
+    } catch (error) {
+        console.error('Failed to load frame metadata:', error);
+        section.classList.add('hidden');
+    }
+}
+
+function hideFrameBrowser() {
+    const section = document.getElementById('frame-range-section');
+    section.classList.add('hidden');
+    state.frameBrowser.totalFrames = 0;
+}
+
+function updateRangeHighlight() {
+    const fb = state.frameBrowser;
+    if (fb.totalFrames === 0) return;
+
+    const startPct = ((fb.startFrame - 1) / fb.totalFrames) * 100;
+    const endPct = ((fb.endFrame - 1) / fb.totalFrames) * 100;
+
+    const highlight = document.getElementById('range-highlight');
+    if (highlight) {
+        highlight.style.left = `${startPct}%`;
+        highlight.style.width = `${endPct - startPct}%`;
+    }
+}
+
+function updateFrameRangeSummary() {
+    const fb = state.frameBrowser;
+    const summary = document.getElementById('frame-range-summary');
+    if (!summary) return;
+
+    const rangeCount = fb.endFrame - fb.startFrame + 1;
+    const rangeDuration = rangeCount / fb.fps;
+    summary.textContent = `Selected: ${rangeCount} frames (${formatDurationShort(rangeDuration)}) of ${fb.totalFrames} total`;
+}
+
+function formatDurationShort(seconds) {
+    if (seconds < 60) return `${Math.round(seconds)}s`;
+    const m = Math.floor(seconds / 60);
+    const s = Math.round(seconds % 60);
+    if (m < 60) return `${m}m ${s}s`;
+    const h = Math.floor(m / 60);
+    const rm = m % 60;
+    return `${h}h ${rm}m`;
+}
+
+function handleStartSliderChange(e) {
+    const fb = state.frameBrowser;
+    let val = parseInt(e.target.value);
+    if (val >= fb.endFrame) val = fb.endFrame - 1;
+    if (val < 1) val = 1;
+    fb.startFrame = val;
+    document.getElementById('start-frame-input').value = val;
+    e.target.value = val;
+    updateRangeHighlight();
+    updateFrameRangeSummary();
+    updateFrameTime('start', val);
+    debouncedLoadFrameThumb('start', val);
+    updateTranscriptContext('start', val);
+}
+
+function handleEndSliderChange(e) {
+    const fb = state.frameBrowser;
+    let val = parseInt(e.target.value);
+    if (val <= fb.startFrame) val = fb.startFrame + 1;
+    if (val > fb.totalFrames) val = fb.totalFrames;
+    fb.endFrame = val;
+    document.getElementById('end-frame-input').value = val;
+    e.target.value = val;
+    updateRangeHighlight();
+    updateFrameRangeSummary();
+    updateFrameTime('end', val);
+    debouncedLoadFrameThumb('end', val);
+    updateTranscriptContext('end', val);
+}
+
+function handleStartInputChange(e) {
+    const fb = state.frameBrowser;
+    let val = parseInt(e.target.value) || 1;
+    val = Math.max(1, Math.min(val, fb.endFrame - 1));
+    fb.startFrame = val;
+    document.getElementById('start-frame-slider').value = val;
+    e.target.value = val;
+    updateRangeHighlight();
+    updateFrameRangeSummary();
+    updateFrameTime('start', val);
+    loadFrameThumb('start', val);
+    updateTranscriptContext('start', val);
+}
+
+function handleEndInputChange(e) {
+    const fb = state.frameBrowser;
+    let val = parseInt(e.target.value) || fb.totalFrames;
+    val = Math.max(fb.startFrame + 1, Math.min(val, fb.totalFrames));
+    fb.endFrame = val;
+    document.getElementById('end-frame-slider').value = val;
+    e.target.value = val;
+    updateRangeHighlight();
+    updateFrameRangeSummary();
+    updateFrameTime('end', val);
+    loadFrameThumb('end', val);
+    updateTranscriptContext('end', val);
+}
+
+function handleFrameStep(which, direction) {
+    const fb = state.frameBrowser;
+    if (which === 'start') {
+        let val = fb.startFrame + direction;
+        val = Math.max(1, Math.min(val, fb.endFrame - 1));
+        fb.startFrame = val;
+        document.getElementById('start-frame-input').value = val;
+        document.getElementById('start-frame-slider').value = val;
+        updateFrameTime('start', val);
+        loadFrameThumb('start', val);
+        updateTranscriptContext('start', val);
+    } else {
+        let val = fb.endFrame + direction;
+        val = Math.max(fb.startFrame + 1, Math.min(val, fb.totalFrames));
+        fb.endFrame = val;
+        document.getElementById('end-frame-input').value = val;
+        document.getElementById('end-frame-slider').value = val;
+        updateFrameTime('end', val);
+        loadFrameThumb('end', val);
+        updateTranscriptContext('end', val);
+    }
+    updateRangeHighlight();
+    updateFrameRangeSummary();
+}
+
+function updateFrameTime(which, frameNum) {
+    const fb = state.frameBrowser;
+    const seconds = (frameNum - 1) / fb.fps;
+    const el = document.getElementById(`${which}-frame-time`);
+    if (el) el.textContent = formatDurationShort(seconds);
+}
+
+function debouncedLoadFrameThumb(which, frameNum) {
+    clearTimeout(state.frameBrowser.debounceTimer);
+    state.frameBrowser.debounceTimer = setTimeout(() => {
+        loadFrameThumb(which, frameNum);
+    }, 100);
+}
+
+function loadFrameThumb(which, frameNum) {
+    const fb = state.frameBrowser;
+    const img = document.getElementById(`${which}-frame-thumb`);
+    const placeholder = document.getElementById(`${which}-thumb-placeholder`);
+    if (!img || !fb.videoName) return;
+
+    if (fb.thumbCache.has(frameNum)) {
+        img.src = fb.thumbCache.get(frameNum);
+        img.style.display = 'block';
+        if (placeholder) placeholder.style.display = 'none';
+        return;
+    }
+
+    const thumbUrl = `/api/videos/${encodeURIComponent(fb.videoName)}/frames/${frameNum}/thumb`;
+    img.src = thumbUrl;
+    img.style.display = 'block';
+    if (placeholder) placeholder.style.display = 'none';
+    fb.thumbCache.set(frameNum, thumbUrl);
+
+    if (fb.thumbCache.size > 200) {
+        const oldest = fb.thumbCache.keys().next().value;
+        fb.thumbCache.delete(oldest);
+    }
+}
+
+function updateTranscriptContext(which, frameNum) {
+    const fb = state.frameBrowser;
+    const el = document.getElementById(`${which}-frame-transcript`);
+    if (!el) return;
+
+    if (!fb.transcript || !fb.transcript.segments || fb.transcript.segments.length === 0) {
+        el.textContent = '';
+        el.classList.add('empty');
+        return;
+    }
+
+    const timestamp = (frameNum - 1) / fb.fps;
+    const windowBefore = 3;
+    const windowAfter = 3;
+    const windowStart = timestamp - windowBefore;
+    const windowEnd = timestamp + windowAfter;
+
+    const matching = fb.transcript.segments.filter(seg => {
+        return seg.start >= windowStart && seg.start <= windowEnd;
+    });
+
+    if (matching.length === 0) {
+        el.textContent = 'No speech at this point';
+        el.classList.add('empty');
+        return;
+    }
+
+    el.classList.remove('empty');
+    el.textContent = matching.map(s => s.text.trim()).join(' ');
+}
+
+// ========================================
+// Upload Settings Popover
+// ========================================
+
+function toggleUploadSettings() {
+    const popover = document.getElementById('upload-settings-popover');
+    popover.classList.toggle('hidden');
+}
+
+function closeUploadSettings(e) {
+    const popover = document.getElementById('upload-settings-popover');
+    const btn = document.getElementById('upload-settings-btn');
+    if (!popover || !btn) return;
+    if (!popover.contains(e.target) && !btn.contains(e.target)) {
+        popover.classList.add('hidden');
     }
 }
 
