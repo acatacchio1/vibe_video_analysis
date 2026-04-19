@@ -3,6 +3,7 @@ Knowledge Base API blueprint
 Endpoints for syncing video analysis results to OpenWebUI Knowledge Base.
 """
 import json
+import os
 import logging
 import threading
 from pathlib import Path
@@ -16,16 +17,23 @@ knowledge_bp = Blueprint("knowledge", __name__)
 
 
 def _get_owui_config() -> dict:
-    """Load OpenWebUI config from default_config.json"""
+    """Load OpenWebUI config from default_config.json, overlaying env vars."""
     config_path = Path(__file__).parent.parent.parent / "config" / "default_config.json"
     if not config_path.exists():
         return {}
     try:
         config = json.loads(config_path.read_text())
-        return config.get("openwebui", {})
+        cfg = config.get("openwebui", {})
     except Exception as e:
         logger.error(f"Failed to load OpenWebUI config: {e}")
         return {}
+
+    # Env var takes precedence for API key (same pattern as OPENROUTER_API_KEY)
+    env_key = os.environ.get("OPENWEBUI_API_KEY", "").strip()
+    if env_key:
+        cfg["api_key"] = env_key
+
+    return cfg
 
 
 def _get_client() -> OpenWebUIClient:
