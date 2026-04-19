@@ -75,10 +75,11 @@ async function showResultDetail(jobId) {
                         <div class="form-group">
                             <label>Content to send</label>
                             <select id="results-chat-content-select">
-                                <option value="transcript">Transcript</option>
-                                <option value="description">Video Description</option>
-                                <option value="both">Transcript + Description</option>
-                                <option value="frames">All Frame Analyses</option>
+                                <option value="all">Analysis + Transcript + Summary</option>
+                                <option value="transcript">Transcript only</option>
+                                <option value="description">Summary only</option>
+                                <option value="frames">Frame Analysis only</option>
+                                <option value="transcript_description">Transcript + Summary</option>
                             </select>
                         </div>
                         <div class="form-group">

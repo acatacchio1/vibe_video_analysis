@@ -1,3 +1,4 @@
+import base64
 import requests
 import logging
 from typing import Dict, List, Any, Optional
@@ -90,6 +91,59 @@ class OllamaProvider(BaseProvider):
         except Exception as e:
             logger.error(f"Error getting running models: {e}")
         return []
+
+    def check_health(self):
+        """Re-test connection and update status (alias for _test_connection)"""
+        self._test_connection()
+
+    def analyze_frame(
+        self,
+        frame_path: str,
+        model_id: str,
+        system_prompt: str,
+        user_prompt: str,
+        temperature: float = 0.0,
+    ) -> str:
+        """
+        Analyze a single frame (or run a text-only prompt when frame_path is empty).
+        Uses the Ollama /api/chat REST endpoint directly so the worker never needs
+        the `ollama` Python package and always talks to self.base_url.
+        """
+        messages = []
+
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+
+        user_message: Dict[str, Any] = {"role": "user", "content": user_prompt or "Describe this image."}
+
+        if frame_path:
+            try:
+                with open(frame_path, "rb") as f:
+                    image_b64 = base64.b64encode(f.read()).decode("utf-8")
+                user_message["images"] = [image_b64]
+            except Exception as e:
+                logger.warning(f"Failed to read frame {frame_path}: {e}")
+
+        messages.append(user_message)
+
+        payload = {
+            "model": model_id,
+            "messages": messages,
+            "stream": False,
+            "options": {"temperature": temperature, "think": False},
+        }
+
+        try:
+            resp = requests.post(
+                f"{self.base_url}/api/chat",
+                json=payload,
+                timeout=120,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return data.get("message", {}).get("content", "")
+        except Exception as e:
+            raise RuntimeError(f"Ollama chat request failed ({self.base_url}): {e}") from e
 
     def to_dict(self) -> Dict[str, Any]:
         return {

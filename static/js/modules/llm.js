@@ -38,10 +38,11 @@ async function handleChatProviderChange(context = 'live') {
         }
 
     } else if (providerName === 'ollama') {
-        const ollamaProvider = Object.values(state.providers).find(p => p.type === 'ollama');
-        if (ollamaProvider?.status === 'online') {
+        const selectedOption = providerSelect.selectedOptions[0];
+        const ollamaUrl = selectedOption?.dataset.url;
+        if (ollamaUrl) {
             try {
-                const response = await fetch(`/api/providers/ollama/models?server=${encodeURIComponent(ollamaProvider.url)}`);
+                const response = await fetch(`/api/providers/ollama/models?server=${encodeURIComponent(ollamaUrl)}`);
                 const data = await response.json();
 
                 if (data.models) {
@@ -118,9 +119,10 @@ async function sendToLLM(context, jobId = null) {
     };
 
     if (providerType === 'ollama') {
-        const ollamaProvider = Object.values(state.providers).find(p => p.type === 'ollama');
-        if (ollamaProvider) {
-            requestData.ollama_url = ollamaProvider.url;
+        const selectedOption = providerSelect.selectedOptions[0];
+        const ollamaUrl = selectedOption?.dataset.url;
+        if (ollamaUrl) {
+            requestData.ollama_url = ollamaUrl;
         }
     } else if (providerType === 'openrouter') {
         requestData.api_key = state.openRouterKey;
@@ -165,21 +167,35 @@ async function sendToLLM(context, jobId = null) {
 }
 
 function formatContentForLLM(results, contentType) {
+    const transcript = results.transcript?.text || '';
+    const descObj = results.video_description;
+    const description = typeof descObj === 'string' ? descObj :
+                       (descObj?.response || descObj?.text || JSON.stringify(descObj, null, 2) || '');
+    const frames = results.frame_analyses || [];
+    const framesText = frames.map((f) => {
+        const num = f.frame_number || f.frame;
+        const ts = (f.video_ts !== undefined && f.video_ts !== null) ? ` [${formatVideoTimestamp(f.video_ts)}]` : '';
+        return `Frame ${num}${ts}: ${f.response || f.analysis || ''}`;
+    }).join('\n');
+
     if (contentType === 'transcript') {
-        return results.transcript?.text || '';
+        return transcript;
     } else if (contentType === 'description') {
-        const descObj = results.video_description;
-        return typeof descObj === 'string' ? descObj :
-               (descObj?.response || descObj?.text || JSON.stringify(descObj, null, 2) || '');
-    } else if (contentType === 'both') {
-        const transcript = results.transcript?.text || '';
-        const descObj = results.video_description;
-        const description = typeof descObj === 'string' ? descObj :
-                           (descObj?.response || descObj?.text || JSON.stringify(descObj, null, 2) || '');
-        return `TRANSCRIPT:\n${transcript}\n\nVIDEO DESCRIPTION:\n${description}`;
+        return description;
+    } else if (contentType === 'transcript_description') {
+        return `TRANSCRIPT:\n${transcript}\n\nVIDEO SUMMARY:\n${description}`;
     } else if (contentType === 'frames') {
-        const frames = results.frame_analyses || [];
-        return frames.map((f, i) => `Frame ${i}: ${f.response || f.analysis || ''}`).join('\n');
+        return framesText;
+    } else if (contentType === 'all') {
+        const parts = [];
+        if (framesText) parts.push(`FRAME ANALYSIS:\n${framesText}`);
+        if (transcript) parts.push(`TRANSCRIPT:\n${transcript}`);
+        if (description) parts.push(`VIDEO SUMMARY:\n${description}`);
+        return parts.join('\n\n');
+    }
+    // legacy fallbacks
+    if (contentType === 'both') {
+        return `TRANSCRIPT:\n${transcript}\n\nVIDEO SUMMARY:\n${description}`;
     }
     return '';
 }

@@ -814,16 +814,13 @@ def _transcribe_video(video_path: str, whisper_model: str = "base", language: st
         device = "cuda"
         compute_type = "float16"
         try:
-            import torch
-            if not torch.cuda.is_available():
-                device = "cpu"
-                compute_type = "int8"
-        except Exception:
+            logger.info(f"Loading Whisper model '{whisper_model}' on {device}")
+            model = WhisperModel(whisper_model, device=device, compute_type=compute_type)
+        except Exception as cuda_err:
+            logger.warning(f"CUDA unavailable for Whisper ({cuda_err}), falling back to CPU")
             device = "cpu"
             compute_type = "int8"
-
-        logger.info(f"Loading Whisper model '{whisper_model}' on {device}")
-        model = WhisperModel(whisper_model, device=device, compute_type=compute_type)
+            model = WhisperModel(whisper_model, device=device, compute_type=compute_type)
         _emit("transcribing", 30)
 
         accepted_languages = {
@@ -904,11 +901,23 @@ def init_providers():
     vram_manager.set_ollama_running_models_provider(get_loaded_ollama_models)
 
 
-monitor.set_ollama_url_provider(
-    lambda: next(
-        (p.base_url for p in providers.values() if hasattr(p, "base_url")), None
-    )
-)
+def _get_monitor_ollama_url():
+    """Return the best available Ollama URL for monitoring.
+    Prefers non-localhost providers (which work inside Docker) over localhost."""
+    # First try any online non-localhost provider
+    for p in providers.values():
+        if hasattr(p, "base_url") and p.status == "online":
+            url = p.base_url
+            if "localhost" not in url and "127.0.0.1" not in url:
+                return url
+    # Fall back to any online provider
+    for p in providers.values():
+        if hasattr(p, "base_url") and p.status == "online":
+            return p.base_url
+    # Last resort: any provider with a base_url
+    return next((p.base_url for p in providers.values() if hasattr(p, "base_url")), None)
+
+monitor.set_ollama_url_provider(_get_monitor_ollama_url)
 
 monitor.start()
 init_providers()

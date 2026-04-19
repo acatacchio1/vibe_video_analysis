@@ -7,6 +7,7 @@ async function loadProviders() {
         providers.forEach(p => { state.providers[p.name] = p; });
         renderProviderStatus();
         updateProviderSelect();
+        initChatProviderSelect('live');
     } catch (error) {
         console.error('Failed to load providers:', error);
     }

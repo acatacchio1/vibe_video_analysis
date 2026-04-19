@@ -1567,6 +1567,12 @@ section > h2::before,
     color: var(--accent-primary);
 }
 
+.frame-timestamp {
+    font-weight: 400;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+
 .frame-text {
     font-size: 0.95rem;
     line-height: 1.5;

@@ -138,6 +138,18 @@ function updateLiveAnalysis(data) {
     if (liveSection) liveSection.classList.remove('hidden');
 }
 
+function formatVideoTimestamp(seconds) {
+    if (seconds === null || seconds === undefined) return null;
+    const s = Math.floor(seconds);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    if (h > 0) {
+        return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+    }
+    return `${m}:${String(sec).padStart(2, '0')}`;
+}
+
 function appendFrameLog(data) {
     const log = document.getElementById('frames-log');
     if (!log) {
@@ -145,11 +157,15 @@ function appendFrameLog(data) {
         return;
     }
 
+    const frameNum = data.frame_number || data.frame;
+    const ts = formatVideoTimestamp(data.video_ts);
+    const tsHtml = ts !== null ? `<span class="frame-timestamp">${ts}</span>` : '';
+
     const entry = document.createElement('div');
     entry.className = 'frame-entry';
     entry.innerHTML = `
         <div class="frame-header">
-            <span class="frame-number">Frame ${data.frame_number || data.frame}</span>
+            <span class="frame-number">Frame ${frameNum}</span>${tsHtml}
         </div>
         <div class="frame-text">${formatFrameAnalysis(data.analysis || data.response || '')}</div>
     `;

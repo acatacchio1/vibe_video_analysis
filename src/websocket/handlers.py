@@ -76,14 +76,34 @@ def register_socket_handlers(socketio):
                         pass
             except Exception as e:
                 logger.warning(f"Failed to send frame history for job {job_id}: {e}")
+        # Always try to replay transcript from disk — it exists as soon as the video
+        # was uploaded, long before the worker reaches the reconstructing stage.
+        transcript_replayed = False
+        input_file = job_dir / "input.json"
+        if input_file.exists():
+            try:
+                job_config = json.loads(input_file.read_text())
+                video_path = job_config.get("video_path", "")
+                if video_path:
+                    transcript_path = Path(video_path).parent / Path(video_path).stem / "transcript.json"
+                    if transcript_path.exists():
+                        transcript_data = json.loads(transcript_path.read_text())
+                        transcript_text = transcript_data.get("text") or ""
+                        if transcript_text:
+                            emit("job_transcript", {"job_id": job_id, "transcript": transcript_text})
+                            transcript_replayed = True
+            except Exception as e:
+                logger.warning(f"Failed to replay transcript from disk for job {job_id}: {e}")
+
         if status.get("stage") == "complete" and results_file.exists():
             try:
                 results = json.loads(results_file.read_text())
-                transcript_text = results.get("transcript", {})
-                if isinstance(transcript_text, dict):
-                    transcript_text = transcript_text.get("text")
-                if transcript_text:
-                    emit("job_transcript", {"job_id": job_id, "transcript": transcript_text})
+                if not transcript_replayed:
+                    transcript_text = results.get("transcript", {})
+                    if isinstance(transcript_text, dict):
+                        transcript_text = transcript_text.get("text")
+                    if transcript_text:
+                        emit("job_transcript", {"job_id": job_id, "transcript": transcript_text})
                 vd = results.get("video_description")
                 if vd:
                     description = vd.get("response") or vd if isinstance(vd, str) else str(vd)
@@ -158,6 +178,20 @@ def register_socket_handlers(socketio):
 
         if DEBUG:
             logger.debug(f"[JOB CREATED] job_id={job_id} video_frames_dir={video_frames_dir} start_frame={config['params']['start_frame']} end_frame={config['params']['end_frame']}")
+
+        # Emit transcript immediately if it already exists on disk — no need to wait
+        # for the worker to reach the reconstructing stage.
+        if video_path:
+            transcript_path = Path(video_path).parent / Path(video_path).stem / "transcript.json"
+            try:
+                if transcript_path.exists():
+                    transcript_data = json.loads(transcript_path.read_text())
+                    transcript_text = transcript_data.get("text") or ""
+                    if transcript_text:
+                        emit("job_transcript", {"job_id": job_id, "transcript": transcript_text})
+                        logger.debug(f"[JOB CREATED] emitted pre-existing transcript for job {job_id}")
+            except Exception as e:
+                logger.warning(f"Could not pre-load transcript for job {job_id}: {e}")
 
         job = vram_manager.submit_job(
             job_id=job_id,

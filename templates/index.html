@@ -341,17 +341,18 @@
                             <div class="form-group">
                                 <label>Content to send</label>
                                 <select id="chat-content-select">
-                                    <option value="transcript">Transcript</option>
-                                    <option value="description">Video Description</option>
-                                    <option value="both">Transcript + Description</option>
-                                    <option value="frames">All Frame Analyses</option>
+                                    <option value="all">Analysis + Transcript + Summary</option>
+                                    <option value="transcript">Transcript only</option>
+                                    <option value="description">Summary only</option>
+                                    <option value="frames">Frame Analysis only</option>
+                                    <option value="transcript_description">Transcript + Summary</option>
                                 </select>
                             </div>
                             <div class="form-group">
                                 <label>Prompt / Instruction</label>
                                 <textarea id="chat-prompt" rows="3" placeholder="e.g. Summarize this into 5 bullet points..."></textarea>
                             </div>
-                            <button class="btn primary" onclick="sendToLLM('live')">Send to LLM</button>
+                            <button class="btn primary" onclick="sendToLLM('live', state.currentJob)">Send to LLM</button>
                         </div>
                         <div id="live-llm-response" class="llm-response hidden">
                             <div class="llm-response-header">

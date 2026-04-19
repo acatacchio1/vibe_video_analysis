@@ -95,6 +95,23 @@ def run_analysis(job_dir: Path):
         update_status(stage="failed", progress=0, error="No frames found")
         sys.exit(1)
 
+    # Load frames_index.json for accurate video timestamps (maps frame_num -> seconds)
+    frames_index = {}
+    if video_frames_dir:
+        frames_index_path = Path(video_frames_dir).parent / "frames_index.json"
+        if frames_index_path.exists():
+            try:
+                frames_index = json.loads(frames_index_path.read_text())
+                # Keys are strings in JSON; convert to int for lookup
+                frames_index = {int(k): v for k, v in frames_index.items()}
+                logger.info(f"Loaded frames_index with {len(frames_index)} entries")
+            except Exception as e:
+                logger.warning(f"Failed to load frames_index: {e}")
+
+    def get_video_timestamp(frame_num):
+        """Return video timestamp in seconds for the given (1-based) frame number."""
+        return frames_index.get(frame_num)
+
     logger.info(f"Found {total_frames} frames to analyze")
     update_status(stage="analyzing_frames", progress=5, total_frames=total_frames)
 
@@ -122,12 +139,15 @@ def run_analysis(job_dir: Path):
 
         for i, frame_path in enumerate(frame_files):
             frame_num = i + 1
+            actual_frame_num = start_frame + frame_num if start_frame > 0 else frame_num
+            video_ts = get_video_timestamp(actual_frame_num)
             try:
                 response = provider.analyze_frame(str(frame_path), model, system_prompt, user_prompt, temperature)
                 frame_data = {
                     "frame": frame_num,
                     "response": response,
                     "timestamp": time.time(),
+                    "video_ts": video_ts,
                 }
                 frame_analyses.append(frame_data)
                 append_frame(frame_data)
@@ -140,7 +160,7 @@ def run_analysis(job_dir: Path):
                 logger.info(f"Frame {frame_num}/{total_frames} analyzed")
             except Exception as e:
                 logger.error(f"Error analyzing frame {frame_num}: {e}")
-                frame_data = {"frame": frame_num, "response": f"Error: {e}", "timestamp": time.time()}
+                frame_data = {"frame": frame_num, "response": f"Error: {e}", "timestamp": time.time(), "video_ts": video_ts}
                 frame_analyses.append(frame_data)
                 append_frame(frame_data)
 
@@ -152,12 +172,15 @@ def run_analysis(job_dir: Path):
 
         for i, frame_path in enumerate(frame_files):
             frame_num = i + 1
+            actual_frame_num = start_frame + frame_num if start_frame > 0 else frame_num
+            video_ts = get_video_timestamp(actual_frame_num)
             try:
                 response = provider.analyze_frame(str(frame_path), model, system_prompt, user_prompt, temperature)
                 frame_data = {
                     "frame": frame_num,
                     "response": response,
                     "timestamp": time.time(),
+                    "video_ts": video_ts,
                 }
                 frame_analyses.append(frame_data)
                 append_frame(frame_data)
@@ -170,7 +193,7 @@ def run_analysis(job_dir: Path):
                 logger.info(f"Frame {frame_num}/{total_frames} analyzed")
             except Exception as e:
                 logger.error(f"Error analyzing frame {frame_num}: {e}")
-                frame_data = {"frame": frame_num, "response": f"Error: {e}", "timestamp": time.time()}
+                frame_data = {"frame": frame_num, "response": f"Error: {e}", "timestamp": time.time(), "video_ts": video_ts}
                 frame_analyses.append(frame_data)
                 append_frame(frame_data)
 
@@ -185,10 +208,14 @@ def run_analysis(job_dir: Path):
         except Exception as e:
             logger.warning(f"Failed to load transcript: {e}")
 
+    transcript_text = ""
+    if isinstance(transcript_data, dict):
+        transcript_text = transcript_data.get("text") or ""
+
     update_status(
         stage="reconstructing",
         progress=90,
-        transcript=transcript_data.get("text", "") if isinstance(transcript_data, dict) else "",
+        transcript=transcript_text,
     )
 
     # Stage 4: Generate video description

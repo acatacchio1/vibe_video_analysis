@@ -5,37 +5,9 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-function formatFrameAnalysis(text, maxLength = 300) {
+function formatFrameAnalysis(text) {
     if (!text) return '';
-
-    const escaped = escapeHtml(text);
-    if (text.length <= maxLength) {
-        return escaped;
-    }
-
-    const short = escaped.substring(0, maxLength);
-    const full = escaped;
-    const id = 'frame_' + Math.random().toString(36).substr(2, 9);
-
-    return `
-        <span id="${id}_short">${short}... <a href="javascript:void(0)" onclick="toggleFrameAnalysis('${id}', true)" style="color:var(--accent-primary);font-size:0.85rem;">Show More</a></span>
-        <span id="${id}_full" style="display:none;">${full} <a href="javascript:void(0)" onclick="toggleFrameAnalysis('${id}', false)" style="color:var(--accent-primary);font-size:0.85rem;">Show Less</a></span>
-    `;
-}
-
-function toggleFrameAnalysis(id, showFull) {
-    const shortEl = document.getElementById(id + '_short');
-    const fullEl = document.getElementById(id + '_full');
-
-    if (shortEl && fullEl) {
-        if (showFull) {
-            shortEl.style.display = 'none';
-            fullEl.style.display = 'inline';
-        } else {
-            shortEl.style.display = 'inline';
-            fullEl.style.display = 'none';
-        }
-    }
+    return escapeHtml(text);
 }
 
 function formatBytes(bytes) {

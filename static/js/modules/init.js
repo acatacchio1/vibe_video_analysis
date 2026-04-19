@@ -117,9 +117,9 @@ async function submitAnalysis() {
     if (providerType === 'openrouter' && state.openRouterKey) {
         data.provider_config = { api_key: state.openRouterKey };
     } else if (providerType === 'ollama') {
-        const ollamaProvider = Object.values(state.providers).find(p => p.type === 'ollama');
-        if (ollamaProvider) {
-            data.provider_config = { url: ollamaProvider.url };
+        const ollamaUrl = providerOption?.dataset.url;
+        if (ollamaUrl) {
+            data.provider_config = { url: ollamaUrl };
         }
     }
 
