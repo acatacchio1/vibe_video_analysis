@@ -95,19 +95,13 @@ async function handleProviderChange() {
         }
 
     } else if (providerType === 'openrouter') {
-        if (!state.openRouterKey) {
-            promptForOpenRouterKey();
-            if (!state.openRouterKey) {
-                select.value = '';
-                return;
-            }
-        }
-
         try {
-            const response = await fetch(`/api/providers/openrouter/models?api_key=${encodeURIComponent(state.openRouterKey)}`);
+            const response = await fetch('/api/providers/openrouter/models');
             const data = await response.json();
 
-            if (data.models && data.models.length > 0) {
+            if (data.error) {
+                modelSelect.innerHTML = `<option value="">${data.error}</option>`;
+            } else if (data.models && data.models.length > 0) {
                 modelSelect.innerHTML = '<option value="">Select model...</option>' +
                     data.models.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
                 modelSelect.disabled = false;
@@ -131,17 +125,20 @@ async function handleModelChange() {
     const providerType = document.getElementById('provider-select')?.value;
     const modelId = modelSelect.value;
 
-    if (providerType === 'openrouter' && modelId && state.openRouterKey) {
+    if (providerType === 'openrouter' && modelId) {
         try {
             const videoSelect = document.getElementById('video-select');
             const videoOption = videoSelect?.selectedOptions[0];
             const videoName = videoOption?.dataset.name || '';
 
-            const response = await fetch(`/api/providers/openrouter/cost?api_key=${encodeURIComponent(state.openRouterKey)}&model=${encodeURIComponent(modelId)}&frames=50`);
+            const response = await fetch(`/api/providers/openrouter/cost?model=${encodeURIComponent(modelId)}&frames=50`);
             const cost = await response.json();
 
-            if (cost.estimated_cost) {
-                document.getElementById('cost-value').textContent = `$${cost.estimated_cost.toFixed(4)}`;
+            if (cost.error) {
+                console.error('Cost estimation error:', cost.error);
+            } else if (cost.estimated_cost !== undefined || cost.min !== undefined) {
+                const estimatedCost = cost.estimated_cost || cost.avg || 0;
+                document.getElementById('cost-value').textContent = `$${estimatedCost.toFixed(4)}`;
                 document.getElementById('vram-required').textContent = 'N/A (Cloud)';
                 costEstimate.classList.remove('hidden');
             }
@@ -164,23 +161,9 @@ async function handleModelChange() {
     updateStartButton();
 }
 
-function promptForOpenRouterKey() {
-    const key = prompt('Enter your OpenRouter API key:');
-    if (key) {
-        state.openRouterKey = key;
-        saveStateToLocalStorage();
-        showToast('API key saved');
-    }
-}
-
 async function checkOpenRouterBalance() {
-    if (!state.openRouterKey) {
-        promptForOpenRouterKey();
-        if (!state.openRouterKey) return;
-    }
-
     try {
-        const response = await fetch(`/api/providers/openrouter/balance?api_key=${encodeURIComponent(state.openRouterKey)}`);
+        const response = await fetch('/api/providers/openrouter/balance');
         const data = await response.json();
 
         if (data.balance !== undefined) {

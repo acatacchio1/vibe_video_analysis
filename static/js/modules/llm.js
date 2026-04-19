@@ -13,19 +13,13 @@ async function handleChatProviderChange(context = 'live') {
     modelSelect.disabled = true;
 
     if (providerName === 'openrouter') {
-        if (!state.openRouterKey) {
-            promptForOpenRouterKey();
-            if (!state.openRouterKey) {
-                providerSelect.value = '';
-                return;
-            }
-        }
-
         try {
-            const response = await fetch(`/api/providers/openrouter/models?api_key=${encodeURIComponent(state.openRouterKey)}`);
+            const response = await fetch('/api/providers/openrouter/models');
             const data = await response.json();
 
-            if (data.models && data.models.length > 0) {
+            if (data.error) {
+                modelSelect.innerHTML = `<option value="">${data.error}</option>`;
+            } else if (data.models && data.models.length > 0) {
                 modelSelect.innerHTML = '<option value="">Select model...</option>' +
                     data.models.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
                 modelSelect.disabled = false;
@@ -124,9 +118,8 @@ async function sendToLLM(context, jobId = null) {
         if (ollamaUrl) {
             requestData.ollama_url = ollamaUrl;
         }
-    } else if (providerType === 'openrouter') {
-        requestData.api_key = state.openRouterKey;
     }
+    // OpenRouter API key is handled server-side from environment variable
 
     responseText.textContent = 'Submitting to LLM queue...';
     responseDiv.classList.remove('hidden');

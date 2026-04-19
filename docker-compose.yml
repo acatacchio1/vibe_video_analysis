@@ -20,6 +20,9 @@ services:
       - LOG_LEVEL=DEBUG
       - NVIDIA_VISIBLE_DEVICES=all
       - OLLAMA_HOST=http://host.docker.internal:11434
+      # Make ctranslate2/faster-whisper find the nvidia pip package libs.
+      # cublas/lib provides the CUDA 12 ABI that ctranslate2 4.x was built against.
+      - LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/usr/local/lib/python3.10/dist-packages/nvidia/cublas/lib:/usr/local/lib/python3.10/dist-packages/nvidia/cu13/lib
     # GPU support for whisper and other CUDA operations
     deploy:
       resources:

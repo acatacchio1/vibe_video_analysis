@@ -1,3 +1,4 @@
+import base64
 import requests
 import json
 import logging
@@ -99,7 +100,10 @@ class OpenRouterProvider(BaseProvider):
 
     def get_models(self) -> List[Dict[str, Any]]:
         """Return list of available models with pricing"""
-        if not self.pricing_cache or self.status != "online":
+        # Only attempt a live refresh when there are no cached models at all.
+        # If we have cached pricing, serve it even when offline so that a
+        # transient DNS/network failure doesn't wipe out the model list.
+        if not self.pricing_cache:
             self._test_connection()
 
         result = []
@@ -202,6 +206,68 @@ class OpenRouterProvider(BaseProvider):
     def estimate_vram(self, model_id: str) -> Optional[int]:
         """OpenRouter is cloud-based, no local VRAM required"""
         return 0  # 0 means no local VRAM needed
+
+    def analyze_frame(
+        self,
+        frame_path: str,
+        model_id: str,
+        system_prompt: str,
+        user_prompt: str,
+        temperature: float = 0.0,
+    ) -> str:
+        """
+        Analyze a single frame (or run a text-only prompt when frame_path is empty).
+        Uses the OpenRouter /chat/completions endpoint (OpenAI-compatible).
+        Images are sent as base64-encoded data URIs in the vision content format.
+        """
+        messages = []
+
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+
+        if frame_path:
+            try:
+                with open(frame_path, "rb") as f:
+                    image_b64 = base64.b64encode(f.read()).decode("utf-8")
+                user_content = [
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"},
+                    },
+                    {
+                        "type": "text",
+                        "text": user_prompt or "Describe this image.",
+                    },
+                ]
+            except Exception as e:
+                logger.warning(f"Failed to read frame {frame_path}: {e}")
+                user_content = user_prompt or "Describe this image."
+        else:
+            user_content = user_prompt or "Describe this image."
+
+        messages.append({"role": "user", "content": user_content})
+
+        payload = {
+            "model": model_id,
+            "messages": messages,
+            "temperature": temperature,
+        }
+
+        try:
+            resp = requests.post(
+                f"{self.API_URL}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+                timeout=300,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return data["choices"][0]["message"]["content"]
+        except Exception as e:
+            raise RuntimeError(f"OpenRouter chat request failed: {e}") from e
 
     def to_dict(self) -> Dict[str, Any]:
         return {

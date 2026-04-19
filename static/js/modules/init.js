@@ -114,9 +114,8 @@ async function submitAnalysis() {
         user_prompt: document.getElementById('prompt-input')?.value || '',
     };
 
-    if (providerType === 'openrouter' && state.openRouterKey) {
-        data.provider_config = { api_key: state.openRouterKey };
-    } else if (providerType === 'ollama') {
+    // OpenRouter API key is handled server-side from environment variable
+    if (providerType === 'ollama') {
         const ollamaUrl = providerOption?.dataset.url;
         if (ollamaUrl) {
             data.provider_config = { url: ollamaUrl };

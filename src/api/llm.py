@@ -1,10 +1,16 @@
 """
 LLM Chat API routes
 """
+import os
 from flask import Blueprint, request, jsonify
 from chat_queue import chat_queue_manager
 
 llm_bp = Blueprint("llm", __name__)
+
+
+def get_openrouter_api_key():
+    """Get OpenRouter API key from environment"""
+    return os.environ.get("OPENROUTER_API_KEY", "")
 
 
 @llm_bp.route("/api/llm/chat", methods=["POST"])
@@ -22,6 +28,12 @@ def llm_chat():
         return jsonify({"error": "Model is required"}), 400
     if not prompt and not content:
         return jsonify({"error": "Prompt or content is required"}), 400
+
+    # For OpenRouter, use API key from environment if not provided
+    if provider_type == "openrouter" and not api_key:
+        api_key = get_openrouter_api_key()
+        if not api_key:
+            return jsonify({"error": "OpenRouter API key not configured"}), 400
 
     try:
         job_id = chat_queue_manager.submit_job(

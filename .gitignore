@@ -1,10 +1,66 @@
+# User-submitted content - NEVER commit these!
 uploads/
 jobs/
+thumbs/
+output/
 *.jpg
 *.jpeg
+*.png
+*.gif
 *.mp4
+*.mov
+*.avi
+*.mkv
+*.wav
+*.mp3
+*.aac
+*.ogg
+*.flac
+*.webm
+
+# Cache and temporary data
+cache/
+tmp/
+temp/
+*.tmp
+*.log
+
+# Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Testing
 .coverage
 htmlcov/
-cache/
+.pytest_cache/
+.tox/
+.nox/
+
+# Environment variables - contains secrets!
+.env
+.env.local
+.env.*.local
+
+# Config files with secrets
+config/local_config.json
+config/secrets.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini

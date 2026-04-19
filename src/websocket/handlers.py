@@ -4,9 +4,15 @@ SocketIO event handlers for Video Analyzer Web
 import json
 import uuid
 import logging
+import os
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+def get_openrouter_api_key():
+    """Get OpenRouter API key from environment"""
+    return os.environ.get("OPENROUTER_API_KEY", "")
 
 
 def register_socket_handlers(socketio):
@@ -134,6 +140,18 @@ def register_socket_handlers(socketio):
         model_id = data.get("model")
         priority = data.get("priority", 0)
         provider_config = data.get("provider_config", {})
+
+        # For OpenRouter, inject API key from environment if not provided
+        if provider_type == "openrouter":
+            if not provider_config or not provider_config.get("api_key"):
+                env_key = get_openrouter_api_key()
+                if env_key:
+                    provider_config = provider_config or {}
+                    provider_config["api_key"] = env_key
+                    logger.info(f"Using OpenRouter API key from environment for job {job_id}")
+                else:
+                    emit("error", {"message": "OpenRouter API key not configured"})
+                    return
 
         if DEBUG:
             logger.debug(f"[SOCKET RECV] start_analysis video={video_path} provider={provider_name}/{provider_type} model={model_id} params_keys={list(data.keys())}")

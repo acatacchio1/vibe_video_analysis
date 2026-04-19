@@ -15,11 +15,16 @@ from typing import Dict, Optional, Any
 from flask import Flask
 from flask_socketio import SocketIO
 import logging
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 from vram_manager import vram_manager, JobStatus
 from discovery import discovery
 from monitor import monitor
 from providers.ollama import OllamaProvider
+from providers.openrouter import OpenRouterProvider
 from thumbnail import ensure_thumbnail
 from gpu_transcode import build_transcode_command, get_transcode_progress_parser
 from config.constants import DEBUG, LOG_LEVEL, LOG_FORMAT
@@ -886,6 +891,14 @@ def init_providers():
         if "localhost" not in url and "127.0.0.1" not in url:
             name = f"Ollama-{url.split('//')[1].split(':')[0]}"
             providers[name] = OllamaProvider(name, url)
+
+    # Initialize OpenRouter provider with API key from environment
+    openrouter_key = os.environ.get("OPENROUTER_API_KEY")
+    if openrouter_key:
+        providers["OpenRouter"] = OpenRouterProvider("OpenRouter", openrouter_key)
+        logger.info("OpenRouter provider initialized with API key from environment")
+    else:
+        logger.warning("OPENROUTER_API_KEY not set - OpenRouter provider not available")
 
     def get_loaded_ollama_models() -> set:
         loaded = set()

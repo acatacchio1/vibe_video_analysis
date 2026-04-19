@@ -11,6 +11,10 @@ ENV PATH="/usr/local/bin:${PATH}"
 # Hugging Face cache defaults to /root/.cache/huggingface (NOT under volume mount)
 # This ensures pre-downloaded Whisper models survive container startup
 
+# ctranslate2/faster-whisper need the nvidia pip package lib dirs on the
+# dynamic linker path in addition to the default nvidia driver paths.
+ENV LD_LIBRARY_PATH="/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/usr/local/lib/python3.10/dist-packages/nvidia/cublas/lib:/usr/local/lib/python3.10/dist-packages/nvidia/cu13/lib"
+
 # Install system dependencies with cache mounts and no-recommends to avoid pulling unnecessary packages
 # build-essential + python3-dev are required to compile C extensions (e.g. netifaces)
 # curl is required for the HEALTHCHECK below
@@ -37,6 +41,21 @@ COPY requirements.txt .
 # Install Python dependencies with cache
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip3 install -r requirements.txt
+
+# ctranslate2 4.x dlopens libcublas.so.12 by name (CUDA 12 ABI) via the
+# RPATH $ORIGIN/../ctranslate2.libs. Install the matching CUDA 12 cuBLAS pip
+# package and symlink it into that RPATH directory so dlopen finds the right ABI.
+RUN pip3 install --quiet nvidia-cublas-cu12 && \
+    LIBS_DIR=/usr/local/lib/python3.10/dist-packages/ctranslate2.libs && \
+    CUBLAS12=$(find /usr/local/lib/python3.10/dist-packages/nvidia/cublas/lib -name 'libcublas.so.12' 2>/dev/null | head -1) && \
+    CUBLASLT12=$(find /usr/local/lib/python3.10/dist-packages/nvidia/cublas/lib -name 'libcublasLt.so.12' 2>/dev/null | head -1) && \
+    if [ -n "$CUBLAS12" ]; then \
+        ln -sf "$CUBLAS12"   "$LIBS_DIR/libcublas.so.12"; \
+        ln -sf "$CUBLASLT12" "$LIBS_DIR/libcublasLt.so.12"; \
+        echo "Linked libcublas.so.12 -> $CUBLAS12"; \
+    else \
+        echo "WARNING: nvidia-cublas-cu12 not found after install"; exit 1; \
+    fi
 
 # Pre-download Whisper models to avoid runtime downloads
 # This ensures models are baked into the image for offline/air-gapped operation
