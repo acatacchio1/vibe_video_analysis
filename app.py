@@ -278,9 +278,24 @@ def monitor_job(job_id: str, job_dir: Path, proc: subprocess.Popen):
         JobStatus.FAILED,
         JobStatus.CANCELLED,
     ):
-        logger.debug(
-            f"monitor_job: job {job_id} already finalized, skipping complete_job"
+        # Update status.json to reflect the final state
+        if status_file.exists():
+            try:
+                status = json.loads(status_file.read_text())
+                status["status"] = job_obj.status.value
+                status["stage"] = "cancelled" if job_obj.status == JobStatus.CANCELLED else status.get("stage", "error")
+                if job_obj.status == JobStatus.CANCELLED:
+                    status["error"] = "Job cancelled by user"
+                status_file.write_text(json.dumps(status))
+            except Exception:
+                pass
+        socketio.emit(
+            "job_complete",
+            {"job_id": job_id, "success": job_obj.status == JobStatus.COMPLETED, "status": job_obj.status.value},
+            room=f"job_{job_id}",
         )
+        logger.info(f"Job {job_id} finalized as {job_obj.status.value} (worker exited)")
+        _spawned_jobs.discard(job_id)
         return
     vram_manager.complete_job(job_id, success)
     _spawned_jobs.discard(job_id)
@@ -331,6 +346,7 @@ def monitor_job(job_id: str, job_dir: Path, proc: subprocess.Popen):
 
 def on_vram_event(event: str, job):
     """Handle VRAM manager events"""
+    logger.info(f"VRAM event: {event} job={job.job_id} status={job.status.value} gpu={job.gpu_assigned}")
     if event == "started":
         job_dir = Path("jobs") / job.job_id
         spawn_worker(job.job_id, job_dir, job.gpu_assigned)
