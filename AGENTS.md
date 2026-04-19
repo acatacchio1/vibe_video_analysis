@@ -1,6 +1,6 @@
 # Video Analyzer Web - Agent Development Guide
 
-> Version 0.2.1 | Last updated: 2026-04-18
+> Version 0.3.1 | Last updated: 2026-04-19
 
 This document provides essential context for AI agents working on this codebase.
 

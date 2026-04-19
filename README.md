@@ -1,5 +1,7 @@
 # Video Analyzer Web
 
+> **Version 0.3.1**
+
 A web-based GUI for video-analyzer with multi-provider AI support (Ollama and OpenRouter), multi-GPU VRAM-aware job queueing, LLM chat queue, real-time monitoring, cost estimation, and automatic video transcoding.
 
 ## Features
@@ -18,6 +20,12 @@ A web-based GUI for video-analyzer with multi-provider AI support (Ollama and Op
 - **Job Management**: Priority-based queueing, per-GPU concurrent jobs, cancel/update priority
 - **Stored Results**: Browse and retrieve completed analysis results via API
 - **File Security**: Path traversal protection, filename sanitization, upload size validation (1GB max)
+- **Standalone Dedup**: Run frame deduplication independently before analysis to test different thresholds and see frame drop-off without running full analysis
+- **Transcript-Aware Analysis**: Injects relevant transcript context (from last analyzed frame to current+3s) into each frame's LLM prompt for richer, context-aware analysis
+- **Live Frame Preview**: Displays actual frame thumbnails alongside analysis output in the live view, with original (pre-dedup) frame numbers and timestamps
+- **Standalone Dedup**: Run frame deduplication independently before analysis to test different thresholds and see frame drop-off without running full analysis
+- **Transcript-Aware Analysis**: Injects relevant transcript context (from last analyzed frame to current+3s) into each frame's LLM prompt for richer, context-aware analysis
+- **Live Frame Preview**: Displays actual frame thumbnails alongside analysis output in the live view, with original (pre-dedup) frame numbers and timestamps
 
 ## Quick Start
 
@@ -175,6 +183,9 @@ Uploaded videos are automatically transcoded on upload:
 | `/api/videos/upload` | POST | Upload video file (auto-transcodes) |
 | `/api/videos/<filename>` | DELETE | Delete video, thumbnail, and associated jobs |
 | `/api/videos/transcode` | POST | Manually trigger transcode for uploaded video |
+| `/api/videos/<filename>/dedup` | POST | Run deduplication with given threshold |
+| `/api/videos/<filename>/dedup` | GET | Get stored dedup results |
+| `/api/videos/<filename>/dedup` | DELETE | Clear dedup results and restore original frames |
 | `/api/thumbnail/<filename>` | GET | Get video thumbnail |
 
 ### Providers
