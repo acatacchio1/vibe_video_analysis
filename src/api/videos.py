@@ -249,190 +249,75 @@ def run_video_dedup(filename):
     return jsonify(dedup_results)
 
 
-@videos_bp.route("/api/videos/<filename>/dedup", methods=["GET"])
-def get_video_dedup(filename):
+@videos_bp.route("/api/videos/<filename>/dedup-multi", methods=["POST"])
+def run_video_dedup_multi(filename):
+    """Run dedup at multiple thresholds simultaneously without renumbering frames.
+    Uses the currently selected video from the form (filename is the video name).
+    Returns frame counts for each threshold so the user can pick.
+    """
     from app import api_error
-    safe_name = secure_filename_util(filename)
-    stem = Path(safe_name).stem
-    dedup_path = Path(__file__).parent.parent.parent / "uploads" / stem / "dedup_results.json"
-    if not dedup_path.exists():
-        return api_error("No dedup results found. Run dedup first.", 404)
-    try:
-        return jsonify(json.loads(dedup_path.read_text()))
-    except Exception:
-        return api_error("Failed to read dedup results", 500)
+    from PIL import Image
+    import imagehash
 
-
-@videos_bp.route("/api/videos/<filename>/dedup", methods=["DELETE"])
-def clear_video_dedup(filename):
-    from app import api_error
     safe_name = secure_filename_util(filename)
     stem = Path(safe_name).stem
     base = Path(__file__).parent.parent.parent
     video_dir = base / "uploads" / stem
     frames_dir = video_dir / "frames"
-    thumbs_dir = frames_dir / "thumbs"
-    backup_dir = video_dir / "frames_backup"
-    dedup_path = video_dir / "dedup_results.json"
-
-    if backup_dir.exists() and any(backup_dir.glob("frame_*.jpg")):
-        for fp in frames_dir.glob("frame_*.jpg"):
-            fp.unlink()
-        for tp in thumbs_dir.glob("thumb_*.jpg"):
-            tp.unlink()
-        for fp in sorted(backup_dir.glob("frame_*.jpg")):
-            fp.rename(frames_dir / fp.name)
-        backup_thumbs = backup_dir / "thumbs"
-        if backup_thumbs.exists():
-            for tp in sorted(backup_thumbs.glob("thumb_*.jpg")):
-                tp.rename(thumbs_dir / tp.name)
-        import shutil
-        shutil.rmtree(backup_dir, ignore_errors=True)
-    if dedup_path.exists():
-        dedup_path.unlink()
-
-    from thumbnail import get_thumbnail_path, ensure_thumbnail
-    from pathlib import Path as P
-    video_file = base / "uploads" / safe_name
-    if video_file.exists():
-        ensure_thumbnail(str(video_file))
-
-    from app import socketio
-    socketio.emit("videos_updated")
-    return jsonify({"success": True})
-
-
-@videos_bp.route("/api/videos/<filename>/dedup", methods=["POST"])
-def run_video_dedup(filename):
-    from app import socketio, api_error, _run_dedup, _renumber_frames, _fix_permissions
-    from pathlib import Path
-    import subprocess
-    import json
-    safe_name = secure_filename_util(filename)
-    stem = Path(safe_name).stem
-    base = Path(__file__).parent.parent.parent
-    video_dir = base / "uploads" / stem
-    frames_dir = video_dir / "frames"
-    thumbs_dir = frames_dir / "thumbs"
 
     if not frames_dir.exists() or not any(frames_dir.glob("frame_*.jpg")):
         return api_error(f"No frames found for {filename}. Upload and transcode first.", 400)
 
     data = request.get_json(silent=True) or {}
-    threshold = int(data.get("threshold", 10))
-    threshold = max(0, min(threshold, 64))
+    thresholds = data.get("thresholds", [5, 10, 15, 20, 30])
+    thresholds = sorted(set(max(0, min(t, 64)) for t in thresholds))
 
     fps = 1.0
+    duration = 0.0
     meta_path = video_dir / "frames_meta.json"
     if meta_path.exists():
         try:
             meta = json.loads(meta_path.read_text())
             fps = meta.get("fps", 1.0)
+            duration = meta.get("duration", 0)
         except Exception:
             pass
 
-    # Restore all frames from backup if available, otherwise work with what's there
-    backup_dir = video_dir / "frames_backup"
-    if backup_dir.exists() and any(backup_dir.glob("frame_*.jpg")):
-        for fp in backup_dir.glob("frame_*.jpg"):
-            dest = frames_dir / fp.name
-            if not dest.exists():
-                fp.rename(dest)
-        backup_thumbs = backup_dir / "thumbs"
-        if backup_thumbs.exists():
-            for tp in backup_thumbs.glob("thumb_*.jpg"):
-                dest = thumbs_dir / tp.name
-                if not dest.exists():
-                    tp.rename(dest)
+    extracted_frames = sorted(frames_dir.glob("frame_*.jpg"))
+    original_count = len(extracted_frames)
 
-    # Save a backup of current frames before dedup
-    if not backup_dir.exists():
-        backup_dir.mkdir(parents=True, exist_ok=True)
-        (backup_dir / "thumbs").mkdir(exist_ok=True)
-    for fp in frames_dir.glob("frame_*.jpg"):
-        dest = backup_dir / fp.name
-        if not dest.exists():
-            fp.rename(dest)
-    for tp in thumbs_dir.glob("thumb_*.jpg"):
-        dest = backup_dir / "thumbs" / tp.name
-        if not dest.exists():
-            tp.rename(dest)
+    if original_count <= 1:
+        results = [{"threshold": t, "original_count": original_count, "deduped_count": original_count, "dropped": 0, "dropped_pct": 0} for t in thresholds]
+        return jsonify({"results": results, "original_count": original_count, "fps": fps, "duration": duration})
 
-    # Restore all frames from backup
-    for fp in sorted(backup_dir.glob("frame_*.jpg")):
-        fp.rename(frames_dir / fp.name)
-    backup_thumbs = backup_dir / "thumbs"
-    if backup_thumbs.exists():
-        for tp in sorted(backup_thumbs.glob("thumb_*.jpg")):
-            tp.rename(thumbs_dir / tp.name)
+    hashes = []
+    for fp in extracted_frames:
+        hashes.append(imagehash.phash(Image.open(fp)))
 
-    dedup_results = _run_dedup(frames_dir, thumbs_dir, threshold, fps)
-    frames_index, frame_count = _renumber_frames(frames_dir, thumbs_dir, fps)
+    results = []
+    for t in thresholds:
+        if t <= 0:
+            kept = original_count
+        else:
+            keep_indices = [0]
+            prev = hashes[0]
+            for i in range(1, len(hashes)):
+                if (prev - hashes[i]) >= t:
+                    keep_indices.append(i)
+                    prev = hashes[i]
+            kept = len(keep_indices)
 
-    index_path = video_dir / "frames_index.json"
-    index_path.write_text(json.dumps(frames_index))
+        dropped = original_count - kept
+        pct = round((dropped / original_count) * 100, 1) if original_count > 0 else 0
+        results.append({
+            "threshold": t,
+            "original_count": original_count,
+            "deduped_count": kept,
+            "dropped": dropped,
+            "dropped_pct": pct,
+        })
 
-    meta = {"frame_count": frame_count, "fps": fps, "duration": meta.get("duration", 0) if meta_path.exists() else 0}
-    meta_path.write_text(json.dumps(meta))
-
-    dedup_path = video_dir / "dedup_results.json"
-    dedup_path.write_text(json.dumps(dedup_results))
-
-    socketio.emit("videos_updated")
-    return jsonify(dedup_results)
-
-
-@videos_bp.route("/api/videos/<filename>/dedup", methods=["GET"])
-def get_video_dedup(filename):
-    from app import api_error
-    safe_name = secure_filename_util(filename)
-    stem = Path(safe_name).stem
-    dedup_path = Path(__file__).parent.parent.parent / "uploads" / stem / "dedup_results.json"
-    if not dedup_path.exists():
-        return api_error("No dedup results found. Run dedup first.", 404)
-    try:
-        return jsonify(json.loads(dedup_path.read_text()))
-    except Exception:
-        return api_error("Failed to read dedup results", 500)
-
-
-@videos_bp.route("/api/videos/<filename>/dedup", methods=["DELETE"])
-def clear_video_dedup(filename):
-    from app import api_error
-    safe_name = secure_filename_util(filename)
-    stem = Path(safe_name).stem
-    base = Path(__file__).parent.parent.parent
-    video_dir = base / "uploads" / stem
-    frames_dir = video_dir / "frames"
-    thumbs_dir = frames_dir / "thumbs"
-    backup_dir = video_dir / "frames_backup"
-    dedup_path = video_dir / "dedup_results.json"
-
-    if backup_dir.exists() and any(backup_dir.glob("frame_*.jpg")):
-        for fp in frames_dir.glob("frame_*.jpg"):
-            fp.unlink()
-        for tp in thumbs_dir.glob("thumb_*.jpg"):
-            tp.unlink()
-        for fp in sorted(backup_dir.glob("frame_*.jpg")):
-            fp.rename(frames_dir / fp.name)
-        backup_thumbs = backup_dir / "thumbs"
-        if backup_thumbs.exists():
-            for tp in sorted(backup_thumbs.glob("thumb_*.jpg")):
-                tp.rename(thumbs_dir / tp.name)
-        import shutil
-        shutil.rmtree(backup_dir, ignore_errors=True)
-    if dedup_path.exists():
-        dedup_path.unlink()
-
-    from thumbnail import get_thumbnail_path, ensure_thumbnail
-    from pathlib import Path as P
-    video_file = base / "uploads" / safe_name
-    if video_file.exists():
-        ensure_thumbnail(str(video_file))
-
-    from app import socketio
-    socketio.emit("videos_updated")
-    return jsonify({"success": True})
+    return jsonify({"results": results, "original_count": original_count, "fps": fps, "duration": duration})
 
 
 @videos_bp.route("/api/videos/<filename>/transcript")

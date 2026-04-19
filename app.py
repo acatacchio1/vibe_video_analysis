@@ -118,7 +118,6 @@ app.register_blueprint(results_bp)
 app.register_blueprint(system_bp)
 app.register_blueprint(transcode_bp)
 app.register_blueprint(knowledge_bp)
-app.register_blueprint(knowledge_bp)
 
 # Register SocketIO handlers
 from src.websocket.handlers import register_socket_handlers

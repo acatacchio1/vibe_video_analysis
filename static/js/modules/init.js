@@ -37,15 +37,19 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Run Dedup button
-    document.getElementById('run-dedup-btn')?.addEventListener('click', runDedup);
-
-    // Dedup threshold input change -> update dedup results display
-    document.getElementById('dedup-threshold-input')?.addEventListener('change', () => {
-        const videoSelect = document.getElementById('video-select');
-        if (videoSelect.value) {
-            loadDedupResults();
+    document.getElementById('run-dedup-btn')?.addEventListener('click', () => {
+        if (selectedDedupThreshold !== null) {
+            applyDedupAtThreshold(selectedDedupThreshold);
+        } else {
+            showToast('Scan thresholds first, then click a row to select one', 'warning');
         }
     });
+
+    // Dedup multi-scan button
+    document.getElementById('dedup-run-multi-btn')?.addEventListener('click', runDedupMulti);
+
+    // Dedup multi-scan button
+    document.getElementById('dedup-run-multi-btn')?.addEventListener('click', runDedupMulti);
 
     // Frame browser controls
     document.getElementById('start-frame-slider')?.addEventListener('input', handleStartSliderChange);

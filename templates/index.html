@@ -162,14 +162,54 @@
 
                         <div id="dedup-results" class="dedup-results hidden">
                             <div class="dedup-summary">
-                                <span id="dedup-original-count">0</span> original frames &rarr;
-                                <span id="dedup-deduped-count">0</span> remaining
-                                (<span id="dedup-dropped-pct">0</span>% dropped)
+                                <span id="dedup-original-count">0</span> original frames
+                            </div>
+                            <div class="dedup-multi-table-wrap">
+                                <table class="dedup-multi-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Threshold</th>
+                                            <th>Frames Kept</th>
+                                            <th>Dropped</th>
+                                            <th>% Dropped</th>
+                                            <th></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="dedup-multi-tbody"></tbody>
+                                </table>
                             </div>
                             <div class="dedup-threshold-row">
-                                <label>Threshold:</label>
-                                <input type="number" id="dedup-threshold-input" value="10" min="0" max="64">
-                                <small>0 = disabled, higher = remove more similar frames</small>
+                                <label>Custom thresholds (comma-separated):</label>
+                                <input type="text" id="dedup-thresholds-input" value="5, 10, 15, 20, 30" placeholder="e.g. 5, 10, 20, 40">
+                                <button type="button" id="dedup-run-multi-btn" class="btn secondary small">Scan</button>
+                            </div>
+                            <div class="dedup-apply-row">
+                                <small>Pick a row above and click Apply, or run a full dedup:</small>
+                                <button type="button" id="run-dedup-btn" class="btn secondary small" title="Run dedup on the currently selected threshold">Apply &amp; Dedup</button>
+                            </div>
+                        </div>
+                            <div class="dedup-multi-table-wrap">
+                                <table class="dedup-multi-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Threshold</th>
+                                            <th>Frames Kept</th>
+                                            <th>Dropped</th>
+                                            <th>% Dropped</th>
+                                            <th></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="dedup-multi-tbody"></tbody>
+                                </table>
+                            </div>
+                            <div class="dedup-threshold-row">
+                                <label>Custom thresholds (comma-separated):</label>
+                                <input type="text" id="dedup-thresholds-input" value="5, 10, 15, 20, 30" placeholder="e.g. 5, 10, 20, 40">
+                                <button type="button" id="dedup-run-multi-btn" class="btn secondary small">Scan</button>
+                            </div>
+                            <div class="dedup-apply-row">
+                                <small>Pick a row above and click Apply, or run a full dedup:</small>
+                                <button type="button" id="run-dedup-btn" class="btn secondary small" title="Run dedup on the currently selected threshold">Apply &amp; Dedup</button>
                             </div>
                         </div>
 

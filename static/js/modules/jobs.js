@@ -292,7 +292,9 @@ async function cancelJob(jobId) {
     }
 }
 
-async function runDedup() {
+let selectedDedupThreshold = null;
+
+async function runDedupMulti() {
     const videoSelect = document.getElementById('video-select');
     const videoName = videoSelect.value;
     if (!videoName) {
@@ -300,11 +302,94 @@ async function runDedup() {
         return;
     }
 
-    const threshold = parseInt(document.getElementById('dedup-threshold-input')?.value || '10');
+    const raw = document.getElementById('dedup-thresholds-input')?.value || '5, 10, 15, 20, 30';
+    const thresholds = raw.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n) && n >= 0 && n <= 64);
+    if (thresholds.length === 0) {
+        showToast('Enter at least one valid threshold (0-64)', 'error');
+        return;
+    }
+
+    const btn = document.getElementById('dedup-run-multi-btn');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Scanning...';
+    }
+
+    try {
+        const response = await fetch(`/api/videos/${encodeURIComponent(videoName)}/dedup-multi`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ thresholds }),
+        });
+
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.error?.message || 'Dedup scan failed');
+        }
+
+        const data = await response.json();
+        showDedupMultiResults(data);
+        showToast(`Scan complete: ${data.original_count} original frames`);
+    } catch (error) {
+        showToast('Dedup scan failed: ' + error.message, 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'Scan';
+        }
+    }
+}
+
+function showDedupMultiResults(data) {
+    const container = document.getElementById('dedup-results');
+    if (!container) return;
+
+    container.classList.remove('hidden');
+    document.getElementById('dedup-original-count').textContent = data.original_count;
+
+    const tbody = document.getElementById('dedup-multi-tbody');
+    if (!tbody) return;
+
+    tbody.innerHTML = data.results.map(r => `
+        <tr class="dedup-row" data-threshold="${r.threshold}">
+            <td>${r.threshold}</td>
+            <td>${r.deduped_count}</td>
+            <td>${r.dropped}</td>
+            <td>${r.dropped_pct}%</td>
+            <td><button type="button" class="btn secondary small dedup-apply-btn" data-threshold="${r.threshold}">Apply</button></td>
+        </tr>
+    `).join('');
+
+    tbody.querySelectorAll('.dedup-row').forEach(row => {
+        row.addEventListener('click', (e) => {
+            if (e.target.classList.contains('dedup-apply-btn')) return;
+            tbody.querySelectorAll('.dedup-row').forEach(r => r.classList.remove('dedup-row-selected'));
+            row.classList.add('dedup-row-selected');
+            selectedDedupThreshold = parseInt(row.dataset.threshold);
+        });
+    });
+
+    tbody.querySelectorAll('.dedup-apply-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const threshold = parseInt(e.target.dataset.threshold);
+            await applyDedupAtThreshold(threshold);
+        });
+    });
+}
+
+async function applyDedupAtThreshold(threshold) {
+    const videoSelect = document.getElementById('video-select');
+    const videoName = videoSelect.value;
+    if (!videoName) {
+        showToast('Select a video first', 'error');
+        return;
+    }
+
     const btn = document.getElementById('run-dedup-btn');
     if (btn) {
         btn.disabled = true;
-        btn.textContent = 'Running...';
+        btn.textContent = 'Applying...';
     }
 
     try {
@@ -320,32 +405,17 @@ async function runDedup() {
         }
 
         const result = await response.json();
-        showDedupResults(result);
-        showToast(`Dedup complete: ${result.original_count} → ${result.deduped_count} frames`);
-
-        // Reload videos to update frame counts
+        showToast(`Dedup applied (threshold=${threshold}): ${result.original_count} → ${result.deduped_count} frames`);
         loadVideos();
+        loadDedupResults();
     } catch (error) {
         showToast('Dedup failed: ' + error.message, 'error');
     } finally {
         if (btn) {
             btn.disabled = false;
-            btn.textContent = 'Run Dedup';
+            btn.textContent = 'Apply & Dedup';
         }
     }
-}
-
-function showDedupResults(result) {
-    const container = document.getElementById('dedup-results');
-    if (!container) return;
-
-    container.classList.remove('hidden');
-    document.getElementById('dedup-original-count').textContent = result.original_count;
-    document.getElementById('dedup-deduped-count').textContent = result.deduped_count;
-
-    const dropped = result.original_count - result.deduped_count;
-    const pct = result.original_count > 0 ? ((dropped / result.original_count) * 100).toFixed(1) : 0;
-    document.getElementById('dedup-dropped-pct').textContent = pct;
 }
 
 async function loadDedupResults() {
@@ -357,7 +427,18 @@ async function loadDedupResults() {
         const response = await fetch(`/api/videos/${encodeURIComponent(videoName)}/dedup`);
         if (response.ok) {
             const result = await response.json();
-            showDedupResults(result);
+            showDedupMultiResults({
+                original_count: result.original_count,
+                results: [{
+                    threshold: result.threshold,
+                    original_count: result.original_count,
+                    deduped_count: result.deduped_count,
+                    dropped: result.original_count - result.deduped_count,
+                    dropped_pct: result.original_count > 0
+                        ? (((result.original_count - result.deduped_count) / result.original_count) * 100).toFixed(1)
+                        : 0,
+                }],
+            });
         }
     } catch (error) {
         // No dedup results yet, that's fine
