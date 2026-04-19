@@ -8,6 +8,7 @@ import json
 import os
 import sys
 import time
+import types
 import logging
 import subprocess
 from pathlib import Path
@@ -342,7 +343,7 @@ def run_analysis(job_dir: Path):
             client = OllamaClient(ollama_url)
 
             # Patch generate() to use /api/chat with think:false at the top level.
-            import functools, types as _types
+            import functools
 
             _chat_url = f"{ollama_url.rstrip('/')}/api/chat"
             logger.info(f"Patched OllamaClient chat_url={_chat_url}")
@@ -386,7 +387,7 @@ def run_analysis(job_dir: Path):
                     "prompt_eval_count": d.get("prompt_eval_count", 0),
                 }
 
-            client.generate = _types.MethodType(_patched_generate, client)
+            client.generate = types.MethodType(_patched_generate, client)
 
         else:
             logger.info("Using OpenRouter client")
@@ -407,6 +408,56 @@ def run_analysis(job_dir: Path):
         frame_analyses = []
         analyzer._total_frames = total_frames
 
+        # Load dedup mapping for original frame numbers
+        dedup_map = {}
+        dedup_path = Path(video_frames_dir).parent / "dedup_results.json" if video_frames_dir else None
+        if dedup_path and dedup_path.exists():
+            try:
+                dedup_map = json.loads(dedup_path.read_text())
+                logger.info(f"Loaded dedup mapping with {len(dedup_map.get('dedup_to_original_mapping', {}))} entries")
+            except Exception as e:
+                logger.warning(f"Failed to load dedup mapping: {e}")
+
+        # Load transcript segments for context injection
+        transcript_segments = []
+        if transcript and transcript.get("segments"):
+            transcript_segments = transcript["segments"]
+
+        def get_transcript_context(frame_ts, prev_frame_ts):
+            """Get transcript text from prev_frame_ts to frame_ts + 3s"""
+            if not transcript_segments:
+                return ""
+            start = prev_frame_ts if prev_frame_ts is not None else max(0, frame_ts - 3)
+            end = frame_ts + 3
+            segments = [
+                s["text"] for s in transcript_segments
+                if start <= s["start"] <= end
+            ]
+            return " ".join(segments) if segments else ""
+
+        # Monkey-patch analyzer.analyze_frame to inject transcript context
+        _original_analyze_frame = analyzer.analyze_frame
+        _prev_frame_ts = None
+
+        def _patched_analyze_frame(self_inner, frame, prev_ts=None):
+            nonlocal _prev_frame_ts
+            ts_context = get_transcript_context(frame.timestamp, prev_ts)
+            if ts_context:
+                original_frame_prompt = self_inner.frame_prompt
+                start_ts = prev_ts if prev_ts is not None else max(0, frame.timestamp - 3)
+                transcript_section = f"\n\nTRANSCRIPT CONTEXT (from {start_ts:.1f}s to {frame.timestamp + 3:.1f}s):\n{ts_context}"
+                self_inner.frame_prompt = original_frame_prompt + transcript_section
+                result = _original_analyze_frame(frame)
+                self_inner.frame_prompt = original_frame_prompt
+                result["transcript_context"] = ts_context
+            else:
+                result = _original_analyze_frame(frame)
+                result["transcript_context"] = ""
+            _prev_frame_ts = frame.timestamp
+            return result
+
+        analyzer.analyze_frame = types.MethodType(_patched_analyze_frame, analyzer)
+
         # Track costs for OpenRouter
         total_prompt_tokens = 0
         total_completion_tokens = 0
@@ -425,12 +476,20 @@ def run_analysis(job_dir: Path):
             # Progress: 20% to 80% for frame analysis
             progress = 20 + int((i + 1) / total_frames * 60)
 
+            # Get original frame number from dedup mapping
+            dedup_frame_num = i + 1
+            orig_frame = dedup_map.get("dedup_to_original_mapping", {}).get(str(dedup_frame_num), dedup_frame_num)
+            orig_ts = dedup_map.get("original_timestamps", {}).get(str(dedup_frame_num), frame.timestamp)
+
             # Write frame analysis for real-time display
             frame_result = {
                 "frame_number": i + 1,
                 "total_frames": total_frames,
+                "original_frame": orig_frame,
                 "timestamp": frame.timestamp,
+                "original_ts": orig_ts,
                 "analysis": analysis.get("response", ""),
+                "transcript_context": analysis.get("transcript_context", ""),
                 "tokens": analysis.get("usage", {}),
             }
 
@@ -444,6 +503,7 @@ def run_analysis(job_dir: Path):
                 {
                     "progress": progress,
                     "current_frame": i + 1,
+                    "total_frames": total_frames,
                     "last_frame_analysis": analysis.get("response", ""),
                 },
             )

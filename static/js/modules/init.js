@@ -30,8 +30,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Video select change -> update frame browser and start button
     document.getElementById('video-select')?.addEventListener('change', () => {
+        state.currentVideo = document.getElementById('video-select').value;
         updateStartButton();
         initFrameBrowserForSelectedVideo();
+        loadDedupResults();
+    });
+
+    // Run Dedup button
+    document.getElementById('run-dedup-btn')?.addEventListener('click', runDedup);
+
+    // Dedup threshold input change -> update dedup results display
+    document.getElementById('dedup-threshold-input')?.addEventListener('change', () => {
+        const videoSelect = document.getElementById('video-select');
+        if (videoSelect.value) {
+            loadDedupResults();
+        }
     });
 
     // Frame browser controls

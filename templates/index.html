@@ -151,9 +151,25 @@
                     <form id="analysis-form" class="analysis-form">
                         <div class="form-group">
                             <label for="video-select">Video</label>
-                            <select id="video-select" required>
-                                <option value="">Select a video...</option>
-                            </select>
+                            <div class="video-select-row">
+                                <select id="video-select" required>
+                                    <option value="">Select a video...</option>
+                                </select>
+                                <button type="button" id="run-dedup-btn" class="btn secondary small" title="Run deduplication on this video">Run Dedup</button>
+                            </div>
+                        </div>
+
+                        <div id="dedup-results" class="dedup-results hidden">
+                            <div class="dedup-summary">
+                                <span id="dedup-original-count">0</span> original frames &rarr;
+                                <span id="dedup-deduped-count">0</span> remaining
+                                (<span id="dedup-dropped-pct">0</span>% dropped)
+                            </div>
+                            <div class="dedup-threshold-row">
+                                <label>Threshold:</label>
+                                <input type="number" id="dedup-threshold-input" value="10" min="0" max="64">
+                                <small>0 = disabled, higher = remove more similar frames</small>
+                            </div>
                         </div>
 
                         <div id="frame-range-section" class="frame-range-section hidden">
@@ -220,10 +236,26 @@
                         </div>
 
                         <div class="form-group">
-                            <label for="model-select">Model</label>
-                            <select id="model-select" required disabled>
-                                <option value="">Select provider first...</option>
-                            </select>
+                            <label for="video-select">Video</label>
+                            <div class="video-select-row">
+                                <select id="video-select" required>
+                                    <option value="">Select a video...</option>
+                                </select>
+                                <button type="button" id="run-dedup-btn" class="btn secondary small" title="Run deduplication on this video">Run Dedup</button>
+                            </div>
+                        </div>
+
+                        <div id="dedup-results" class="dedup-results hidden">
+                            <div class="dedup-summary">
+                                <span id="dedup-original-count">0</span> original frames &rarr;
+                                <span id="dedup-deduped-count">0</span> remaining
+                                (<span id="dedup-dropped-pct">0</span>% dropped)
+                            </div>
+                            <div class="dedup-threshold-row">
+                                <label>Threshold:</label>
+                                <input type="number" id="dedup-threshold-input" value="10" min="0" max="64">
+                                <small>0 = disabled, higher = remove more similar frames</small>
+                            </div>
                         </div>
 
                         <div id="cost-estimate" class="cost-estimate hidden">

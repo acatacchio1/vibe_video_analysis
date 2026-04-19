@@ -23,6 +23,11 @@ function renderJobsList(jobs) {
         const progress = job.progress || 0;
         const model = job.model_id || job.model || 'unknown';
         const video = job.video_path ? job.video_path.split('/').pop() : '';
+        const currentFrame = job.current_frame || 0;
+        const totalFrames = job.total_frames || 0;
+        const frameCountHtml = (currentFrame > 0 && totalFrames > 0)
+            ? `<div class="job-frame-count">Frame ${currentFrame} / ${totalFrames}</div>`
+            : '';
 
         return `
             <div class="job-card ${statusClass}" data-job-id="${job.job_id}">
@@ -42,6 +47,7 @@ function renderJobsList(jobs) {
                         <span>${job.stage || 'queued'}</span>
                         <span>${progress}%</span>
                     </div>
+                    ${frameCountHtml}
                 </div>
                 <div class="job-actions">
                     <button class="btn small secondary" onclick="viewJobDetails('${job.job_id}')">Details</button>
@@ -119,6 +125,22 @@ function updateJobCard(data) {
     if (progressText) {
         progressText.innerHTML = `<span>${data.stage || 'queued'}</span><span>${data.progress || 0}%</span>`;
     }
+
+    const currentFrame = data.current_frame || 0;
+    const totalFrames = data.total_frames || 0;
+    let frameCountEl = card.querySelector('.job-frame-count');
+    if (currentFrame > 0 && totalFrames > 0) {
+        if (!frameCountEl) {
+            frameCountEl = document.createElement('div');
+            frameCountEl.className = 'job-frame-count';
+            const progressBar = card.querySelector('.job-progress');
+            if (progressBar) progressBar.appendChild(frameCountEl);
+        }
+        frameCountEl.textContent = `Frame ${currentFrame} / ${totalFrames}`;
+    } else if (frameCountEl) {
+        frameCountEl.remove();
+    }
+
     if (data.status) {
         if (statusBadge) {
             statusBadge.className = `job-status ${data.status}`;
@@ -158,16 +180,37 @@ function appendFrameLog(data) {
     }
 
     const frameNum = data.frame_number || data.frame;
-    const ts = formatVideoTimestamp(data.video_ts);
+    const origFrame = data.original_frame;
+    const ts = formatVideoTimestamp(data.video_ts ?? data.timestamp);
+    const origTs = data.original_ts;
+
+    const origHtml = (origFrame && origFrame !== frameNum)
+        ? `<span class="frame-original">(orig: ${origFrame}${origTs !== undefined ? ' @ ' + formatVideoTimestamp(origTs) : ''})</span>`
+        : '';
     const tsHtml = ts !== null ? `<span class="frame-timestamp">${ts}</span>` : '';
+
+    const videoName = state.frameBrowser?.videoName || state.currentVideo || '';
+    const thumbUrl = videoName ? `/api/videos/${encodeURIComponent(videoName)}/frames/${frameNum}/thumb` : '';
+    const thumbHtml = thumbUrl
+        ? `<div class="frame-thumbnail"><img src="${thumbUrl}" alt="Frame ${frameNum}" loading="lazy"></div>`
+        : '';
+
+    const transcriptCtx = data.transcript_context || '';
+    const transcriptHtml = transcriptCtx
+        ? `<div class="frame-transcript-context" onclick="this.classList.toggle('expanded')">${escapeHtml(transcriptCtx)}</div>`
+        : '';
 
     const entry = document.createElement('div');
     entry.className = 'frame-entry';
     entry.innerHTML = `
-        <div class="frame-header">
-            <span class="frame-number">Frame ${frameNum}</span>${tsHtml}
+        ${thumbHtml}
+        <div class="frame-content">
+            <div class="frame-header">
+                <span class="frame-number">Frame ${frameNum}</span>${origHtml}${tsHtml}
+            </div>
+            <div class="frame-text">${formatFrameAnalysis(data.analysis || data.response || '')}</div>
+            ${transcriptHtml}
         </div>
-        <div class="frame-text">${formatFrameAnalysis(data.analysis || data.response || '')}</div>
     `;
     log.appendChild(entry);
     log.scrollTop = log.scrollHeight;
@@ -182,6 +225,12 @@ async function viewJobDetails(jobId) {
         const modalBody = document.getElementById('job-detail-content');
         document.getElementById('modal-title').textContent = `Job Details: ${jobId}`;
 
+        const currentFrame = job.current_frame || 0;
+        const totalFrames = job.total_frames || 0;
+        const frameInfo = (currentFrame > 0 && totalFrames > 0)
+            ? `<p><strong>Frame:</strong> ${currentFrame} / ${totalFrames}</p>`
+            : '';
+
         modalBody.innerHTML = `
             <div class="job-status-card">
                 <div class="job-status-header">
@@ -193,6 +242,7 @@ async function viewJobDetails(jobId) {
                     <p><strong>Provider:</strong> ${job.provider_type || 'N/A'}</p>
                     <p><strong>Stage:</strong> ${job.stage || 'N/A'}</p>
                     <p><strong>Progress:</strong> ${job.progress || 0}%</p>
+                    ${frameInfo}
                     <p><strong>Priority:</strong> ${job.priority || 0}</p>
                     <p><strong>VRAM Required:</strong> ${job.vram_required ? (job.vram_required / 1024 / 1024 / 1024).toFixed(1) + ' GB' : 'N/A'}</p>
                 </div>
@@ -239,6 +289,78 @@ async function cancelJob(jobId) {
         }
     } catch (error) {
         showToast('Cancel failed: ' + error.message, 'error');
+    }
+}
+
+async function runDedup() {
+    const videoSelect = document.getElementById('video-select');
+    const videoName = videoSelect.value;
+    if (!videoName) {
+        showToast('Select a video first', 'error');
+        return;
+    }
+
+    const threshold = parseInt(document.getElementById('dedup-threshold-input')?.value || '10');
+    const btn = document.getElementById('run-dedup-btn');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Running...';
+    }
+
+    try {
+        const response = await fetch(`/api/videos/${encodeURIComponent(videoName)}/dedup`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ threshold }),
+        });
+
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.error?.message || 'Dedup failed');
+        }
+
+        const result = await response.json();
+        showDedupResults(result);
+        showToast(`Dedup complete: ${result.original_count} → ${result.deduped_count} frames`);
+
+        // Reload videos to update frame counts
+        loadVideos();
+    } catch (error) {
+        showToast('Dedup failed: ' + error.message, 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'Run Dedup';
+        }
+    }
+}
+
+function showDedupResults(result) {
+    const container = document.getElementById('dedup-results');
+    if (!container) return;
+
+    container.classList.remove('hidden');
+    document.getElementById('dedup-original-count').textContent = result.original_count;
+    document.getElementById('dedup-deduped-count').textContent = result.deduped_count;
+
+    const dropped = result.original_count - result.deduped_count;
+    const pct = result.original_count > 0 ? ((dropped / result.original_count) * 100).toFixed(1) : 0;
+    document.getElementById('dedup-dropped-pct').textContent = pct;
+}
+
+async function loadDedupResults() {
+    const videoSelect = document.getElementById('video-select');
+    const videoName = videoSelect.value;
+    if (!videoName) return;
+
+    try {
+        const response = await fetch(`/api/videos/${encodeURIComponent(videoName)}/dedup`);
+        if (response.ok) {
+            const result = await response.json();
+            showDedupResults(result);
+        }
+    } catch (error) {
+        // No dedup results yet, that's fine
     }
 }
 
