@@ -152,42 +152,15 @@
                     <form id="analysis-form" class="analysis-form">
                         <div class="form-group">
                             <label for="video-select">Video</label>
-                            <div class="video-select-row">
-                                <select id="video-select" required>
-                                    <option value="">Select a video...</option>
-                                </select>
-                                <button type="button" id="run-dedup-btn" class="btn secondary small" title="Run deduplication on this video">Run Dedup</button>
-                            </div>
+                            <select id="video-select" required>
+                                <option value="">Select a video...</option>
+                            </select>
                         </div>
 
                         <div id="dedup-results" class="dedup-results hidden">
                             <div class="dedup-summary">
                                 <span id="dedup-original-count">0</span> original frames
                             </div>
-                            <div class="dedup-multi-table-wrap">
-                                <table class="dedup-multi-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Threshold</th>
-                                            <th>Frames Kept</th>
-                                            <th>Dropped</th>
-                                            <th>% Dropped</th>
-                                            <th></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="dedup-multi-tbody"></tbody>
-                                </table>
-                            </div>
-                            <div class="dedup-threshold-row">
-                                <label>Custom thresholds (comma-separated):</label>
-                                <input type="text" id="dedup-thresholds-input" value="5, 10, 15, 20, 30" placeholder="e.g. 5, 10, 20, 40">
-                                <button type="button" id="dedup-run-multi-btn" class="btn secondary small">Scan</button>
-                            </div>
-                            <div class="dedup-apply-row">
-                                <small>Pick a row above and click Apply, or run a full dedup:</small>
-                                <button type="button" id="run-dedup-btn" class="btn secondary small" title="Run dedup on the currently selected threshold">Apply &amp; Dedup</button>
-                            </div>
-                        </div>
                             <div class="dedup-multi-table-wrap">
                                 <table class="dedup-multi-table">
                                     <thead>
@@ -314,10 +287,20 @@
                                     <label for="temperature-input">Temperature</label>
                                     <input type="number" id="temperature-input" value="0.0" min="0" max="2" step="0.1">
                                 </div>
-                            </div>
+                        </div>
 
-                            <div class="form-row">
-                                <div class="form-group">
+                        <div class="form-group">
+                            <label for="provider-select">AI Provider</label>
+                            <div class="provider-controls">
+                                <select id="provider-select" required>
+                                    <option value="">Select provider...</option>
+                                </select>
+                                <button type="button" id="discover-btn" class="btn secondary">🔄 Discover</button>
+                            </div>
+                            <div id="provider-status" class="provider-status"></div>
+                        </div>
+
+                        <div class="form-group">
                                     <label for="whisper-select">Whisper Model</label>
                                     <select id="whisper-select">
                                         <option value="tiny">tiny (fastest)</option>
