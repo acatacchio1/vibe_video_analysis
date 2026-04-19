@@ -2465,9 +2465,124 @@ section > h2::before,
     font-variant-numeric: tabular-nums;
 }
 
-.job-frame-count {
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-    margin-top: 2px;
-    font-variant-numeric: tabular-nums;
+/* ========================================
+   Knowledge Base Settings
+   ======================================== */
+
+.kb-settings-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+}
+
+.kb-actions {
+    display: flex;
+    gap: var(--spacing-sm);
+    margin-top: var(--spacing-sm);
+}
+
+.kb-sync-actions {
+    display: flex;
+    gap: var(--spacing-sm);
+}
+
+.kb-status {
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-radius: var(--border-radius-sm);
+    font-size: 0.85rem;
+    line-height: 1.5;
+}
+
+.kb-status.success {
+    background: rgba(46, 160, 67, 0.15);
+    border: 1px solid var(--success);
+    color: var(--success);
+}
+
+.kb-status.error {
+    background: rgba(248, 81, 73, 0.15);
+    border: 1px solid var(--error);
+    color: var(--error);
+}
+
+.kb-status.info {
+    background: rgba(88, 166, 255, 0.15);
+    border: 1px solid var(--info);
+    color: var(--info);
+}
+
+.kb-divider {
+    height: 1px;
+    background: var(--border-color, rgba(255,255,255,0.1));
+    margin: var(--spacing-md) 0;
+}
+
+.api-key-row {
+    display: flex;
+    gap: var(--spacing-sm);
+}
+
+.api-key-row input {
+    flex: 1;
+}
+
+/* ========================================
+   Knowledge Base Settings
+   ======================================== */
+
+.kb-settings-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+}
+
+.kb-actions {
+    display: flex;
+    gap: var(--spacing-sm);
+    margin-top: var(--spacing-sm);
+}
+
+.kb-sync-actions {
+    display: flex;
+    gap: var(--spacing-sm);
+}
+
+.kb-status {
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-radius: var(--border-radius-sm);
+    font-size: 0.85rem;
+    line-height: 1.5;
+}
+
+.kb-status.success {
+    background: rgba(46, 160, 67, 0.15);
+    border: 1px solid var(--success);
+    color: var(--success);
+}
+
+.kb-status.error {
+    background: rgba(248, 81, 73, 0.15);
+    border: 1px solid var(--error);
+    color: var(--error);
+}
+
+.kb-status.info {
+    background: rgba(88, 166, 255, 0.15);
+    border: 1px solid var(--info);
+    color: var(--info);
+}
+
+.kb-divider {
+    height: 1px;
+    background: var(--border-color, rgba(255,255,255,0.1));
+    margin: var(--spacing-md) 0;
+}
+
+.api-key-row {
+    display: flex;
+    gap: var(--spacing-sm);
+}
+
+.api-key-row input {
+    flex: 1;
 }

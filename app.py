@@ -108,6 +108,7 @@ from src.api.llm import llm_bp
 from src.api.results import results_bp
 from src.api.system import system_bp
 from src.api.transcode import transcode_bp
+from src.api.knowledge import knowledge_bp
 
 app.register_blueprint(videos_bp)
 app.register_blueprint(providers_bp)
@@ -116,6 +117,8 @@ app.register_blueprint(llm_bp)
 app.register_blueprint(results_bp)
 app.register_blueprint(system_bp)
 app.register_blueprint(transcode_bp)
+app.register_blueprint(knowledge_bp)
+app.register_blueprint(knowledge_bp)
 
 # Register SocketIO handlers
 from src.websocket.handlers import register_socket_handlers
@@ -344,6 +347,60 @@ def monitor_job(job_id: str, job_dir: Path, proc: subprocess.Popen):
             {"job_id": job_id, "success": success, **final_status},
             room=f"job_{job_id}",
         )
+
+    if success:
+        socketio.start_background_task(_sync_to_openwebui_kb, job_id)
+
+
+def _sync_to_openwebui_kb(job_id: str):
+    """Background task: sync job results to OpenWebUI KB if enabled"""
+    try:
+        from src.api.knowledge import _get_owui_config, sync_job_to_kb
+        cfg = _get_owui_config()
+        if cfg.get("enabled") and cfg.get("auto_sync"):
+            logger.info(f"Auto-syncing job {job_id} to OpenWebUI KB...")
+            result = sync_job_to_kb(job_id)
+            if result.get("success"):
+                logger.info(f"Job {job_id} synced to OpenWebUI KB successfully")
+                socketio.emit(
+                    "kb_sync_complete",
+                    {"job_id": job_id, "kb_id": result.get("kb_id")},
+                )
+            else:
+                logger.warning(f"Job {job_id} KB sync failed: {result.get('error')}")
+                socketio.emit(
+                    "kb_sync_error",
+                    {"job_id": job_id, "error": result.get("error")},
+                )
+    except Exception as e:
+        logger.error(f"Error in KB sync for job {job_id}: {e}")
+
+    if success:
+        socketio.start_background_task(_sync_to_openwebui_kb, job_id)
+
+
+def _sync_to_openwebui_kb(job_id: str):
+    """Background task: sync job results to OpenWebUI KB if enabled"""
+    try:
+        from src.api.knowledge import _get_owui_config, sync_job_to_kb
+        cfg = _get_owui_config()
+        if cfg.get("enabled") and cfg.get("auto_sync"):
+            logger.info(f"Auto-syncing job {job_id} to OpenWebUI KB...")
+            result = sync_job_to_kb(job_id)
+            if result.get("success"):
+                logger.info(f"Job {job_id} synced to OpenWebUI KB successfully")
+                socketio.emit(
+                    "kb_sync_complete",
+                    {"job_id": job_id, "kb_id": result.get("kb_id")},
+                )
+            else:
+                logger.warning(f"Job {job_id} KB sync failed: {result.get('error')}")
+                socketio.emit(
+                    "kb_sync_error",
+                    {"job_id": job_id, "error": result.get("error")},
+                )
+    except Exception as e:
+        logger.error(f"Error in KB sync for job {job_id}: {e}")
 
 
 # ==================== Callbacks ====================

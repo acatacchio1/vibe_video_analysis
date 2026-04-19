@@ -48,5 +48,13 @@
     "device": "gpu"
   },
   "keep_frames": false,
-  "prompt": ""
+  "prompt": "",
+  "openwebui": {
+    "enabled": false,
+    "url": "http://192.168.1.237:8080",
+    "api_key": "",
+    "knowledge_base_name": "Video Analyzer",
+    "auto_sync": true
+  }
+}
 }

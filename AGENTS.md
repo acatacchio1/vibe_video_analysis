@@ -1,6 +1,6 @@
 # Video Analyzer Web - Agent Development Guide
 
-> Version 0.3.1 | Last updated: 2026-04-19
+> Version 0.3.2 | Last updated: 2026-04-19
 
 This document provides essential context for AI agents working on this codebase.
 
@@ -25,6 +25,7 @@ This document provides essential context for AI agents working on this codebase.
 - **Job execution**: VRAM-aware scheduler → spawns worker subprocess per job
 - **Real-time updates**: SocketIO for job progress, frame analysis, system monitoring, server logs
 - **Frame renumbering**: After dedup, frames are renumbered sequentially (1,2,3...) with a `frames_index.json` mapping each frame to its actual video timestamp for accurate transcript sync
+- **OpenWebUI Knowledge Base sync**: After job completion, results are auto-synced to OpenWebUI KB via REST API (configurable in settings)
 
 ---
 
@@ -67,7 +68,8 @@ video-analyzer-web/
 │   │   ├── llm.py                  # /api/llm/chat, queue stats
 │   │   ├── results.py              # /api/results (stored results browser)
 │   │   ├── system.py               # /api/vram, /api/gpus
-│   │   └── transcode.py            # /api/videos/transcode, /api/videos/reprocess
+│   │   ├── transcode.py            # /api/videos/transcode, /api/videos/reprocess
+│   │   └── knowledge.py            # /api/knowledge/sync, /api/knowledge/config, /api/knowledge/test
 │   │
 │   ├── websocket/
 │   │   └── handlers.py             # SocketIO events (connect, subscribe_job, start_analysis)
@@ -82,6 +84,9 @@ video-analyzer-web/
 │   │   ├── video.py                # get_video_duration(), probe_video(), probe_all_videos()
 │   │   ├── file.py                 # Re-exports from security.py (backward compat)
 │   │   └── transcode.py            # Re-exports from video.py (backward compat)
+│   │
+│   ├── services/
+│   │   └── openwebui_kb.py         # OpenWebUI Knowledge Base API client
 │   │
 │   ├── core/                       # (scaffolded, not yet active)
 │   ├── services/                   # (scaffolded, not yet active)
@@ -102,6 +107,7 @@ video-analyzer-web/
 │           ├── system.js           # GPU status display, monitor tabs
 │           ├── results.js          # Stored results browser, detail view
 │           ├── settings.js         # Settings persistence, toggle handlers
+│           ├── knowledge.js        # OpenWebUI KB settings, test, sync
 │           ├── ui.js               # Toasts, modals, escapeHtml, formatFrameAnalysis
 │           └── init.js             # DOMContentLoaded bootstrap, event wiring
 │
@@ -236,7 +242,6 @@ These directories exist but are not yet wired into the application:
 | Directory | Intended Purpose |
 |---|---|
 | `src/core/` | Flask app factory pattern (currently app.py does this directly) |
-| `src/services/` | Business logic layer between blueprints and data access |
 | `src/queue/` | Common base class for VRAMManager and ChatQueueManager |
 
 When ready to activate these, refactor `app.py` to use `src.core.app.create_app()` factory pattern.

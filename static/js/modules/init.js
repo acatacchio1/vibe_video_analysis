@@ -90,6 +90,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Clear server log
     document.getElementById('clear-log-btn')?.addEventListener('click', clearServerLog);
+
+    // Knowledge Base handlers
+    initKbHandlers();
 });
 
 async function submitAnalysis() {

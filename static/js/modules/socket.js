@@ -81,6 +81,16 @@ function initSocket() {
     state.socket.on('log_message', (data) => {
         appendServerLog(data);
     });
+
+    state.socket.on('kb_sync_complete', (data) => {
+        debugLog('RECV:kb_sync_complete', data);
+        showToast(`Synced to OpenWebUI KB (job: ${data.job_id?.substring(0, 8)}...)`, 'success');
+    });
+
+    state.socket.on('kb_sync_error', (data) => {
+        debugLog('RECV:kb_sync_error', data);
+        showToast(`KB sync failed: ${data.error}`, 'error');
+    });
 }
 
 function subscribeToJob(jobId) {

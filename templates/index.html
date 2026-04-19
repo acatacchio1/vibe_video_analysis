@@ -11,6 +11,7 @@
     <header class="app-header">
         <h1>Video Analyzer Web <span class="app-version">v{{ version }}</span></h1>
         <div class="header-actions">
+            <button id="kb-settings-btn" class="icon-btn" title="OpenWebUI Knowledge Base">📚</button>
             <button id="debug-btn" class="icon-btn" title="Toggle Debug Mode">🐛</button>
             <button id="notifications-btn" class="icon-btn" title="Enable Notifications">🔔</button>
         </div>
@@ -416,6 +417,140 @@
         </section>
     </main>
 
+    <!-- Knowledge Base Settings Modal -->
+    <div id="kb-modal" class="modal hidden">
+        <div class="modal-content modal-wide">
+            <header class="modal-header">
+                <h2>OpenWebUI Knowledge Base</h2>
+                <button class="close-btn" onclick="closeKbModal()">&times;</button>
+            </header>
+            <div class="modal-body">
+                <div class="kb-settings-form">
+                    <div class="form-group checkbox">
+                        <label>
+                            <input type="checkbox" id="kb-enabled-checkbox">
+                            Enable OpenWebUI Knowledge Base sync
+                        </label>
+                    </div>
+
+                    <div id="kb-config-fields">
+                        <div class="form-group">
+                            <label for="kb-url-input">OpenWebUI URL</label>
+                            <input type="text" id="kb-url-input" placeholder="http://192.168.1.237:8080">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="kb-api-key-input">API Key</label>
+                            <div class="api-key-row">
+                                <input type="password" id="kb-api-key-input" placeholder="Enter your OpenWebUI API key">
+                                <button type="button" id="kb-toggle-visibility-btn" class="btn secondary small" title="Toggle visibility">👁️</button>
+                            </div>
+                            <small>Found in OpenWebUI → Settings → Account → API Keys</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="kb-name-input">Knowledge Base Name</label>
+                            <input type="text" id="kb-name-input" placeholder="Video Analyzer">
+                        </div>
+
+                        <div class="form-group checkbox">
+                            <label>
+                                <input type="checkbox" id="kb-auto-sync-checkbox">
+                                Auto-sync after each analysis job
+                            </label>
+                        </div>
+
+                        <div class="kb-actions">
+                            <button type="button" id="kb-test-btn" class="btn secondary">Test Connection</button>
+                            <button type="button" id="kb-save-btn" class="btn primary">Save Settings</button>
+                        </div>
+
+                        <div id="kb-status" class="kb-status hidden"></div>
+
+                        <div class="kb-divider"></div>
+
+                        <div class="form-group">
+                            <label>Manual Sync</label>
+                            <div class="kb-sync-actions">
+                                <button type="button" id="kb-sync-all-btn" class="btn secondary">Sync All Results</button>
+                            </div>
+                            <small>Push all existing analysis results to the knowledge base</small>
+                        </div>
+
+                        <div id="kb-sync-status" class="kb-status hidden"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Knowledge Base Settings Modal -->
+    <div id="kb-modal" class="modal hidden">
+        <div class="modal-content modal-wide">
+            <header class="modal-header">
+                <h2>OpenWebUI Knowledge Base</h2>
+                <button class="close-btn" onclick="closeKbModal()">&times;</button>
+            </header>
+            <div class="modal-body">
+                <div class="kb-settings-form">
+                    <div class="form-group checkbox">
+                        <label>
+                            <input type="checkbox" id="kb-enabled-checkbox">
+                            Enable OpenWebUI Knowledge Base sync
+                        </label>
+                    </div>
+
+                    <div id="kb-config-fields">
+                        <div class="form-group">
+                            <label for="kb-url-input">OpenWebUI URL</label>
+                            <input type="text" id="kb-url-input" placeholder="http://192.168.1.237:8080">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="kb-api-key-input">API Key</label>
+                            <div class="api-key-row">
+                                <input type="password" id="kb-api-key-input" placeholder="Enter your OpenWebUI API key">
+                                <button type="button" id="kb-toggle-visibility-btn" class="btn secondary small" title="Toggle visibility">👁️</button>
+                            </div>
+                            <small>Found in OpenWebUI → Settings → Account → API Keys</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="kb-name-input">Knowledge Base Name</label>
+                            <input type="text" id="kb-name-input" placeholder="Video Analyzer">
+                        </div>
+
+                        <div class="form-group checkbox">
+                            <label>
+                                <input type="checkbox" id="kb-auto-sync-checkbox">
+                                Auto-sync after each analysis job
+                            </label>
+                        </div>
+
+                        <div class="kb-actions">
+                            <button type="button" id="kb-test-btn" class="btn secondary">Test Connection</button>
+                            <button type="button" id="kb-save-btn" class="btn primary">Save Settings</button>
+                        </div>
+
+                        <div id="kb-status" class="kb-status hidden"></div>
+
+                        <div class="kb-divider"></div>
+
+                        <div class="form-group">
+                            <label>Manual Sync</label>
+                            <div class="kb-sync-actions">
+                                <button type="button" id="kb-sync-all-btn" class="btn secondary">Sync All Results</button>
+                            </div>
+                            <small>Push all existing analysis results to the knowledge base</small>
+                        </div>
+
+                        <div id="kb-sync-status" class="kb-status hidden"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Job Detail Modal -->
     <div id="job-modal" class="modal hidden">
         <div class="modal-content modal-wide">
@@ -479,6 +614,7 @@
     <script src="{{ url_for('static', filename='js/modules/system.js') }}"></script>
     <script src="{{ url_for('static', filename='js/modules/results.js') }}"></script>
     <script src="{{ url_for('static', filename='js/modules/settings.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/modules/knowledge.js') }}"></script>
     <script src="{{ url_for('static', filename='js/modules/init.js') }}"></script>
 </body>
 </html>
