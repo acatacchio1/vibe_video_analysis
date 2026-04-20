@@ -48,9 +48,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // Dedup multi-scan button
     document.getElementById('dedup-run-multi-btn')?.addEventListener('click', runDedupMulti);
 
-    // Dedup multi-scan button
-    document.getElementById('dedup-run-multi-btn')?.addEventListener('click', runDedupMulti);
-
     // Frame browser controls
     document.getElementById('start-frame-slider')?.addEventListener('input', handleStartSliderChange);
     document.getElementById('end-frame-slider')?.addEventListener('input', handleEndSliderChange);
@@ -72,7 +69,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Settings
-    document.getElementById('advanced-toggle-btn')?.addEventListener('click', toggleAdvancedOptions);
     document.getElementById('upload-settings-btn')?.addEventListener('click', toggleUploadSettings);
     document.addEventListener('click', closeUploadSettings);
 

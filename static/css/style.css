@@ -2697,3 +2697,96 @@ section > h2::before,
 .api-key-row input {
     flex: 1;
 }
+/* ========================================
+   Form Sections (grouped by task)
+   ======================================== */
+
+.form-section {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color, rgba(255,255,255,0.08));
+    border-radius: var(--border-radius-md);
+    padding: var(--spacing-md);
+    margin-bottom: var(--spacing-md);
+}
+
+.form-section h3 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0 0 var(--spacing-sm) 0;
+    padding-bottom: var(--spacing-xs);
+    border-bottom: 1px solid var(--border-color, rgba(255,255,255,0.08));
+}
+
+.form-section .form-group {
+    margin-bottom: var(--spacing-sm);
+}
+
+.form-section .form-group:last-child {
+    margin-bottom: 0;
+}
+
+/* ========================================
+   Send to KB Modal
+   ======================================== */
+
+.send-kb-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+}
+
+.send-kb-job-info {
+    padding: var(--spacing-xs) var(--spacing-sm);
+    background: var(--bg-tertiary);
+    border-radius: var(--border-radius-sm);
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
+/* ========================================
+   Form Sections (grouped by task)
+   ======================================== */
+
+.form-section {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color, rgba(255,255,255,0.08));
+    border-radius: var(--border-radius-md);
+    padding: var(--spacing-md);
+    margin-bottom: var(--spacing-md);
+}
+
+.form-section h3 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0 0 var(--spacing-sm) 0;
+    padding-bottom: var(--spacing-xs);
+    border-bottom: 1px solid var(--border-color, rgba(255,255,255,0.08));
+}
+
+.form-section .form-group {
+    margin-bottom: var(--spacing-sm);
+}
+
+.form-section .form-group:last-child {
+    margin-bottom: 0;
+}
+
+/* ========================================
+   Send to KB Modal
+   ======================================== */
+
+.send-kb-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+}
+
+.send-kb-job-info {
+    padding: var(--spacing-xs) var(--spacing-sm);
+    background: var(--bg-tertiary);
+    border-radius: var(--border-radius-sm);
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}

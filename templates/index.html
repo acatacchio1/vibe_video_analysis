@@ -150,41 +150,44 @@
                     <h2>New Analysis</h2>
                     
                     <form id="analysis-form" class="analysis-form">
-                        <div class="form-group">
-                            <label for="video-select">Video</label>
-                            <select id="video-select" required>
-                                <option value="">Select a video...</option>
-                            </select>
-                        </div>
+                        <div class="form-section">
+                            <h3>Video</h3>
+                            <div class="form-group">
+                                <label for="video-select">Video</label>
+                                <select id="video-select" required>
+                                    <option value="">Select a video...</option>
+                                </select>
+                            </div>
 
-                        <div id="dedup-results" class="dedup-results">
-                            <div class="dedup-summary">
-                                <span id="dedup-original-count">--</span> original frames
-                            </div>
-                            <div class="dedup-multi-table-wrap">
-                                <table class="dedup-multi-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Threshold</th>
-                                            <th>Frames Kept</th>
-                                            <th>Dropped</th>
-                                            <th>% Dropped</th>
-                                            <th></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="dedup-multi-tbody">
-                                        <tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:12px">Select a video and click Scan</td></tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                            <div class="dedup-threshold-row">
-                                <label>Custom thresholds (comma-separated):</label>
-                                <input type="text" id="dedup-thresholds-input" value="5, 10, 15, 20, 30" placeholder="e.g. 5, 10, 20, 40">
-                                <button type="button" id="dedup-run-multi-btn" class="btn secondary small">Scan</button>
-                            </div>
-                            <div class="dedup-apply-row">
-                                <small>Pick a row above and click Apply, or run a full dedup:</small>
-                                <button type="button" id="run-dedup-btn" class="btn secondary small" title="Run dedup on the currently selected threshold">Apply &amp; Dedup</button>
+                            <div id="dedup-results" class="dedup-results">
+                                <div class="dedup-summary">
+                                    <span id="dedup-original-count">--</span> original frames
+                                </div>
+                                <div class="dedup-multi-table-wrap">
+                                    <table class="dedup-multi-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Threshold</th>
+                                                <th>Frames Kept</th>
+                                                <th>Dropped</th>
+                                                <th>% Dropped</th>
+                                                <th></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="dedup-multi-tbody">
+                                            <tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:12px">Click Scan to run dedup at multiple sensitivities</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div class="dedup-threshold-row">
+                                    <label>Custom thresholds (comma-separated):</label>
+                                    <input type="text" id="dedup-thresholds-input" value="5, 10, 15, 20, 30" placeholder="e.g. 5, 10, 20, 40">
+                                    <button type="button" id="dedup-run-multi-btn" class="btn secondary small">Scan</button>
+                                </div>
+                                <div class="dedup-apply-row">
+                                    <small>Pick a row above and click Apply, or run a full dedup:</small>
+                                    <button type="button" id="run-dedup-btn" class="btn secondary small" title="Run dedup on the currently selected threshold">Apply &amp; Dedup</button>
+                                </div>
                             </div>
                         </div>
 
@@ -240,45 +243,42 @@
                             </div>
                         </div>
 
-                        <div class="form-group">
-                            <label for="provider-select">AI Provider</label>
-                            <div class="provider-controls">
-                                <select id="provider-select" required>
-                                    <option value="">Select provider...</option>
+                        <div class="form-section">
+                            <h3>Vision Analysis</h3>
+                            <div class="form-group">
+                                <label for="provider-select">AI Provider</label>
+                                <div class="provider-controls">
+                                    <select id="provider-select" required>
+                                        <option value="">Select provider...</option>
+                                    </select>
+                                    <button type="button" id="discover-btn" class="btn secondary">🔄 Discover</button>
+                                </div>
+                                <div id="provider-status" class="provider-status"></div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="model-select">Model</label>
+                                <select id="model-select" required disabled>
+                                    <option value="">Select provider first...</option>
                                 </select>
-                                <button type="button" id="discover-btn" class="btn secondary">🔄 Discover</button>
                             </div>
-                            <div id="provider-status" class="provider-status"></div>
-                        </div>
 
-                        <div class="form-group">
-                            <label for="model-select">Model</label>
-                            <select id="model-select" required disabled>
-                                <option value="">Select provider first...</option>
-                            </select>
-                        </div>
-
-                        <div id="cost-estimate" class="cost-estimate hidden">
-                            <div class="cost-row">
-                                <span>Estimated Cost:</span>
-                                <span id="cost-value">$--.--</span>
+                            <div id="cost-estimate" class="cost-estimate hidden">
+                                <div class="cost-row">
+                                    <span>Estimated Cost:</span>
+                                    <span id="cost-value">$--.--</span>
+                                </div>
+                                <div class="cost-row">
+                                    <span>VRAM Required:</span>
+                                    <span id="vram-required">-- GB</span>
+                                </div>
                             </div>
-                            <div class="cost-row">
-                                <span>VRAM Required:</span>
-                                <span id="vram-required">-- GB</span>
+
+                            <div class="form-group">
+                                <label for="priority-input">Priority (higher = runs sooner)</label>
+                                <input type="number" id="priority-input" value="0" min="0" max="100">
                             </div>
-                        </div>
 
-                        <div class="form-group">
-                            <label for="priority-input">Priority (higher = runs sooner)</label>
-                            <input type="number" id="priority-input" value="0" min="0" max="100">
-                        </div>
-
-                        <div class="advanced-toggle">
-                            <button type="button" id="advanced-toggle-btn" class="link-btn">Advanced Options ▼</button>
-                        </div>
-
-                        <div id="advanced-options" class="advanced-options hidden">
                             <div class="form-row">
                                 <div class="form-group">
                                     <label for="dedup-sensitivity-input">Dedup Sensitivity</label>
@@ -289,20 +289,18 @@
                                     <label for="temperature-input">Temperature</label>
                                     <input type="number" id="temperature-input" value="0.0" min="0" max="2" step="0.1">
                                 </div>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="provider-select">AI Provider</label>
-                            <div class="provider-controls">
-                                <select id="provider-select" required>
-                                    <option value="">Select provider...</option>
-                                </select>
-                                <button type="button" id="discover-btn" class="btn secondary">🔄 Discover</button>
                             </div>
-                            <div id="provider-status" class="provider-status"></div>
+
+                            <div class="form-group">
+                                <label for="prompt-input">User Question / Prompt</label>
+                                <textarea id="prompt-input" rows="3" placeholder="Ask a specific question about the video..."></textarea>
+                            </div>
                         </div>
 
-                        <div class="form-group">
+                        <div class="form-section">
+                            <h3>Audio / Transcription</h3>
+                            <div class="form-row">
+                                <div class="form-group">
                                     <label for="whisper-select">Whisper Model</label>
                                     <select id="whisper-select">
                                         <option value="tiny">tiny (fastest)</option>
@@ -325,17 +323,50 @@
                                 <label for="language-input">Audio Language</label>
                                 <input type="text" id="language-input" value="en" placeholder="e.g., en, es, fr">
                             </div>
+                        </div>
 
-                            <div class="form-group">
-                                <label for="prompt-input">User Question / Prompt</label>
-                                <textarea id="prompt-input" rows="3" placeholder="Ask a specific question about the video..."></textarea>
+                        <div class="form-section">
+                            <h3>Post-Analysis LLM</h3>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="chat-provider-select">Provider</label>
+                                    <select id="chat-provider-select" onchange="handleChatProviderChange()">
+                                        <option value="">Select provider...</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="chat-model-select">Model</label>
+                                    <select id="chat-model-select" disabled>
+                                        <option value="">Select provider first...</option>
+                                    </select>
+                                </div>
                             </div>
+                            <div class="form-group">
+                                <label for="chat-content-select">Content to send</label>
+                                <select id="chat-content-select">
+                                    <option value="all">Analysis + Transcript + Summary</option>
+                                    <option value="transcript">Transcript only</option>
+                                    <option value="description">Summary only</option>
+                                    <option value="frames">Frame Analysis only</option>
+                                    <option value="transcript_description">Transcript + Summary</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="chat-prompt">Prompt / Instruction</label>
+                                <textarea id="chat-prompt" rows="3" placeholder="e.g. Summarize this into 5 bullet points..."></textarea>
+                            </div>
+                        </div>
 
+                        <div class="form-section">
+                            <h3>Output</h3>
                             <div class="form-group checkbox">
                                 <label>
                                     <input type="checkbox" id="keep-frames-checkbox">
                                     Keep extracted frames after analysis
                                 </label>
+                            </div>
+                            <div class="form-group">
+                                <button type="button" id="send-to-kb-btn" class="btn secondary">Send to Knowledge Base</button>
                             </div>
                         </div>
 
@@ -493,67 +524,36 @@
         </div>
     </div>
 
-    <!-- Knowledge Base Settings Modal -->
-    <div id="kb-modal" class="modal hidden">
-        <div class="modal-content modal-wide">
+    <!-- Send to Knowledge Base Modal -->
+    <div id="send-kb-modal" class="modal hidden">
+        <div class="modal-content">
             <header class="modal-header">
-                <h2>OpenWebUI Knowledge Base</h2>
-                <button class="close-btn" onclick="closeKbModal()">&times;</button>
+                <h2>Send to Knowledge Base</h2>
+                <button class="close-btn" onclick="closeSendKbModal()">&times;</button>
             </header>
             <div class="modal-body">
-                <div class="kb-settings-form">
-                    <div class="form-group checkbox">
-                        <label>
-                            <input type="checkbox" id="kb-enabled-checkbox">
-                            Enable OpenWebUI Knowledge Base sync
-                        </label>
+                <div class="send-kb-form">
+                    <div class="form-group">
+                        <label for="send-kb-select">Knowledge Base</label>
+                        <select id="send-kb-select">
+                            <option value="">Loading knowledge bases...</option>
+                        </select>
                     </div>
 
-                    <div id="kb-config-fields">
-                        <div class="form-group">
-                            <label for="kb-url-input">OpenWebUI URL</label>
-                            <input type="text" id="kb-url-input" placeholder="http://192.168.1.237:8080">
-                        </div>
+                    <div id="send-kb-new-row" class="form-group hidden">
+                        <label for="send-kb-name-input">New Knowledge Base Name</label>
+                        <input type="text" id="send-kb-name-input" placeholder="e.g. Training Videos, Meeting Notes...">
+                    </div>
 
-                        <div class="form-group">
-                            <label for="kb-api-key-input">API Key</label>
-                            <div class="api-key-row">
-                                <input type="password" id="kb-api-key-input" placeholder="Enter your OpenWebUI API key">
-                                <button type="button" id="kb-toggle-visibility-btn" class="btn secondary small" title="Toggle visibility">👁️</button>
-                            </div>
-                            <small>Found in OpenWebUI → Settings → Account → API Keys</small>
-                        </div>
+                    <div id="send-kb-job-info" class="send-kb-job-info">
+                        <small>Job: <span id="send-kb-job-id">--</span></small>
+                    </div>
 
-                        <div class="form-group">
-                            <label for="kb-name-input">Knowledge Base Name</label>
-                            <input type="text" id="kb-name-input" placeholder="Video Analyzer">
-                        </div>
+                    <div id="send-kb-status" class="kb-status hidden"></div>
 
-                        <div class="form-group checkbox">
-                            <label>
-                                <input type="checkbox" id="kb-auto-sync-checkbox">
-                                Auto-sync after each analysis job
-                            </label>
-                        </div>
-
-                        <div class="kb-actions">
-                            <button type="button" id="kb-test-btn" class="btn secondary">Test Connection</button>
-                            <button type="button" id="kb-save-btn" class="btn primary">Save Settings</button>
-                        </div>
-
-                        <div id="kb-status" class="kb-status hidden"></div>
-
-                        <div class="kb-divider"></div>
-
-                        <div class="form-group">
-                            <label>Manual Sync</label>
-                            <div class="kb-sync-actions">
-                                <button type="button" id="kb-sync-all-btn" class="btn secondary">Sync All Results</button>
-                            </div>
-                            <small>Push all existing analysis results to the knowledge base</small>
-                        </div>
-
-                        <div id="kb-sync-status" class="kb-status hidden"></div>
+                    <div class="kb-actions">
+                        <button type="button" id="send-kb-refresh-btn" class="btn secondary small">Refresh List</button>
+                        <button type="button" id="send-kb-submit-btn" class="btn primary">Send</button>
                     </div>
                 </div>
             </div>

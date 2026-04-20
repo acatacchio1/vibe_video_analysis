@@ -221,3 +221,74 @@ def save_config():
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"error": f"Failed to save config: {e}"}), 500
+
+
+@knowledge_bp.route("/api/knowledge/bases")
+def list_knowledge_bases():
+    """List existing knowledge bases from OpenWebUI"""
+    try:
+        client = _get_client()
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    try:
+        bases = client.list_knowledge_bases()
+        return jsonify({"bases": bases})
+    except Exception as e:
+        logger.error(f"Failed to list KBs: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@knowledge_bp.route("/api/knowledge/send/<job_id>", methods=["POST"])
+def send_to_kb(job_id):
+    """Send a specific job's results to a chosen KB (by ID or name)."""
+    data = request.json or {}
+    kb_id = data.get("kb_id")
+    kb_name = data.get("kb_name")
+
+    if not kb_id and not kb_name:
+        return jsonify({"error": "kb_id or kb_name is required"}), 400
+
+    results_file = Path("jobs") / job_id / "output" / "results.json"
+    if not results_file.exists():
+        return jsonify({"error": "Results file not found"}), 404
+
+    try:
+        results = json.loads(results_file.read_text())
+    except Exception as e:
+        return jsonify({"error": f"Failed to read results: {e}"}), 500
+
+    video_name = _get_video_name_for_job(job_id)
+
+    try:
+        client = _get_client()
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    try:
+        if kb_id:
+            target_kb_id = kb_id
+            existing = client.find_knowledge_base(kb_name or "")
+            actual_kb_name = existing["name"] if existing else kb_id
+        else:
+            target_kb_id = client.ensure_knowledge_base(kb_name)
+            if not target_kb_id:
+                return jsonify({"error": f"Could not find or create KB '{kb_name}'"}), 400
+            actual_kb_name = kb_name
+
+        content = client.__class__.__module__.split('.')[0]
+        from src.services.openwebui_kb import format_results_as_markdown
+        content = format_results_as_markdown(results, video_name, job_id)
+        safe_filename = Path(video_name).stem.replace(" ", "_")[:80]
+        file_id = client.upload_text_file(content, f"{safe_filename}_{job_id[:8]}")
+        if not file_id:
+            return jsonify({"error": "Failed to upload file to OpenWebUI"}), 500
+
+        added = client.add_file_to_knowledge(target_kb_id, file_id)
+        if added:
+            logger.info(f"Job {job_id} sent to KB '{actual_kb_name}'")
+            return jsonify({"success": True, "kb_id": target_kb_id, "kb_name": actual_kb_name, "file_id": file_id})
+        return jsonify({"error": "Failed to add file to knowledge base"}), 500
+    except Exception as e:
+        logger.error(f"Error sending job {job_id} to KB: {e}")
+        return jsonify({"error": str(e)}), 500
