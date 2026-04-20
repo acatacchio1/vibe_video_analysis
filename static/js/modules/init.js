@@ -36,15 +36,6 @@ document.addEventListener('DOMContentLoaded', () => {
         loadDedupResults();
     });
 
-    // Run Dedup button
-    document.getElementById('run-dedup-btn')?.addEventListener('click', () => {
-        if (selectedDedupThreshold !== null) {
-            applyDedupAtThreshold(selectedDedupThreshold);
-        } else {
-            showToast('Scan thresholds first, then click a row to select one', 'warning');
-        }
-    });
-
     // Dedup multi-scan button
     document.getElementById('dedup-run-multi-btn')?.addEventListener('click', runDedupMulti);
 

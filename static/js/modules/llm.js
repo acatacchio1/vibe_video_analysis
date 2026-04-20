@@ -1,14 +1,18 @@
 // LLM chat functionality
 async function handleChatProviderChange(context = 'live') {
+    const isLivePanel = context === 'live' && document.getElementById('live-chat-provider-select');
     const selectId = context === 'modal' ? 'modal-chat-provider-select' :
-                     context === 'results' ? 'results-chat-provider-select' : 'chat-provider-select';
+                     context === 'results' ? 'results-chat-provider-select' :
+                     isLivePanel ? 'live-chat-provider-select' : 'chat-provider-select';
     const modelSelectId = context === 'modal' ? 'modal-chat-model-select' :
-                         context === 'results' ? 'results-chat-model-select' : 'chat-model-select';
+                         context === 'results' ? 'results-chat-model-select' :
+                         isLivePanel ? 'live-chat-model-select' : 'chat-model-select';
 
     const providerSelect = document.getElementById(selectId);
     const modelSelect = document.getElementById(modelSelectId);
-    const providerName = providerSelect.value;
+    if (!providerSelect || !modelSelect) return;
 
+    const providerName = providerSelect.value;
     modelSelect.innerHTML = '<option value="">Loading models...</option>';
     modelSelect.disabled = true;
 
@@ -53,14 +57,19 @@ async function handleChatProviderChange(context = 'live') {
 }
 
 async function sendToLLM(context, jobId = null) {
+    const isLivePanel = context === 'live' && document.getElementById('live-chat-provider-select');
     const providerSelectId = context === 'modal' ? 'modal-chat-provider-select' :
-                            context === 'results' ? 'results-chat-provider-select' : 'chat-provider-select';
+                            context === 'results' ? 'results-chat-provider-select' :
+                            isLivePanel ? 'live-chat-provider-select' : 'chat-provider-select';
     const modelSelectId = context === 'modal' ? 'modal-chat-model-select' :
-                         context === 'results' ? 'results-chat-model-select' : 'chat-model-select';
+                         context === 'results' ? 'results-chat-model-select' :
+                         isLivePanel ? 'live-chat-model-select' : 'chat-model-select';
     const contentSelectId = context === 'modal' ? 'modal-chat-content-select' :
-                           context === 'results' ? 'results-chat-content-select' : 'chat-content-select';
+                           context === 'results' ? 'results-chat-content-select' :
+                           isLivePanel ? 'live-chat-content-select' : 'chat-content-select';
     const promptTextareaId = context === 'modal' ? 'modal-chat-prompt' :
-                            context === 'results' ? 'results-chat-prompt' : 'chat-prompt';
+                            context === 'results' ? 'results-chat-prompt' :
+                            isLivePanel ? 'live-chat-prompt' : 'chat-prompt';
     const responseDivId = context === 'modal' ? 'modal-llm-response' :
                          context === 'results' ? 'results-llm-response' : 'live-llm-response';
     const responseTextId = context === 'modal' ? 'modal-llm-text' :
@@ -119,7 +128,6 @@ async function sendToLLM(context, jobId = null) {
             requestData.ollama_url = ollamaUrl;
         }
     }
-    // OpenRouter API key is handled server-side from environment variable
 
     responseText.textContent = 'Submitting to LLM queue...';
     responseDiv.classList.remove('hidden');
@@ -186,7 +194,6 @@ function formatContentForLLM(results, contentType) {
         if (description) parts.push(`VIDEO SUMMARY:\n${description}`);
         return parts.join('\n\n');
     }
-    // legacy fallbacks
     if (contentType === 'both') {
         return `TRANSCRIPT:\n${transcript}\n\nVIDEO SUMMARY:\n${description}`;
     }

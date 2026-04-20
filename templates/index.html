@@ -179,16 +179,13 @@
                                         </tbody>
                                     </table>
                                 </div>
-                                <div class="dedup-threshold-row">
-                                    <label>Custom thresholds (comma-separated):</label>
-                                    <input type="text" id="dedup-thresholds-input" value="5, 10, 15, 20, 30" placeholder="e.g. 5, 10, 20, 40">
-                                    <button type="button" id="dedup-run-multi-btn" class="btn secondary small">Scan</button>
-                                </div>
-                                <div class="dedup-apply-row">
-                                    <small>Pick a row above and click Apply, or run a full dedup:</small>
-                                    <button type="button" id="run-dedup-btn" class="btn secondary small" title="Run dedup on the currently selected threshold">Apply &amp; Dedup</button>
-                                </div>
+                            <div class="dedup-threshold-row">
+                                <label>Custom thresholds (comma-separated):</label>
+                                <input type="text" id="dedup-thresholds-input" value="5, 10, 15, 20, 30" placeholder="e.g. 5, 10, 20, 40">
+                                <button type="button" id="dedup-run-multi-btn" class="btn secondary small">Scan</button>
                             </div>
+                        </div>
+                        </div>
                         </div>
 
                         <div id="frame-range-section" class="frame-range-section hidden">
@@ -400,20 +397,20 @@
                             <div class="form-row">
                                 <div class="form-group">
                                     <label>Provider</label>
-                                    <select id="chat-provider-select" onchange="handleChatProviderChange()">
+                                    <select id="live-chat-provider-select" onchange="handleChatProviderChange('live')">
                                         <option value="">Select provider...</option>
                                     </select>
                                 </div>
                                 <div class="form-group">
                                     <label>Model</label>
-                                    <select id="chat-model-select" disabled>
+                                    <select id="live-chat-model-select" disabled>
                                         <option value="">Select provider first...</option>
                                     </select>
                                 </div>
                             </div>
                             <div class="form-group">
                                 <label>Content to send</label>
-                                <select id="chat-content-select">
+                                <select id="live-chat-content-select">
                                     <option value="all">Analysis + Transcript + Summary</option>
                                     <option value="transcript">Transcript only</option>
                                     <option value="description">Summary only</option>
@@ -423,7 +420,38 @@
                             </div>
                             <div class="form-group">
                                 <label>Prompt / Instruction</label>
-                                <textarea id="chat-prompt" rows="3" placeholder="e.g. Summarize this into 5 bullet points..."></textarea>
+                                <textarea id="live-chat-prompt" rows="3" placeholder="e.g. Summarize this into 5 bullet points..."></textarea>
+                            </div>
+                            <button class="btn primary" onclick="sendToLLM('live', state.currentJob)">Send to LLM</button>
+                        </div>
+                        <div id="live-llm-response" class="llm-response hidden">
+                            <div class="llm-response-header">
+                                <span>Response</span>
+                                <button class="link-btn" onclick="document.getElementById('live-llm-response').classList.add('hidden')">✕</button>
+                            </div>
+                            <div id="live-llm-text" class="llm-response-text"></div>
+                        </div>
+                    </div>
+                                <div class="form-group">
+                                    <label>Model</label>
+                                    <select id="live-chat-model-select" disabled>
+                                        <option value="">Select provider first...</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Content to send</label>
+                                <select id="live-chat-content-select">
+                                    <option value="all">Analysis + Transcript + Summary</option>
+                                    <option value="transcript">Transcript only</option>
+                                    <option value="description">Summary only</option>
+                                    <option value="frames">Frame Analysis only</option>
+                                    <option value="transcript_description">Transcript + Summary</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Prompt / Instruction</label>
+                                <textarea id="live-chat-prompt" rows="3" placeholder="e.g. Summarize this into 5 bullet points..."></textarea>
                             </div>
                             <button class="btn primary" onclick="sendToLLM('live', state.currentJob)">Send to LLM</button>
                         </div>

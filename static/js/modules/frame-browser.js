@@ -276,23 +276,28 @@ function updateTranscriptContext(which, frameNum) {
         return;
     }
 
-    // Use actual timestamp from frames_index, not computed
     const timestamp = getFrameTimestamp(frameNum);
-    const windowBefore = 3;
-    const windowAfter = 3;
-    const windowStart = timestamp - windowBefore;
-    const windowEnd = timestamp + windowAfter;
+    const segments = fb.transcript.segments;
 
-    const matching = fb.transcript.segments.filter(seg => {
-        return seg.start >= windowStart && seg.start <= windowEnd;
-    });
+    // Find the segment closest to but after timestamp
+    let currentIdx = segments.length;
+    for (let i = 0; i < segments.length; i++) {
+        if (segments[i].start >= timestamp) {
+            currentIdx = i;
+            break;
+        }
+    }
 
-    if (matching.length === 0) {
+    const startIdx = Math.max(0, currentIdx - 5);
+    const endIdx = Math.min(segments.length, currentIdx + 5);
+    const selected = segments.slice(startIdx, endIdx);
+
+    if (selected.length === 0) {
         el.textContent = 'No speech at this point';
         el.classList.add('empty');
         return;
     }
 
     el.classList.remove('empty');
-    el.textContent = matching.map(s => s.text.trim()).join(' ');
+    el.textContent = selected.map(s => s.text.trim()).join(' ');
 }

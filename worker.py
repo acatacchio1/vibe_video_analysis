@@ -423,17 +423,27 @@ def run_analysis(job_dir: Path):
         if transcript and transcript.get("segments"):
             transcript_segments = transcript["segments"]
 
-        def get_transcript_context(frame_ts, prev_frame_ts):
-            """Get transcript text from prev_frame_ts to frame_ts + 3s"""
+        def get_transcript_context(frame_ts):
+            """Get 5 preceding and 5 following transcript segments around frame_ts"""
             if not transcript_segments:
                 return ""
-            start = prev_frame_ts if prev_frame_ts is not None else max(0, frame_ts - 3)
-            end = frame_ts + 3
-            segments = [
-                s["text"] for s in transcript_segments
-                if start <= s["start"] <= end
-            ]
-            return " ".join(segments) if segments else ""
+            # Find the segment closest to but after frame_ts (the "current" segment)
+            current_idx = None
+            for i, s in enumerate(transcript_segments):
+                if s["start"] >= frame_ts:
+                    current_idx = i
+                    break
+            if current_idx is None:
+                # frame_ts is after all segments; use last 5
+                current_idx = len(transcript_segments)
+
+            # 5 preceding segments (before current_idx)
+            start_idx = max(0, current_idx - 5)
+            # 5 following segments (from current_idx onward)
+            end_idx = min(len(transcript_segments), current_idx + 5)
+
+            selected = transcript_segments[start_idx:end_idx]
+            return " ".join(s["text"] for s in selected) if selected else ""
 
         # Monkey-patch analyzer.analyze_frame to inject transcript context
         _original_analyze_frame = analyzer.analyze_frame
@@ -441,11 +451,10 @@ def run_analysis(job_dir: Path):
 
         def _patched_analyze_frame(self_inner, frame, prev_ts=None):
             nonlocal _prev_frame_ts
-            ts_context = get_transcript_context(frame.timestamp, prev_ts)
+            ts_context = get_transcript_context(frame.timestamp)
             if ts_context:
                 original_frame_prompt = self_inner.frame_prompt
-                start_ts = prev_ts if prev_ts is not None else max(0, frame.timestamp - 3)
-                transcript_section = f"\n\nTRANSCRIPT CONTEXT (from {start_ts:.1f}s to {frame.timestamp + 3:.1f}s):\n{ts_context}"
+                transcript_section = f"\n\nTRANSCRIPT CONTEXT (5 segments before and after this frame):\n{ts_context}"
                 self_inner.frame_prompt = original_frame_prompt + transcript_section
                 result = _original_analyze_frame(frame)
                 self_inner.frame_prompt = original_frame_prompt
