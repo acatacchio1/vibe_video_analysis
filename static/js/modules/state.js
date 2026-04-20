@@ -6,6 +6,7 @@ const state = {
     currentJob: null,
     currentJobResults: null,
     settings: JSON.parse(localStorage.getItem('va_settings') || '{}'),
+    analysisVideoName: '',  // filename of the video currently being / last analyzed
     frameBrowser: {
         videoName: '',
         totalFrames: 0,

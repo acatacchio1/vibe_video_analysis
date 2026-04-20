@@ -266,6 +266,16 @@ def run_analysis(job_dir: Path):
                 except Exception as e:
                     logger.warning(f"Failed to parse frames_meta.json: {e}")
 
+            # Load frames_index.json for correct timestamps (especially after dedup)
+            frames_index = {}
+            frames_index_path = pre_extracted_dir.parent / "frames_index.json"
+            if frames_index_path.exists():
+                try:
+                    frames_index = json.loads(frames_index_path.read_text())
+                    logger.info(f"Loaded frames_index with {len(frames_index)} entries")
+                except Exception as e:
+                    logger.warning(f"Failed to parse frames_index.json: {e}")
+
             all_frame_files = sorted(pre_extracted_dir.glob("frame_*.jpg"))
             total_available = len(all_frame_files)
             video_fps = meta.get("fps", 1)
@@ -291,7 +301,12 @@ def run_analysis(job_dir: Path):
 
             for i, fp in enumerate(selected_files):
                 original_index = start_frame + i * step
-                timestamp = original_index / video_fps if video_fps > 0 else float(i)
+                frame_num = original_index + 1  # frames are 1-indexed
+                # Use frames_index.json for correct timestamp if available
+                if frames_index and str(frame_num) in frames_index:
+                    timestamp = frames_index[str(frame_num)]
+                else:
+                    timestamp = original_index / video_fps if video_fps > 0 else float(i)
                 frames.append(
                     type(
                         "Frame",
@@ -459,12 +474,20 @@ def run_analysis(job_dir: Path):
             selected = transcript_segments[start_idx:end_idx]
             return " ".join(s["text"] for s in selected) if selected else ""
 
-        # Monkey-patch analyzer.analyze_frame to inject transcript context
+        # Monkey-patch analyzer.analyze_frame to inject transcript context and
+        # cap the previous-frames context window so that with heavy dedup (where
+        # every frame is visually distinct) the accumulated prior descriptions
+        # don't overwhelm the model and cause it to ignore the current image.
+        MAX_PREVIOUS_FRAMES = 3
         _original_analyze_frame = analyzer.analyze_frame
         _prev_frame_ts = None
 
         def _patched_analyze_frame(self_inner, frame, prev_ts=None):
             nonlocal _prev_frame_ts
+            # Keep only the most recent N analyses to avoid context overflow
+            if len(self_inner.previous_analyses) > MAX_PREVIOUS_FRAMES:
+                self_inner.previous_analyses = self_inner.previous_analyses[-MAX_PREVIOUS_FRAMES:]
+
             ts_context = get_transcript_context(frame.timestamp)
             if ts_context:
                 original_frame_prompt = self_inner.frame_prompt
@@ -499,14 +522,21 @@ def run_analysis(job_dir: Path):
             # Progress: 20% to 80% for frame analysis
             progress = 20 + int((i + 1) / total_frames * 60)
 
+            # Derive on-disk frame number from the actual filename (e.g. frame_000010.jpg → 10)
+            # so that the thumbnail URL built by the frontend always resolves to the correct file.
+            try:
+                stem_parts = Path(frame.path).stem.split("_")
+                disk_frame_num = int(stem_parts[-1]) if len(stem_parts) >= 2 else (i + 1)
+            except (ValueError, IndexError):
+                disk_frame_num = i + 1
+
             # Get original frame number from dedup mapping
-            dedup_frame_num = i + 1
-            orig_frame = dedup_map.get("dedup_to_original_mapping", {}).get(str(dedup_frame_num), dedup_frame_num)
-            orig_ts = dedup_map.get("original_timestamps", {}).get(str(dedup_frame_num), frame.timestamp)
+            orig_frame = dedup_map.get("dedup_to_original_mapping", {}).get(str(disk_frame_num), disk_frame_num)
+            orig_ts = dedup_map.get("original_timestamps", {}).get(str(disk_frame_num), frame.timestamp)
 
             # Write frame analysis for real-time display
             frame_result = {
-                "frame_number": i + 1,
+                "frame_number": disk_frame_num,
                 "total_frames": total_frames,
                 "original_frame": orig_frame,
                 "timestamp": frame.timestamp,

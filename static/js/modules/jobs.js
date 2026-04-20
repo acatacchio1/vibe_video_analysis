@@ -74,6 +74,10 @@ function handleJobUpdate(data) {
 function handleJobStatus(data) {
     if (state.debug) console.log('[DEBUG:JOBS] handleJobStatus stage=' + data.stage + ' progress=' + data.progress);
     updateJobCard(data);
+    // Keep analysisVideoName in sync so thumbnail URLs are correct on reconnect/replay
+    if (data.video_path && !state.analysisVideoName) {
+        state.analysisVideoName = data.video_path.split('/').pop();
+    }
     if (data.stage === 'analyzing_frames') {
         updateLiveAnalysis(data);
     }
@@ -189,7 +193,10 @@ function appendFrameLog(data) {
         : '';
     const tsHtml = ts !== null ? `<span class="frame-timestamp">${ts}</span>` : '';
 
-    const videoName = state.frameBrowser?.videoName || state.currentVideo || '';
+    // Prefer the name captured at analysis-start time; fall back to frame browser
+    // or currentVideo (extracting just the filename to avoid path-encoded 404s).
+    const rawVideo = state.analysisVideoName || state.frameBrowser?.videoName || state.currentVideo || '';
+    const videoName = rawVideo.split('/').pop();
     const thumbUrl = videoName ? `/api/videos/${encodeURIComponent(videoName)}/frames/${frameNum}/thumb` : '';
     const thumbHtml = thumbUrl
         ? `<div class="frame-thumbnail"><img src="${thumbUrl}" alt="Frame ${frameNum}" loading="lazy"></div>`
@@ -411,7 +418,23 @@ async function applyDedupAtThreshold(threshold) {
         const result = await response.json();
         showToast(`Dedup applied (threshold=${threshold}): ${result.original_count} → ${result.deduped_count} frames`);
         loadVideos();
-        loadDedupResults();
+
+        setTimeout(() => {
+            const dedupVideoName = result.dedup_video;
+            if (dedupVideoName) {
+                const select = document.getElementById('video-select');
+                for (const option of select.options) {
+                    if (option.value.includes(dedupVideoName) || option.dataset.name === dedupVideoName) {
+                        select.value = option.value;
+                        state.currentVideo = option.value;
+                        updateStartButton();
+                        initFrameBrowserForSelectedVideo();
+                        showToast(`Auto-selected dedup video: ${dedupVideoName}`);
+                        break;
+                    }
+                }
+            }
+        }, 1000);
     } catch (error) {
         showToast('Dedup failed: ' + error.message, 'error');
     } finally {
@@ -429,21 +452,14 @@ async function loadDedupResults() {
 
     try {
         const filename = videoName.split('/').pop();
-        const response = await fetch(`/api/videos/${encodeURIComponent(filename)}/dedup`);
+        const response = await fetch(`/api/videos/${encodeURIComponent(filename)}/dedup-multi`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ thresholds: [10] }),
+        });
         if (response.ok) {
             const result = await response.json();
-            showDedupMultiResults({
-                original_count: result.original_count,
-                results: [{
-                    threshold: result.threshold,
-                    original_count: result.original_count,
-                    deduped_count: result.deduped_count,
-                    dropped: result.original_count - result.deduped_count,
-                    dropped_pct: result.original_count > 0
-                        ? (((result.original_count - result.deduped_count) / result.original_count) * 100).toFixed(1)
-                        : 0,
-                }],
-            });
+            showDedupMultiResults(result);
         }
     } catch (error) {
         // No dedup results yet, that's fine

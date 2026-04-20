@@ -21,7 +21,7 @@ def transcode_video():
 
 @transcode_bp.route("/api/videos/reprocess", methods=["POST"])
 def reprocess_video():
-    """Reprocess an already-uploaded video with new settings (fps, dedup, whisper)"""
+    """Reprocess an already-uploaded video with new settings (fps, whisper)"""
     from app import socketio, _transcode_and_delete_with_cleanup
     data = request.json
     video_path = data.get("video_path")
@@ -31,8 +31,7 @@ def reprocess_video():
     fps = max(0.0167, min(fps, 30))
     whisper_model = data.get("whisper_model", "base")
     language = data.get("language", "en")
-    dedup_threshold = int(data.get("dedup_threshold", 10))
     socketio.start_background_task(
-        _transcode_and_delete_with_cleanup, video_path, fps, whisper_model, language, dedup_threshold
+        _transcode_and_delete_with_cleanup, video_path, fps, whisper_model, language
     )
     return jsonify({"success": True, "message": "Reprocessing started"})

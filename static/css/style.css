@@ -172,6 +172,14 @@ section > h2::before,
    Upload Section
    ======================================== */
 
+.upload-section {
+    position: relative;
+}
+
+.upload-section {
+    position: relative;
+}
+
 .upload-section-header {
     display: flex;
     justify-content: space-between;

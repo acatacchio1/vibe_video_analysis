@@ -76,7 +76,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Save settings on change
-    document.querySelectorAll('#spf-input, #temperature-input, #dedup-sensitivity-input, #whisper-select, #language-input, #device-select, #keep-frames-checkbox')
+    document.querySelectorAll('#spf-input, #temperature-input, #whisper-select, #language-input, #device-select, #keep-frames-checkbox')
         .forEach(el => el.addEventListener('change', saveSettings));
 
     // Clear server log
@@ -113,7 +113,6 @@ async function submitAnalysis() {
         start_frame: fb.startFrame > 1 ? fb.startFrame : 0,
         end_frame: fb.endFrame < fb.totalFrames ? fb.endFrame : undefined,
         fps: parseFloat(document.getElementById('spf-input')?.value || '1'),
-        similarity_threshold: parseInt(document.getElementById('dedup-sensitivity-input')?.value || '10'),
         whisper_model: document.getElementById('whisper-select')?.value || 'large',
         language: document.getElementById('language-input')?.value || 'en',
         device: document.getElementById('device-select')?.value || 'gpu',
@@ -128,6 +127,9 @@ async function submitAnalysis() {
             data.provider_config = { url: ollamaUrl };
         }
     }
+
+    // Store just the filename for thumbnail URL construction in appendFrameLog()
+    state.analysisVideoName = videoPath.split('/').pop();
 
     startAnalysis(data);
 

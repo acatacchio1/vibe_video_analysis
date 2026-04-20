@@ -490,7 +490,7 @@ recover_stale_jobs()
 # ==================== Transcode Helpers ====================
 
 
-def _transcode_and_delete_with_cleanup(src_path: str, fps: float = 1, whisper_model: str = "base", language: str = "en", dedup_threshold: int = 10):
+def _transcode_and_delete_with_cleanup(src_path: str, fps: float = 1, whisper_model: str = "base", language: str = "en"):
     """
     Background task: transcode src_path to 720p@<fps>fps, extract frames + thumbnails,
     transcribe audio, emit progress via socket, then refresh the video list.
@@ -593,7 +593,7 @@ def _transcode_and_delete_with_cleanup(src_path: str, fps: float = 1, whisper_mo
                 _emit("complete", 100)
                 # Fix permissions on any root-owned dirs from Docker
                 _fix_permissions(input_path.parent)
-                _extract_frames(str(output_path), dedup_threshold)
+                _extract_frames(str(output_path))
                 _transcribe_video(str(output_path), whisper_model, language)
             else:
                 logger.warning(f"Transcode failed for {src_name}: {err_content}")
@@ -721,93 +721,7 @@ def _renumber_frames(frames_dir: Path, thumbs_dir: Path, fps: float):
     return frames_index, actual_count
 
 
-def _run_dedup(frames_dir: Path, thumbs_dir: Path, dedup_threshold: int, fps: float):
-    """Run deduplication on extracted frames. Returns dedup results dict."""
-    extracted_frames = sorted(frames_dir.glob("frame_*.jpg"))
-    original_count = len(extracted_frames)
-    original_frame_numbers = {}
-    original_timestamps = {}
-    for fp in extracted_frames:
-        old_num = int(fp.stem.split("_")[1])
-        original_frame_numbers[old_num] = old_num
-        original_timestamps[old_num] = round((old_num - 1) / fps, 3)
-
-    if dedup_threshold <= 0 or original_count <= 1:
-        return {
-            "original_count": original_count,
-            "deduped_count": original_count,
-            "threshold": dedup_threshold,
-            "original_to_dedup_mapping": {str(k): k for k in range(1, original_count + 1)},
-            "original_timestamps": {str(k): v for k, v in original_timestamps.items()},
-            "dedup_to_original_mapping": {str(k): k for k in range(1, original_count + 1)},
-        }
-
-    try:
-        from PIL import Image
-        import imagehash
-        keep = [extracted_frames[0]]
-        prev_hash = imagehash.phash(Image.open(extracted_frames[0]))
-        for fp in extracted_frames[1:]:
-            curr_hash = imagehash.phash(Image.open(fp))
-            if (prev_hash - curr_hash) >= dedup_threshold:
-                keep.append(fp)
-                prev_hash = curr_hash
-        removed = original_count - len(keep)
-        if removed > 0:
-            for fp in extracted_frames:
-                if fp not in keep:
-                    fp.unlink()
-                    thumb = thumbs_dir / fp.name.replace("frame_", "thumb_")
-                    if thumb.exists():
-                        thumb.unlink()
-        actual_count = len(keep)
-        logger.info(f"Dedup removed {removed} similar frames (threshold={dedup_threshold}), {actual_count} remaining")
-    except Exception as e:
-        logger.warning(f"Frame dedup failed (non-fatal): {e}")
-        actual_count = original_count
-        keep = extracted_frames
-
-    original_to_dedup = {}
-    dedup_to_original = {}
-    kept_timestamps = {}
-    for new_idx, fp in enumerate(sorted(keep), start=1):
-        old_num = int(fp.stem.split("_")[1])
-        original_to_dedup[str(old_num)] = new_idx
-        dedup_to_original[str(new_idx)] = old_num
-        kept_timestamps[str(new_idx)] = round((old_num - 1) / fps, 3)
-
-    return {
-        "original_count": original_count,
-        "deduped_count": actual_count,
-        "threshold": dedup_threshold,
-        "original_to_dedup_mapping": original_to_dedup,
-        "original_timestamps": kept_timestamps,
-        "dedup_to_original_mapping": dedup_to_original,
-    }
-
-
-def _renumber_frames(frames_dir: Path, thumbs_dir: Path, fps: float):
-    """Renumber frames sequentially and build timestamp index."""
-    kept_frames = sorted(frames_dir.glob("frame_*.jpg"))
-    actual_count = len(kept_frames)
-    frames_index = {}
-    for new_idx, old_frame in enumerate(kept_frames, start=1):
-        old_num = int(old_frame.stem.split("_")[1])
-        timestamp_s = (old_num - 1) / fps
-        frames_index[new_idx] = round(timestamp_s, 3)
-        if new_idx != old_num:
-            new_name = f"frame_{new_idx:06d}.jpg"
-            new_path = frames_dir / new_name
-            old_frame.rename(new_path)
-            old_thumb = thumbs_dir / old_frame.name.replace("frame_", "thumb_")
-            new_thumb = thumbs_dir / new_name.replace("frame_", "thumb_")
-            if old_thumb.exists():
-                old_thumb.rename(new_thumb)
-    logger.info(f"Renumbered {actual_count} frames sequentially with timestamp index")
-    return frames_index, actual_count
-
-
-def _extract_frames(video_path: str, dedup_threshold: int = 10):
+def _extract_frames(video_path: str):
     """Extract all frames and thumbnails from a transcoded video."""
     video = Path(video_path)
     stem = video.stem
@@ -890,14 +804,6 @@ def _extract_frames(video_path: str, dedup_threshold: int = 10):
     extracted_frames = sorted(frames_dir.glob("frame_*.jpg"))
     actual_count = len(extracted_frames)
     logger.info(f"Extracted {actual_count} frames from {src_name}")
-
-    if dedup_threshold > 0 and actual_count > 1:
-        _emit("deduplicating", 35)
-        dedup_results = _run_dedup(frames_dir, thumbs_dir, dedup_threshold, fps)
-
-        # Save dedup results for later reuse
-        dedup_path = video.parent / stem / "dedup_results.json"
-        dedup_path.write_text(json.dumps(dedup_results))
 
     # Renumber frames sequentially and build timestamp index
     _emit("renumbering", 45)

@@ -108,7 +108,6 @@ async function handleVideoUpload(file) {
     formData.append('fps', document.getElementById('spf-input')?.value || '1');
     formData.append('whisper_model', document.getElementById('upload-whisper-select')?.value || 'base');
     formData.append('language', document.getElementById('upload-language-input')?.value || 'en');
-    formData.append('dedup_threshold', document.getElementById('upload-dedup-input')?.value || '10');
 
     const uploadArea = document.getElementById('upload-area');
     const progress = uploadArea?.querySelector('.upload-progress');
@@ -214,7 +213,6 @@ async function submitReprocess() {
     const fps = document.getElementById('reprocess-fps').value || '1';
     const whisper = document.getElementById('reprocess-whisper').value || 'base';
     const language = document.getElementById('reprocess-language').value || 'en';
-    const dedup = document.getElementById('reprocess-dedup').value || '10';
 
     try {
         const response = await fetch('/api/videos/reprocess', {
@@ -225,7 +223,6 @@ async function submitReprocess() {
                 fps: parseFloat(fps),
                 whisper_model: whisper,
                 language: language,
-                dedup_threshold: parseInt(dedup),
             }),
         });
         const result = await response.json();
@@ -240,42 +237,4 @@ async function submitReprocess() {
     }
 }
 
-
-function openReprocessModal(name, path) {
-    const modal = document.getElementById('reprocess-modal');
-    document.getElementById('reprocess-video-name').textContent = name;
-    document.getElementById('reprocess-video-path').value = path;
-    modal.classList.remove('hidden');
-}
-
-async function submitReprocess() {
-    const path = document.getElementById('reprocess-video-path').value;
-    const fps = document.getElementById('reprocess-fps').value || '1';
-    const whisper = document.getElementById('reprocess-whisper').value || 'base';
-    const language = document.getElementById('reprocess-language').value || 'en';
-    const dedup = document.getElementById('reprocess-dedup').value || '10';
-
-    try {
-        const response = await fetch('/api/videos/reprocess', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                video_path: path,
-                fps: parseFloat(fps),
-                whisper_model: whisper,
-                language: language,
-                dedup_threshold: parseInt(dedup),
-            }),
-        });
-        const result = await response.json();
-        if (result.success) {
-            showToast(`Reprocessing started for ${path.split('/').pop()}`);
-            closeModal();
-        } else {
-            showToast(result.error?.message || 'Reprocess failed', 'error');
-        }
-    } catch (error) {
-        showToast('Reprocess failed: ' + error.message, 'error');
-    }
-}
 

@@ -89,9 +89,8 @@ def upload_video():
     fps = max(0.0167, min(fps, 30))
     whisper_model = request.form.get("whisper_model", "base")
     language = request.form.get("language", "en")
-    dedup_threshold = int(request.form.get("dedup_threshold", 10))
     socketio.start_background_task(
-        _transcode_and_delete_with_cleanup, str(filepath), fps, whisper_model, language, dedup_threshold
+        _transcode_and_delete_with_cleanup, str(filepath), fps, whisper_model, language
     )
     return jsonify({"success": True, "filename": filepath.name, "path": str(filepath)})
 
@@ -175,6 +174,7 @@ def run_video_dedup(filename):
     from pathlib import Path
     import subprocess
     import json
+    import shutil
     safe_name = secure_filename_util(filename)
     stem = Path(safe_name).stem
     base = Path(__file__).parent.parent.parent
@@ -190,11 +190,13 @@ def run_video_dedup(filename):
     threshold = max(0, min(threshold, 64))
 
     fps = 1.0
+    duration = 0.0
     meta_path = video_dir / "frames_meta.json"
     if meta_path.exists():
         try:
             meta = json.loads(meta_path.read_text())
             fps = meta.get("fps", 1.0)
+            duration = meta.get("duration", 0)
         except Exception:
             pass
 
@@ -239,14 +241,73 @@ def run_video_dedup(filename):
     index_path = video_dir / "frames_index.json"
     index_path.write_text(json.dumps(frames_index))
 
-    meta = {"frame_count": frame_count, "fps": fps, "duration": meta.get("duration", 0) if meta_path.exists() else 0}
+    meta = {"frame_count": frame_count, "fps": fps, "duration": duration}
     meta_path.write_text(json.dumps(meta))
 
     dedup_path = video_dir / "dedup_results.json"
     dedup_path.write_text(json.dumps(dedup_results))
 
+    # Create a new deduped video from the remaining frames
+    dedup_stem = f"{stem}_dedup"
+    dedup_video_name = f"{dedup_stem}.mp4"
+    dedup_video_path = base / "uploads" / dedup_video_name
+    dedup_new_dir = base / "uploads" / dedup_stem
+    dedup_frames_dir = dedup_new_dir / "frames"
+    dedup_thumbs_dir = dedup_frames_dir / "thumbs"
+
+    # Build deduped video from remaining frames
+    sorted_frames = sorted(frames_dir.glob("frame_*.jpg"))
+    frame_list_file = frames_dir / "dedup_frame_list.txt"
+    try:
+        with open(frame_list_file, "w") as f:
+            for fp in sorted_frames:
+                f.write(f"file '{fp}'\n")
+        cmd = [
+            "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+            "-i", str(frame_list_file),
+            "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            "-r", str(fps),
+            str(dedup_video_path),
+        ]
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        if proc.returncode != 0:
+            logger = __import__("logging").getLogger(__name__)
+            logger.warning(f"Dedup video creation failed: {proc.stderr[-400:]}")
+    except Exception as e:
+        logger = __import__("logging").getLogger(__name__)
+        logger.warning(f"Dedup video creation error: {e}")
+    finally:
+        if frame_list_file.exists():
+            frame_list_file.unlink()
+
+    # Copy frames and thumbnails to new video directory
+    dedup_frames_dir.mkdir(parents=True, exist_ok=True)
+    dedup_thumbs_dir.mkdir(parents=True, exist_ok=True)
+    for fp in sorted_frames:
+        dest = dedup_frames_dir / fp.name
+        if not dest.exists():
+            shutil.copy2(fp, dest)
+    for tp in thumbs_dir.glob("thumb_*.jpg"):
+        dest = dedup_thumbs_dir / tp.name
+        if not dest.exists():
+            shutil.copy2(tp, dest)
+
+    # Copy transcript if available
+    transcript_path = video_dir / "transcript.json"
+    if transcript_path.exists():
+        shutil.copy2(transcript_path, dedup_new_dir / "transcript.json")
+
+    # Save frames_index and frames_meta for the new video
+    (dedup_new_dir / "frames_index.json").write_text(json.dumps(frames_index))
+    (dedup_new_dir / "frames_meta.json").write_text(json.dumps(meta))
+    (dedup_new_dir / "dedup_results.json").write_text(json.dumps(dedup_results))
+
+    # Ensure thumbnail for new video
+    from thumbnail import ensure_thumbnail
+    ensure_thumbnail(str(dedup_video_path))
+
     socketio.emit("videos_updated")
-    return jsonify(dedup_results)
+    return jsonify({**dedup_results, "dedup_video": dedup_video_name})
 
 
 @videos_bp.route("/api/videos/<filename>/dedup-multi", methods=["POST"])
@@ -318,6 +379,20 @@ def run_video_dedup_multi(filename):
         })
 
     return jsonify({"results": results, "original_count": original_count, "fps": fps, "duration": duration})
+
+
+@videos_bp.route("/api/videos/<filename>/frames_index")
+def get_video_frames_index(filename):
+    """Return frames_index.json mapping sequential frame numbers to video timestamps."""
+    safe_name = secure_filename_util(filename)
+    stem = Path(safe_name).stem
+    index_path = Path(__file__).parent.parent.parent / "uploads" / stem / "frames_index.json"
+    if not index_path.exists():
+        return jsonify({})
+    try:
+        return jsonify(json.loads(index_path.read_text()))
+    except Exception:
+        return jsonify({})
 
 
 @videos_bp.route("/api/videos/<filename>/transcript")
