@@ -323,6 +323,20 @@ def run_analysis(job_dir: Path):
             total_frames = len(frames)
             logger.info(f"VideoProcessor extracted {total_frames} frames")
 
+        # Update frames_meta.json with the post-dedup frame count so the UI
+        # shows the correct number everywhere (job cards, video list, etc.)
+        if video_frames_dir:
+            meta_path = Path(video_frames_dir).parent / "frames_meta.json"
+            try:
+                if meta_path.exists():
+                    meta = json.loads(meta_path.read_text())
+                else:
+                    meta = {}
+                meta["frame_count"] = total_frames
+                meta_path.write_text(json.dumps(meta))
+            except Exception as e:
+                logger.warning(f"Failed to update frames_meta.json: {e}")
+
         update_status(
             job_dir,
             {"stage": "analyzing_frames", "progress": 20, "total_frames": total_frames},
