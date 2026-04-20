@@ -316,7 +316,10 @@ async function runDedupMulti() {
     }
 
     try {
-        const response = await fetch(`/api/videos/${encodeURIComponent(videoName)}/dedup-multi`, {
+        const filename = videoName.split('/').pop();
+        const url = `/api/videos/${encodeURIComponent(filename)}/dedup-multi`;
+        console.log('[dedup] fetching:', url);
+        const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ thresholds }),
@@ -393,7 +396,8 @@ async function applyDedupAtThreshold(threshold) {
     }
 
     try {
-        const response = await fetch(`/api/videos/${encodeURIComponent(videoName)}/dedup`, {
+        const filename = videoName.split('/').pop();
+        const response = await fetch(`/api/videos/${encodeURIComponent(filename)}/dedup`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ threshold }),
@@ -424,7 +428,8 @@ async function loadDedupResults() {
     if (!videoName) return;
 
     try {
-        const response = await fetch(`/api/videos/${encodeURIComponent(videoName)}/dedup`);
+        const filename = videoName.split('/').pop();
+        const response = await fetch(`/api/videos/${encodeURIComponent(filename)}/dedup`);
         if (response.ok) {
             const result = await response.json();
             showDedupMultiResults({
