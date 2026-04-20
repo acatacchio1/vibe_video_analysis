@@ -157,9 +157,9 @@
                             </select>
                         </div>
 
-                        <div id="dedup-results" class="dedup-results hidden">
+                        <div id="dedup-results" class="dedup-results">
                             <div class="dedup-summary">
-                                <span id="dedup-original-count">0</span> original frames
+                                <span id="dedup-original-count">--</span> original frames
                             </div>
                             <div class="dedup-multi-table-wrap">
                                 <table class="dedup-multi-table">
@@ -172,7 +172,9 @@
                                             <th></th>
                                         </tr>
                                     </thead>
-                                    <tbody id="dedup-multi-tbody"></tbody>
+                                    <tbody id="dedup-multi-tbody">
+                                        <tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:12px">Select a video and click Scan</td></tr>
+                                    </tbody>
                                 </table>
                             </div>
                             <div class="dedup-threshold-row">
