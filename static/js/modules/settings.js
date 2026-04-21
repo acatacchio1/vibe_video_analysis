@@ -5,8 +5,7 @@ function saveSettings() {
         spf: document.getElementById('spf-input')?.value,
         whisper_model: document.getElementById('whisper-select')?.value,
         language: document.getElementById('language-input')?.value,
-        device: document.getElementById('device-select')?.value,
-        keep_frames: document.getElementById('keep-frames-checkbox')?.checked
+        device: document.getElementById('device-select')?.value
     };
 
     state.settings = settings;

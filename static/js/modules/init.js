@@ -76,7 +76,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Save settings on change
-    document.querySelectorAll('#spf-input, #temperature-input, #whisper-select, #language-input, #device-select, #keep-frames-checkbox')
+    document.querySelectorAll('#spf-input, #temperature-input, #whisper-select, #language-input, #device-select')
         .forEach(el => el.addEventListener('change', saveSettings));
 
     // Clear server log
@@ -116,7 +116,6 @@ async function submitAnalysis() {
         whisper_model: document.getElementById('whisper-select')?.value || 'large',
         language: document.getElementById('language-input')?.value || 'en',
         device: document.getElementById('device-select')?.value || 'gpu',
-        keep_frames: document.getElementById('keep-frames-checkbox')?.checked || false,
         user_prompt: document.getElementById('prompt-input')?.value || '',
     };
 
