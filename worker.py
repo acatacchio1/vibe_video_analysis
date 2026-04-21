@@ -17,7 +17,6 @@ from typing import Dict, Any
 # Constants
 LLM_TIMEOUT = 300  # seconds (5 minutes)
 MIN_NUM_PREDICT = 2048
-DEFAULT_TEMPERATURE = 0.2
 
 # Setup logging to file
 logging.basicConfig(
@@ -361,6 +360,10 @@ def run_analysis(job_dir: Path):
         from video_analyzer.clients.ollama import OllamaClient
         from video_analyzer.clients.generic_openai_api import GenericOpenAIAPIClient
 
+        # Extract temperature from config (default 0.2)
+        config_temperature = config_data["clients"].get("temperature", 0.2)
+        logger.info(f"Using temperature={config_temperature} for LLM calls")
+
         if provider_type == "ollama":
             ollama_url = provider_config.get("url", "http://localhost:11434")
             # Only replace host.docker.internal with localhost if NOT running in Docker
@@ -383,7 +386,6 @@ def run_analysis(job_dir: Path):
                 image_path=None,
                 stream=False,
                 model=model,
-                temperature=0.2,
                 num_predict=256,
             ):
                 import requests as _req
@@ -399,7 +401,7 @@ def run_analysis(job_dir: Path):
                     "stream": False,
                     "think": False,  # top-level: disables reasoning mode
                     "options": {
-                        "temperature": temperature or DEFAULT_TEMPERATURE,
+                        "temperature": config_temperature,
                         "num_predict": max(num_predict, MIN_NUM_PREDICT),
                     },
                 }
