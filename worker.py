@@ -386,6 +386,7 @@ def run_analysis(job_dir: Path):
                 image_path=None,
                 stream=False,
                 model=model,
+                temperature=None,
                 num_predict=256,
             ):
                 import requests as _req
