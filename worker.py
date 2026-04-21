@@ -468,13 +468,13 @@ def run_analysis(job_dir: Path):
         MAX_PREVIOUS_FRAMES = 3
         _original_analyze_frame = analyzer.analyze_frame
 
-        def _patched_analyze_frame(self_inner, frame, prev_ts=None):
+        def _patched_analyze_frame(self_inner, frame):
             """Analyze frame with previous context only (transcript injected before call)"""
             # Keep only the most recent N analyses to avoid context overflow
             if len(self_inner.previous_analyses) > MAX_PREVIOUS_FRAMES:
                 self_inner.previous_analyses = self_inner.previous_analyses[-MAX_PREVIOUS_FRAMES:]
 
-            return _original_analyze_frame(frame, prev_ts=prev_ts)
+            return _original_analyze_frame(frame)
 
         analyzer.analyze_frame = types.MethodType(_patched_analyze_frame, analyzer)
 
