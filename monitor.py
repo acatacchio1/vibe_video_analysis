@@ -224,7 +224,11 @@ class SystemMonitor:
                 else:
                     self._notify("ollama_ps", {"text": ""}, f"HTTP {resp.status_code}")
             except requests.ConnectionError:
-                self._notify("ollama_ps", {"text": ""}, "Cannot connect to Ollama")
+                # Silently skip - Ollama not available
+                pass
+            except requests.RequestException:
+                # Skip other request errors silently
+                pass
             except Exception as e:
                 self._notify("ollama_ps", {"text": ""}, str(e))
 
