@@ -449,60 +449,32 @@ def run_analysis(job_dir: Path):
             except Exception as e:
                 logger.warning(f"Failed to load dedup mapping: {e}")
 
-        # Load transcript segments for context injection
+        # Load transcript segments with end timestamps
         transcript_segments = []
         if transcript and transcript.get("segments"):
             transcript_segments = transcript["segments"]
 
-        def get_transcript_context(frame_ts):
-            """Get 5 preceding and 5 following transcript segments around frame_ts"""
-            if not transcript_segments:
-                return ""
-            # Find the segment closest to but after frame_ts (the "current" segment)
-            current_idx = None
-            for i, s in enumerate(transcript_segments):
-                if s["start"] >= frame_ts:
-                    current_idx = i
-                    break
-            if current_idx is None:
-                # frame_ts is after all segments; use last 5
-                current_idx = len(transcript_segments)
+        # Initialize tracking variables
+        _prev_frame_ts = None
+        _total_frames = len(frames)
 
-            # 5 preceding segments (before current_idx)
-            start_idx = max(0, current_idx - 5)
-            # 5 following segments (from current_idx onward)
-            end_idx = min(len(transcript_segments), current_idx + 5)
+        # Load new prompt template with transcript support
+        new_prompt_path = Path("/home/anthony/venvs/video-analyzer/lib/python3.13/site-packages/video_analyzer/prompts/frame_analysis/frame_with_transcript.txt")
+        if new_prompt_path.exists():
+            analyzer.frame_prompt = new_prompt_path.read_text()
+            logger.info("Loaded new prompt template with transcript support")
 
-            selected = transcript_segments[start_idx:end_idx]
-            return " ".join(s["text"] for s in selected) if selected else ""
-
-        # Monkey-patch analyzer.analyze_frame to inject transcript context and
-        # cap the previous-frames context window so that with heavy dedup (where
-        # every frame is visually distinct) the accumulated prior descriptions
-        # don't overwhelm the model and cause it to ignore the current image.
+        # Monkey-patch to handle previous frames only (transcript injected before call)
         MAX_PREVIOUS_FRAMES = 3
         _original_analyze_frame = analyzer.analyze_frame
-        _prev_frame_ts = None
 
         def _patched_analyze_frame(self_inner, frame, prev_ts=None):
-            nonlocal _prev_frame_ts
+            """Analyze frame with previous context only (transcript injected before call)"""
             # Keep only the most recent N analyses to avoid context overflow
             if len(self_inner.previous_analyses) > MAX_PREVIOUS_FRAMES:
                 self_inner.previous_analyses = self_inner.previous_analyses[-MAX_PREVIOUS_FRAMES:]
 
-            ts_context = get_transcript_context(frame.timestamp)
-            if ts_context:
-                original_frame_prompt = self_inner.frame_prompt
-                transcript_section = f"\n\nTRANSCRIPT CONTEXT (5 segments before and after this frame):\n{ts_context}"
-                self_inner.frame_prompt = original_frame_prompt + transcript_section
-                result = _original_analyze_frame(frame)
-                self_inner.frame_prompt = original_frame_prompt
-                result["transcript_context"] = ts_context
-            else:
-                result = _original_analyze_frame(frame)
-                result["transcript_context"] = ""
-            _prev_frame_ts = frame.timestamp
-            return result
+            return _original_analyze_frame(frame, prev_ts=prev_ts)
 
         analyzer.analyze_frame = types.MethodType(_patched_analyze_frame, analyzer)
 
@@ -511,7 +483,61 @@ def run_analysis(job_dir: Path):
         total_completion_tokens = 0
 
         for i, frame in enumerate(frames):
-            logger.info(f"Analyzing frame {i+1}/{total_frames}: {frame.path}")
+            # Derive on-disk frame number from the actual filename early (needed for transcript logic)
+            # so that the thumbnail URL built by the frontend always resolves to the correct file.
+            try:
+                stem_parts = Path(frame.path).stem.split("_")
+                disk_frame_num = int(stem_parts[-1]) if len(stem_parts) >= 2 else (i + 1)
+            except (ValueError, IndexError):
+                disk_frame_num = i + 1
+
+            # Get original frame timestamp from dedup mapping
+            orig_ts = dedup_map.get("original_timestamps", {}).get(str(disk_frame_num), frame.timestamp)
+
+            # === TRANSCRIPT CONTEXT INJECTION ===
+            recent_transcript = ""
+            prior_transcript = ""
+
+            if len(transcript_segments) > 0:
+                if i == 0:
+                    # First frame
+                    if disk_frame_num == 1:
+                        # First frame of original video - only first segment
+                        recent_transcript = transcript_segments[0]["text"]
+                    else:
+                        # First frame is deduplicated; include ALL segments up to this frame as PRIOR
+                        # because there are no frames for them
+                        for seg in transcript_segments:
+                            if seg["start"] <= orig_ts:
+                                prior_transcript += seg["text"] + " "
+                        prior_transcript = prior_transcript.strip()
+                elif i == _total_frames - 1:
+                    # Last frame - include all remaining segments
+                    for seg in transcript_segments:
+                        if _prev_frame_ts is None or seg["start"] > _prev_frame_ts:
+                            recent_transcript += seg["text"] + " "
+                    recent_transcript = recent_transcript.strip()
+                else:
+                    # Middle frames - include segments between prev and current frame
+                    for seg in transcript_segments:
+                        if _prev_frame_ts < seg["start"] <= orig_ts:
+                            recent_transcript += seg["text"] + " "
+                    recent_transcript = recent_transcript.strip()
+
+            # Inject transcript context into prompt
+            if recent_transcript or prior_transcript:
+                prior_text = prior_transcript if prior_transcript else "(none - all segments have corresponding frames)"
+                context_section = f"\nRECENT TRANSCRIPT: {recent_transcript}\n\nPRIOR TRANSCRIPT: {prior_text}\n"
+                analyzer.frame_prompt = analyzer.frame_prompt.replace("{TRANSCRIPT_CONTEXT}", context_section)
+            else:
+                # No transcript available
+                analyzer.frame_prompt = analyzer.frame_prompt.replace("{TRANSCRIPT_CONTEXT}", "\nRECENT TRANSCRIPT: \n\nPRIOR TRANSCRIPT: none\n")
+
+            # Update tracking
+            _prev_frame_ts = orig_ts
+
+            # === FRAME ANALYSIS ===
+            logger.info(f"Analyzing frame {i+1}/{_total_frames}: {frame.path}")
             analysis = analyzer.analyze_frame(frame)
             frame_analyses.append(analysis)
 
@@ -522,29 +548,20 @@ def run_analysis(job_dir: Path):
                 total_completion_tokens += usage.get("completion_tokens", 0)
 
             # Progress: 20% to 80% for frame analysis
-            progress = 20 + int((i + 1) / total_frames * 60)
-
-            # Derive on-disk frame number from the actual filename (e.g. frame_000010.jpg → 10)
-            # so that the thumbnail URL built by the frontend always resolves to the correct file.
-            try:
-                stem_parts = Path(frame.path).stem.split("_")
-                disk_frame_num = int(stem_parts[-1]) if len(stem_parts) >= 2 else (i + 1)
-            except (ValueError, IndexError):
-                disk_frame_num = i + 1
+            progress = 20 + int((i + 1) / _total_frames * 60)
 
             # Get original frame number from dedup mapping
             orig_frame = dedup_map.get("dedup_to_original_mapping", {}).get(str(disk_frame_num), disk_frame_num)
-            orig_ts = dedup_map.get("original_timestamps", {}).get(str(disk_frame_num), frame.timestamp)
 
             # Write frame analysis for real-time display
             frame_result = {
                 "frame_number": disk_frame_num,
-                "total_frames": total_frames,
+                "total_frames": _total_frames,
                 "original_frame": orig_frame,
                 "timestamp": frame.timestamp,
                 "original_ts": orig_ts,
                 "analysis": analysis.get("response", ""),
-                "transcript_context": analysis.get("transcript_context", ""),
+                "transcript_context": context_section if 'context_section' in locals() else "",
                 "tokens": analysis.get("usage", {}),
             }
 
@@ -558,7 +575,7 @@ def run_analysis(job_dir: Path):
                 {
                     "progress": progress,
                     "current_frame": i + 1,
-                    "total_frames": total_frames,
+                    "total_frames": _total_frames,
                     "last_frame_analysis": analysis.get("response", ""),
                 },
             )
