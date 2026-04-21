@@ -306,48 +306,6 @@
                             </div>
                         </div>
 
-                        <div class="form-section">
-                            <h3>Post-Analysis LLM</h3>
-                            <div class="form-group">
-                                <label for="temperature-input">Temperature</label>
-                                <input type="number" id="temperature-input" value="0.0" min="0" max="2" step="0.1">
-                            </div>
-                                <div class="form-group">
-                                    <label for="chat-model-select">Model</label>
-                                    <select id="chat-model-select" disabled>
-                                        <option value="">Select provider first...</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div class="form-group">
-                                <label for="chat-content-select">Content to send</label>
-                                <select id="chat-content-select">
-                                    <option value="all">Analysis + Transcript + Summary</option>
-                                    <option value="transcript">Transcript only</option>
-                                    <option value="description">Summary only</option>
-                                    <option value="frames">Frame Analysis only</option>
-                                    <option value="transcript_description">Transcript + Summary</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label for="chat-prompt">Prompt / Instruction</label>
-                                <textarea id="chat-prompt" rows="3" placeholder="e.g. Summarize this into 5 bullet points..."></textarea>
-                            </div>
-                        </div>
-
-                        <div class="form-section">
-                            <h3>Output</h3>
-                            <div class="form-group checkbox">
-                                <label>
-                                    <input type="checkbox" id="keep-frames-checkbox">
-                                    Keep extracted frames after analysis
-                                </label>
-                            </div>
-                            <div class="form-group">
-                                <button type="button" id="send-to-kb-btn" class="btn secondary">Send to Knowledge Base</button>
-                            </div>
-                        </div>
-
                         <div class="form-actions">
                             <button type="submit" id="start-btn" class="btn primary" disabled>
                                 Start Analysis
@@ -356,95 +314,21 @@
                     </form>
                 </div>
 
-                <!-- Live Analysis Display -->
-                <div id="live-analysis" class="live-analysis hidden">
-                    <h3>Live Frame Analysis</h3>
-                    <div id="frames-log" class="frames-log"></div>
-                    
-                    <h3>Transcript</h3>
-                    <div id="transcript-panel" class="collapsible-panel">
-                        <div class="panel-content">Waiting for transcription...</div>
-                    </div>
-                    
-                    <h3>Video Description</h3>
-                    <div id="description-panel" class="collapsible-panel">
-                        <div class="panel-content">Waiting for final reconstruction...</div>
-                    </div>
-
-                    <!-- LLM Chat for current job -->
-                    <div id="live-llm-panel" class="llm-chat-panel">
-                        <h3>Send to LLM</h3>
-                        <div class="llm-chat-controls">
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label>Provider</label>
-                                    <select id="live-chat-provider-select" onchange="handleChatProviderChange('live')">
-                                        <option value="">Select provider...</option>
-                                    </select>
-                                </div>
-                                <div class="form-group">
-                                    <label>Model</label>
-                                    <select id="live-chat-model-select" disabled>
-                                        <option value="">Select provider first...</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div class="form-group">
-                                <label>Content to send</label>
-                                <select id="live-chat-content-select">
-                                    <option value="all">Analysis + Transcript + Summary</option>
-                                    <option value="transcript">Transcript only</option>
-                                    <option value="description">Summary only</option>
-                                    <option value="frames">Frame Analysis only</option>
-                                    <option value="transcript_description">Transcript + Summary</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label>Prompt / Instruction</label>
-                                <textarea id="live-chat-prompt" rows="3" placeholder="e.g. Summarize this into 5 bullet points..."></textarea>
-                            </div>
-                            <button class="btn primary" onclick="sendToLLM('live', state.currentJob)">Send to LLM</button>
+                    <!-- Live Analysis Display -->
+                    <div id="live-analysis" class="live-analysis hidden">
+                        <h3>Live Frame Analysis</h3>
+                        <div id="frames-log" class="frames-log"></div>
+                        
+                        <h3>Transcript</h3>
+                        <div id="transcript-panel" class="collapsible-panel">
+                            <div class="panel-content">Waiting for transcription...</div>
                         </div>
-                        <div id="live-llm-response" class="llm-response hidden">
-                            <div class="llm-response-header">
-                                <span>Response</span>
-                                <button class="link-btn" onclick="document.getElementById('live-llm-response').classList.add('hidden')">✕</button>
-                            </div>
-                            <div id="live-llm-text" class="llm-response-text"></div>
+                        
+                        <h3>Video Description</h3>
+                        <div id="description-panel" class="collapsible-panel">
+                            <div class="panel-content">Waiting for final reconstruction...</div>
                         </div>
                     </div>
-                                <div class="form-group">
-                                    <label>Model</label>
-                                    <select id="live-chat-model-select" disabled>
-                                        <option value="">Select provider first...</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div class="form-group">
-                                <label>Content to send</label>
-                                <select id="live-chat-content-select">
-                                    <option value="all">Analysis + Transcript + Summary</option>
-                                    <option value="transcript">Transcript only</option>
-                                    <option value="description">Summary only</option>
-                                    <option value="frames">Frame Analysis only</option>
-                                    <option value="transcript_description">Transcript + Summary</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label>Prompt / Instruction</label>
-                                <textarea id="live-chat-prompt" rows="3" placeholder="e.g. Summarize this into 5 bullet points..."></textarea>
-                            </div>
-                            <button class="btn primary" onclick="sendToLLM('live', state.currentJob)">Send to LLM</button>
-                        </div>
-                        <div id="live-llm-response" class="llm-response hidden">
-                            <div class="llm-response-header">
-                                <span>Response</span>
-                                <button class="link-btn" onclick="document.getElementById('live-llm-response').classList.add('hidden')">✕</button>
-                            </div>
-                            <div id="live-llm-text" class="llm-response-text"></div>
-                        </div>
-                    </div>
-                </div>
             </div>
 
             <!-- ===== RESULTS TAB ===== -->
