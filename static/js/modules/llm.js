@@ -70,6 +70,8 @@ async function sendToLLM(context, jobId = null) {
     const promptTextareaId = context === 'modal' ? 'modal-chat-prompt' :
                             context === 'results' ? 'results-chat-prompt' :
                             isLivePanel ? 'live-chat-prompt' : 'chat-prompt';
+    const tempInputId = context === 'results' ? 'results-chat-temp-input' :
+                        isLivePanel ? 'live-chat-temp-input' : 'chat-temp-input';
     const responseDivId = context === 'modal' ? 'modal-llm-response' :
                          context === 'results' ? 'results-llm-response' : 'live-llm-response';
     const responseTextId = context === 'modal' ? 'modal-llm-text' :
@@ -79,6 +81,7 @@ async function sendToLLM(context, jobId = null) {
     const modelSelect = document.getElementById(modelSelectId);
     const contentSelect = document.getElementById(contentSelectId);
     const promptTextarea = document.getElementById(promptTextareaId);
+    const tempInput = document.getElementById(tempInputId);
     const responseDiv = document.getElementById(responseDivId);
     const responseText = document.getElementById(responseTextId);
 
@@ -86,6 +89,7 @@ async function sendToLLM(context, jobId = null) {
     const modelId = modelSelect.value;
     const prompt = promptTextarea.value;
     const contentType = contentSelect.value;
+    const temperature = tempInput ? parseFloat(tempInput.value || '0.1') : 0.1;
 
     if (!providerType || !modelId || !prompt) {
         showToast('Please select provider, model, and enter a prompt', 'error');
@@ -119,6 +123,7 @@ async function sendToLLM(context, jobId = null) {
         model: modelId,
         prompt: prompt,
         content: content,
+        temperature: temperature,
     };
 
     if (providerType === 'ollama') {

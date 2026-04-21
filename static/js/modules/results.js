@@ -55,6 +55,11 @@ async function showResultDetail(jobId) {
                     <pre><strong>Frame ${f.frame}:</strong> ${escapeHtml(f.response || '')}</pre>
                 `).join('') || '<pre>No frame analyses</pre>'}
 
+                <div class="results-actions">
+                    <button class="btn secondary" onclick="openSendKbModal('${jobId}')">Send to Knowledge Base</button>
+                    <button class="btn secondary" onclick="downloadResultsAsMarkdown('${jobId}')">Download as Markdown</button>
+                </div>
+
                 <div class="llm-chat-panel">
                     <h3>Send to LLM</h3>
                     <div class="llm-chat-controls">
@@ -71,6 +76,10 @@ async function showResultDetail(jobId) {
                                     <option value="">Select provider first...</option>
                                 </select>
                             </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="results-chat-temp-input">Temperature</label>
+                            <input type="number" id="results-chat-temp-input" value="0.1" min="0" max="2" step="0.1">
                         </div>
                         <div class="form-group">
                             <label>Content to send</label>
@@ -122,4 +131,112 @@ function initChatProviderSelect(context = 'live') {
         '<optgroup label="Cloud">' +
         '<option value="openrouter">OpenRouter</option>' +
         '</optgroup>';
+}
+
+async function downloadResultsAsMarkdown(jobId) {
+    try {
+        const response = await fetch(`/api/jobs/${jobId}/results`);
+        const results = await response.json();
+
+        // Format as markdown
+        const content = formatResultsAsMarkdown(results, jobId);
+
+        // Create and trigger download
+        const blob = new Blob([content], { type: 'text/markdown' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `job-${jobId}-results.md`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        showToast('Download started');
+    } catch (error) {
+        showToast('Failed to download results', 'error');
+    }
+}
+
+function formatResultsAsMarkdown(results, jobId) {
+    const lines = [];
+
+    // Title
+    lines.push('# Video Analysis Results');
+    lines.push('');
+
+    // Job info
+    lines.push(`**Job ID:** ${jobId}`);
+    lines.push(`**Date:** ${new Date().toISOString()}`);
+    lines.push('');
+
+    // Video description
+    const descObj = results.video_description;
+    if (descObj) {
+        const descText = typeof descObj === 'string' ? descObj : (descObj.response || descObj.text || JSON.stringify(descObj, null, 2));
+        if (descText) {
+            lines.push('## Video Description');
+            lines.push('');
+            lines.push(descText);
+            lines.push('');
+        }
+    }
+
+    // Transcript
+    if (results.transcript?.text) {
+        lines.push('## Transcript');
+        lines.push('');
+        const lang = results.transcript.language || 'unknown';
+        const whisper = results.transcript.whisper_model || 'unknown';
+        lines.push(`*Language: ${lang} (Whisper model: ${whisper})*`);
+        lines.push('');
+        lines.push(results.transcript.text);
+        lines.push('');
+
+        // Transcript segments with timestamps
+        const segments = results.transcript.segments || [];
+        if (segments.length > 0) {
+            lines.push('### Transcript Segments');
+            lines.push('');
+            for (const seg of segments) {
+                const ts = seg.start || 0;
+                const mins = Math.floor(ts / 60);
+                const secs = Math.floor(ts % 60);
+                lines.push(`- [${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}] ${seg.text}`);
+            }
+            lines.push('');
+        }
+    }
+
+    // Frame analyses
+    const frames = results.frame_analyses || [];
+    if (frames.length > 0) {
+        lines.push('## Frame Analyses');
+        lines.push('');
+        for (const frame of frames) {
+            const frameNum = frame.frame_number || frame.frame;
+            const ts = frame.video_ts !== undefined ? frame.video_ts : 0;
+            const mins = Math.floor(ts / 60);
+            const secs = Math.floor(ts % 60);
+            const analysis = frame.response || frame.analysis || '';
+            if (analysis) {
+                lines.push(`### Frame ${frameNum} (${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')})`);
+                lines.push('');
+                lines.push(analysis);
+                lines.push('');
+            }
+        }
+    }
+
+    // Token usage
+    if (results.token_usage) {
+        lines.push('## Token Usage');
+        lines.push('');
+        lines.push(`- Prompt tokens: ${results.token_usage.prompt_tokens || 'N/A'}`);
+        lines.push(`- Completion tokens: ${results.token_usage.completion_tokens || 'N/A'}`);
+        lines.push(`- Total tokens: ${results.token_usage.total_tokens || 'N/A'}`);
+        lines.push('');
+    }
+
+    return lines.join('\n');
 }
