@@ -188,7 +188,6 @@ def register_socket_handlers(socketio):
                 "whisper_model": data.get("whisper_model", "large"),
                 "language": data.get("language", "en"),
                 "device": data.get("device", "gpu"),
-                "keep_frames": data.get("keep_frames", False),
                 "user_prompt": data.get("user_prompt", ""),
             },
         }

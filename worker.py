@@ -120,7 +120,6 @@ def run_analysis(job_dir: Path):
                 "language": params.get("language", "en"),
                 "device": params.get("device", "gpu"),
             },
-            "keep_frames": params.get("keep_frames", False),
             "prompt": params.get("user_prompt", ""),
         }
 
