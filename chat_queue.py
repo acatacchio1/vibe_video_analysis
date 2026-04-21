@@ -35,6 +35,7 @@ class ChatJob:
     model_id: str
     prompt: str
     content: str
+    temperature: float = 0.0
     api_key: str = ""
     ollama_url: str = "http://localhost:11434"
     started_at: Optional[float] = None
@@ -164,7 +165,10 @@ class ChatQueueManager:
                         "messages": [{"role": "user", "content": full_prompt}],
                         "stream": False,
                         "think": False,
-                        "options": {"num_predict": 4096},
+                        "options": {
+                            "temperature": job.temperature,
+                            "num_predict": 4096,
+                        },
                     },
                     timeout=300,
                 )
@@ -181,6 +185,7 @@ class ChatQueueManager:
                     json={
                         "model": job.model_id,
                         "messages": [{"role": "user", "content": full_prompt}],
+                        "temperature": job.temperature,
                     },
                     timeout=300,
                 )
@@ -217,6 +222,7 @@ class ChatQueueManager:
         model_id: str,
         prompt: str,
         content: str = "",
+        temperature: float = 0.0,
         api_key: str = "",
         ollama_url: str = "http://localhost:11434",
         priority: int = 0,
@@ -236,6 +242,7 @@ class ChatQueueManager:
                 model_id=model_id,
                 prompt=prompt,
                 content=content,
+                temperature=temperature,
                 api_key=api_key,
                 ollama_url=ollama_url,
                 priority=priority,

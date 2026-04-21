@@ -21,6 +21,7 @@ def llm_chat():
     model_id = data.get("model")
     prompt = data.get("prompt", "")
     content = data.get("content", "")
+    temperature = data.get("temperature", 0.1)
     api_key = data.get("api_key", "")
     ollama_url = data.get("ollama_url", "http://localhost:11434")
 
@@ -41,6 +42,7 @@ def llm_chat():
             model_id=model_id,
             prompt=prompt,
             content=content,
+            temperature=temperature,
             api_key=api_key,
             ollama_url=ollama_url,
         )
