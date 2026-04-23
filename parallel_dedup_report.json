@@ -1,0 +1,28 @@
+{
+  "summary": {},
+  "categories": {
+    "small": {
+      "avg_speedup": 0.5731747964149829,
+      "max_speedup": 0.5731747964149829,
+      "min_speedup": 0.5731747964149829,
+      "parallel_avg_fps": 447.23730541848266,
+      "sequential_avg_fps": 780.2808291917278,
+      "video_count": 1,
+      "avg_frame_count": 151
+    },
+    "medium": {
+      "avg_speedup": 3.1219960539581266,
+      "max_speedup": 3.1219960539581266,
+      "min_speedup": 3.1219960539581266,
+      "parallel_avg_fps": 1611.4711533554355,
+      "sequential_avg_fps": 516.1669411184494,
+      "video_count": 1,
+      "avg_frame_count": 399
+    }
+  },
+  "recommendations": [
+    "small: Use sequential (parallel overhead > benefit)",
+    "medium: Recommended parallel (3.1x speedup)"
+  ],
+  "generated_at": 1776882108.5561297
+}

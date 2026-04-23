@@ -1,8 +1,10 @@
 """
 Provider API routes
 """
+import json
 import requests
 import os
+from pathlib import Path
 from flask import Blueprint, request, jsonify
 from providers.ollama import OllamaProvider
 from providers.openrouter import OpenRouterProvider
@@ -18,12 +20,10 @@ def get_providers():
 
 def get_openrouter_api_key():
     """Get OpenRouter API key from environment or initialized provider"""
-    # First check environment
     env_key = os.environ.get("OPENROUTER_API_KEY")
     if env_key:
         return env_key
 
-    # Then check if provider is already initialized
     provider = get_providers().get("OpenRouter")
     if provider and hasattr(provider, "api_key"):
         return provider.api_key
@@ -40,13 +40,45 @@ def list_providers():
 
 @providers_bp.route("/api/providers/discover")
 def discover_ollama():
-    """Trigger Ollama discovery scan"""
-    found = discovery.scan()
+    """Trigger Ollama discovery scan (full subnet scan)"""
+    found = discovery.scan(force=True)
     for url in found:
-        name = f"Ollama-{url.split('//')[1].replace(':', '-')}"
+        name = f"Ollama-{url.split('//')[1].split(':')[0]}"
         if name not in get_providers():
             get_providers()[name] = OllamaProvider(name, url)
     return jsonify({"discovered": len(found), "urls": found})
+
+
+@providers_bp.route("/api/providers/ollama-instances", methods=["GET"])
+def get_ollama_instances():
+    """Get the list of known Ollama instances"""
+    return jsonify({"instances": discovery.get_known_hosts()})
+
+
+@providers_bp.route("/api/providers/ollama-instances", methods=["POST"])
+def update_ollama_instances():
+    """Update the list of known Ollama instances"""
+    data = request.get_json()
+    instances = data.get("instances", [])
+    if not isinstance(instances, list):
+        return jsonify({"error": "instances must be a list"}), 400
+
+    config_path = Path(__file__).parent.parent.parent.parent / "config" / "default_config.json"
+    try:
+        config = json.loads(config_path.read_text())
+    except Exception:
+        config = {}
+    config["ollama_instances"] = instances
+    config_path.write_text(json.dumps(config, indent=2))
+
+    discovery.set_known_hosts(instances)
+    
+    # Also add/update providers
+    for url in instances:
+        name = f"Ollama-{url.split('//')[1].split(':')[0]}"
+        get_providers()[name] = OllamaProvider(name, url)
+    
+    return jsonify({"ok": True, "instances": instances})
 
 
 @providers_bp.route("/api/providers/ollama/models")
@@ -66,20 +98,15 @@ def get_openrouter_models():
     import logging
     logger = logging.getLogger(__name__)
     
-    # Use persistent API key from environment/provider
     api_key = get_openrouter_api_key()
     if not api_key:
         logger.error("OpenRouter API key not configured")
         return jsonify({"error": "OpenRouter API key not configured"}), 400
 
-    # Get or create provider
     provider = get_providers().get("OpenRouter")
     current_status = provider.status if provider else "none"
     logger.info(f"OpenRouter provider found: {provider is not None}, status: {current_status}")
     
-    # Only recreate the provider when it is missing OR has no cached models.
-    # If the provider is merely offline/error but still has a populated pricing
-    # cache (e.g. DNS unreachable at startup), we can still serve cached models.
     needs_recreate = (not provider) or (provider.status in ("offline", "error") and not provider.pricing_cache)
     if needs_recreate:
         logger.info(f"Recreating OpenRouter provider (previous status: {current_status})")
@@ -103,7 +130,6 @@ def estimate_openrouter_cost():
     if not model_id:
         return jsonify({"error": "Missing model parameter"}), 400
 
-    # Use persistent API key
     api_key = get_openrouter_api_key()
     if not api_key:
         return jsonify({"error": "OpenRouter API key not configured"}), 400

@@ -1,0 +1,111 @@
+{
+  "test_date": 1776884616.0623796,
+  "video_results": [
+    {
+      "video": "YTDown.com_YouTube_Squirrel-dropkicks-groundhog_Media_B7zDTlQP1-o_002_720p.mp4",
+      "scene_count": 2,
+      "total_frames": 1508,
+      "avg_scene_frames": 754.0,
+      "detection_time": 0.6131045818328857,
+      "fps": 2459.613000267932,
+      "min_scene_frames": 4,
+      "max_scene_frames": 1504
+    },
+    {
+      "video": "YTDown.com_YouTube_Robots-vs-humans-Beijing-half-marathon-d_Media_1vUnusbzNMQ_002_720p.mp4",
+      "scene_count": 30,
+      "total_frames": 3351,
+      "avg_scene_frames": 111.7,
+      "detection_time": 1.2262043952941895,
+      "fps": 2732.8233472821894,
+      "min_scene_frames": 21,
+      "max_scene_frames": 427
+    }
+  ],
+  "frame_results": [
+    {
+      "frames_dir": "test_videos/small/processed_3fps/YTDown.com_YouTube_Squirrel-dropkicks-groundhog_Media_B7zDTlQP1-o_002_720p/frames",
+      "frame_count": 27,
+      "scene_count": 1,
+      "detection_time": 0.00022363662719726562,
+      "avg_scene_frames": 27.0
+    },
+    {
+      "frames_dir": "test_videos/medium/processed_3fps/YTDown.com_YouTube_Robots-vs-humans-Beijing-half-marathon-d_Media_1vUnusbzNMQ_002_720p/frames",
+      "frame_count": 232,
+      "scene_count": 1,
+      "detection_time": 0.0007586479187011719,
+      "avg_scene_frames": 232.0
+    }
+  ],
+  "dedup_results": {
+    "test_videos/small/processed_3fps/YTDown.com_YouTube_Squirrel-dropkicks-groundhog_Media_B7zDTlQP1-o_002_720p/frames": {
+      "5": {
+        "original_frames": 27,
+        "deduped_frames": 27,
+        "removed_frames": 0,
+        "removed_percentage": 0.0,
+        "processing_time": 0.2264723777770996,
+        "scene_count": 1
+      },
+      "10": {
+        "original_frames": 27,
+        "deduped_frames": 27,
+        "removed_frames": 0,
+        "removed_percentage": 0.0,
+        "processing_time": 0.13492560386657715,
+        "scene_count": 1
+      },
+      "15": {
+        "original_frames": 27,
+        "deduped_frames": 15,
+        "removed_frames": 12,
+        "removed_percentage": 44.44444444444444,
+        "processing_time": 0.13515973091125488,
+        "scene_count": 1
+      },
+      "20": {
+        "original_frames": 27,
+        "deduped_frames": 10,
+        "removed_frames": 17,
+        "removed_percentage": 62.96296296296296,
+        "processing_time": 0.13265752792358398,
+        "scene_count": 1
+      }
+    },
+    "test_videos/medium/processed_3fps/YTDown.com_YouTube_Robots-vs-humans-Beijing-half-marathon-d_Media_1vUnusbzNMQ_002_720p/frames": {
+      "5": {
+        "original_frames": 232,
+        "deduped_frames": 232,
+        "removed_frames": 0,
+        "removed_percentage": 0.0,
+        "processing_time": 0.19389057159423828,
+        "scene_count": 1
+      },
+      "10": {
+        "original_frames": 232,
+        "deduped_frames": 232,
+        "removed_frames": 0,
+        "removed_percentage": 0.0,
+        "processing_time": 0.18177199363708496,
+        "scene_count": 1
+      },
+      "15": {
+        "original_frames": 232,
+        "deduped_frames": 151,
+        "removed_frames": 81,
+        "removed_percentage": 34.91379310344828,
+        "processing_time": 0.1823253631591797,
+        "scene_count": 1
+      },
+      "20": {
+        "original_frames": 232,
+        "deduped_frames": 129,
+        "removed_frames": 103,
+        "removed_percentage": 44.396551724137936,
+        "processing_time": 0.1851649284362793,
+        "scene_count": 1
+      }
+    }
+  }
+}

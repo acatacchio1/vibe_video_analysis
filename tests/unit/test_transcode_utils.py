@@ -10,7 +10,7 @@ import sys
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from src.utils.transcode import (
+from src.utils.video import (
     get_video_duration,
     probe_video,
     probe_all_videos,

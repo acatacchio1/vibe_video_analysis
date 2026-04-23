@@ -26,7 +26,7 @@ DEFAULT_TEMPERATURE = 0.2
 # Video Processing
 MAX_FRAMES_PER_JOB = 10000  # Maximum frames in frames.jsonl per job
 DEFAULT_FRAMES_PER_MINUTE = 60
-DEFAULT_FRAMERATE = 1  # Transcoded framerate
+DEFAULT_FRAMERATE = None  # Detect original framerate by default
 DEFAULT_SIMILARITY_THRESHOLD = 10
 
 # Frame Extraction
@@ -41,7 +41,7 @@ ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
 MAX_TRANSCODE_TIMEOUT = 3600  # 1 hour max for transcoding
 DEFAULT_TRANSCODE_WIDTH = 1280  # 720p width
 DEFAULT_TRANSCODE_HEIGHT = 720  # 720p height
-DEFAULT_TRANSCODE_FPS = 1  # 1 fps for analysis
+DEFAULT_TRANSCODE_FPS = None  # Detect original framerate by default
 
 # WebSocket Configuration
 SOCKETIO_MAX_BUFFER_SIZE = 16 * 1024 * 1024  # 16MB per room
@@ -55,6 +55,30 @@ MAX_CONCURRENT_JOBS_PER_USER = 3
 # API Rate Limiting
 API_REQUEST_LIMIT = 100
 API_REQUEST_WINDOW = 60  # seconds
+
+# Parallel Deduplication
+USE_PARALLEL_DEDUP = os.environ.get("USE_PARALLEL_DEDUP", "").lower() in ("1", "true", "yes")
+MAX_DEDUP_WORKERS = int(os.environ.get("MAX_DEDUP_WORKERS", "30"))
+DEDUP_CHUNK_SIZE = 100  # Frames per worker batch
+DEDUP_MIN_FRAMES_FOR_PARALLEL = 50  # Minimum frames to use parallel
+DEDUP_PARALLEL_FALLBACK = True  # Fallback to sequential if parallel fails
+DEDUP_ERROR_RATE_THRESHOLD = 1.0  # Maximum 1% error rate
+
+# Performance Monitoring
+LOG_DEDUP_PERFORMANCE = True
+MONITOR_DEDUP_RESOURCES = True
+
+# Parallel Deduplication
+USE_PARALLEL_DEDUP = os.environ.get("USE_PARALLEL_DEDUP", "").lower() in ("1", "true", "yes")
+MAX_DEDUP_WORKERS = int(os.environ.get("MAX_DEDUP_WORKERS", "30"))
+DEDUP_CHUNK_SIZE = 100  # Frames per worker batch
+DEDUP_MIN_FRAMES_FOR_PARALLEL = 50  # Minimum frames to use parallel
+DEDUP_PARALLEL_FALLBACK = True  # Fallback to sequential if parallel fails
+DEDUP_ERROR_RATE_THRESHOLD = 1.0  # Maximum 1% error rate
+
+# Performance Monitoring
+LOG_DEDUP_PERFORMANCE = True
+MONITOR_DEDUP_RESOURCES = True
 
 # Logging
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()

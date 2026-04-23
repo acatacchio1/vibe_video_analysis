@@ -18,12 +18,15 @@ class OllamaDiscovery:
     REFRESH_INTERVAL = 30
     ADDITIONAL_SUBNETS = ["192.168.1"]  # Always scan this subnet in addition to auto-detected
 
-    def __init__(self):
+    def __init__(self, auto_scan=False):
         self.discovered: Set[str] = set()
         self.status: Dict[str, str] = {}  # url -> "online"/"offline"
         self.last_scan = 0
         self.lock = threading.Lock()
         self._start_refresh_thread()
+        
+        if auto_scan:
+            self.scan()
 
     def _get_subnet(self) -> str:
         """Detect local subnet"""
@@ -39,7 +42,7 @@ class OllamaDiscovery:
             logger.warning(f"Could not detect subnet: {e}")
         return "192.168.1"  # Fallback
 
-    def scan(self) -> List[str]:
+    def scan(self, force=False) -> List[str]:
         """Scan network for Ollama instances"""
         found = []
 
@@ -128,6 +131,27 @@ class OllamaDiscovery:
         with self.lock:
             return [url for url, status in self.status.items() if status == "online"]
 
+    def get_known_hosts(self) -> List[str]:
+        """Get list of known hosts (both discovered and manually added)"""
+        with self.lock:
+            return list(self.discovered)
 
-# Global instance
-discovery = OllamaDiscovery()
+    def set_known_hosts(self, hosts: List[str]):
+        """Set known hosts without scanning"""
+        with self.lock:
+            self.discovered = set(hosts)
+            # Update status for all known hosts
+            for url in hosts:
+                if url not in self.status:
+                    self.status[url] = "unknown"
+    
+    def add_host(self, url: str):
+        """Add a single host without scanning"""
+        with self.lock:
+            self.discovered.add(url)
+            if url not in self.status:
+                self.status[url] = "unknown"
+
+
+# Global instance - no auto scan on startup
+discovery = OllamaDiscovery(auto_scan=False)

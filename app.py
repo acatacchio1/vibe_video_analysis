@@ -32,6 +32,17 @@ from config.constants import DEBUG, LOG_LEVEL, LOG_FORMAT
 # Setup logging
 logging.basicConfig(level=getattr(logging, LOG_LEVEL, logging.INFO), format=LOG_FORMAT)
 logger = logging.getLogger(__name__)
+
+# Optional parallel deduplication utilities
+try:
+    from src.utils.parallel_file_ops import delete_frames_parallel
+    from src.utils.dedup_scheduler import get_dedup_strategy, log_dedup_start, log_dedup_completion
+    PARALLEL_DEDUP_AVAILABLE = True
+    logger.info("Parallel deduplication utilities loaded successfully")
+except ImportError as e:
+    PARALLEL_DEDUP_AVAILABLE = False
+    logger.warning(f"Parallel deduplication utilities not available: {e}")
+    logger.warning("Falling back to sequential deduplication only")
 if DEBUG:
     logging.getLogger().setLevel(logging.DEBUG)
     for name in ("src.websocket.handlers", "src.api.videos", "src.api.providers",
@@ -490,20 +501,120 @@ recover_stale_jobs()
 # ==================== Transcode Helpers ====================
 
 
-def _transcode_and_delete_with_cleanup(src_path: str, fps: float = 1, whisper_model: str = "base", language: str = "en"):
+def _transcode_and_delete_with_cleanup(src_path: str, fps: float = None, whisper_model: str = "base", language: str = "en"):
     """
     Background task: transcode src_path to 720p@<fps>fps, extract frames + thumbnails,
     transcribe audio, emit progress via socket, then refresh the video list.
     Source file is preserved (no longer deleted after transcode).
+    If fps is None, detect original framerate from source video.
     """
     input_path = Path(src_path)
-    output_name = f"{input_path.stem}_720p{fps}fps.mp4"
-    output_path = input_path.parent / output_name
     src_name = input_path.name
+    
+    # output_name and output_path will be defined after fps detection
 
     log_file = None
 
     try:
+        duration_s = 0.0
+        # Detect framerate from source video if not provided
+        if fps is None:
+            try:
+                probe = subprocess.run(
+                    [
+                        "ffprobe", "-v", "error",
+                        "-show_entries", "format=duration",
+                        "-show_entries", "stream=r_frame_rate",
+                        "-of", "json", str(input_path),
+                    ],
+                    capture_output=True, text=True, timeout=15,
+                )
+                if probe.returncode == 0:
+                    info = json.loads(probe.stdout)
+                    fmt = info.get("format", {})
+                    duration_s = float(fmt.get("duration", 0))
+                    streams = info.get("streams", [])
+                    
+                    logger.debug(f"Framerate detection for {src_name}: found {len(streams)} streams")
+                    
+                    if streams:
+                        # Find first video stream
+                        video_stream = None
+                        for i, stream in enumerate(streams):
+                            codec_type = stream.get("codec_type", "unknown")
+                            r_fr = stream.get("r_frame_rate", "N/A")
+                            logger.debug(f"  Stream {i}: codec_type={codec_type}, r_frame_rate={r_fr}")
+                            if codec_type == "video":
+                                video_stream = stream
+                                logger.debug(f"  Found video stream at index {i}")
+                                break
+                        
+                        # If no video stream found, use first stream
+                        if video_stream is None:
+                            video_stream = streams[0]
+                            logger.debug("No video stream found, using first stream")
+                        
+                        r_fr = video_stream.get("r_frame_rate", "1/1")
+                        logger.debug(f"Selected stream r_frame_rate: {r_fr}")
+                        
+                        if "/" in r_fr:
+                            num, den = r_fr.split("/")
+                            fps = float(num) / float(den) if float(den) else 1.0
+                            logger.debug(f"Parsed as fraction: {num}/{den} = {fps} fps")
+                        else:
+                            try:
+                                fps = float(r_fr)
+                                logger.debug(f"Parsed as float: {fps} fps")
+                            except ValueError:
+                                fps = 1.0
+                                logger.debug(f"Could not parse as float, using default: {fps} fps")
+                    else:
+                        fps = 1.0
+                        logger.debug(f"No streams found, using default: {fps} fps")
+                else:
+                    fps = 1.0
+                    logger.debug(f"FFprobe failed (returncode={probe.returncode}), using default: {fps} fps")
+            except Exception as e:
+                logger.warning(f"Failed to detect framerate from {src_name}: {e}")
+                logger.debug(f"Exception details:", exc_info=True)
+                fps = 1.0
+        else:
+            # If fps was provided, still get duration for progress reporting
+            try:
+                probe = subprocess.run(
+                    [
+                        "ffprobe",
+                        "-v", "error",
+                        "-show_entries", "format=duration",
+                        "-of", "default=noprint_wrappers=1:nokey=1",
+                        str(input_path),
+                    ],
+                    capture_output=True, text=True, timeout=15,
+                )
+                if probe.returncode == 0:
+                    duration_s = float(probe.stdout.strip())
+            except Exception:
+                pass
+
+        # Update output filename with actual fps (smart rounding)
+        # For common video framerates (≈24, ≈25, ≈30, ≈60): round to nearest integer
+        # For very low framerates (< 5): keep 1 decimal place
+        # For others: round to nearest integer
+        if fps < 5:
+            # Low framerate, keep 1 decimal place for accuracy
+            fps_rounded = round(fps, 1)
+        else:
+            # Normal framerate, round to nearest integer
+            fps_rounded = round(fps)
+        
+        # Format without trailing .0 if integer
+        if fps_rounded == int(fps_rounded):
+            fps_formatted = int(fps_rounded)
+        else:
+            fps_formatted = fps_rounded
+            
+        output_name = f"{input_path.stem}_720p{fps_formatted}fps.mp4"
+        output_path = input_path.parent / output_name
 
         def _emit(stage, progress, error=None):
             socketio.emit(
@@ -517,27 +628,11 @@ def _transcode_and_delete_with_cleanup(src_path: str, fps: float = 1, whisper_mo
                 },
             )
 
-        duration_s = 0.0
-        try:
-            probe = subprocess.run(
-                [
-                    "ffprobe",
-                    "-v", "error",
-                    "-show_entries", "format=duration",
-                    "-of", "default=noprint_wrappers=1:nokey=1",
-                    str(input_path),
-                ],
-                capture_output=True, text=True, timeout=15,
-            )
-            if probe.returncode == 0:
-                duration_s = float(probe.stdout.strip())
-        except Exception:
-            pass
-
         _emit("starting", 0)
         logger.info(
-            f"Transcoding {src_name} -> {output_name}  (duration {duration_s:.1f}s)"
+            f"Transcoding {src_name} -> {output_name} at {fps_formatted}fps (duration {duration_s:.1f}s, original framerate)"
         )
+        logger.info(f"Detected framerate for {src_name}: {fps} fps (formatted as {fps_formatted} for filename)")
 
         try:
             cmd = build_transcode_command(
@@ -635,8 +730,8 @@ def _fix_permissions(base_dir: Path):
         logger.warning(f"Permission fix failed: {e}")
 
 
-def _run_dedup(frames_dir: Path, thumbs_dir: Path, dedup_threshold: int, fps: float):
-    """Run deduplication on extracted frames. Returns dedup results dict."""
+def _run_dedup_sequential(frames_dir: Path, thumbs_dir: Path, dedup_threshold: int, fps: float):
+    """Run sequential deduplication on extracted frames. Returns dedup results dict."""
     extracted_frames = sorted(frames_dir.glob("frame_*.jpg"))
     original_count = len(extracted_frames)
     original_frame_numbers = {}
@@ -675,7 +770,7 @@ def _run_dedup(frames_dir: Path, thumbs_dir: Path, dedup_threshold: int, fps: fl
                     if thumb.exists():
                         thumb.unlink()
         actual_count = len(keep)
-        logger.info(f"Dedup removed {removed} similar frames (threshold={dedup_threshold}), {actual_count} remaining")
+        logger.info(f"Sequential dedup removed {removed} similar frames (threshold={dedup_threshold}), {actual_count} remaining")
     except Exception as e:
         logger.warning(f"Frame dedup failed (non-fatal): {e}")
         actual_count = original_count
@@ -700,14 +795,283 @@ def _run_dedup(frames_dir: Path, thumbs_dir: Path, dedup_threshold: int, fps: fl
     }
 
 
+def _run_dedup_parallel(frames_dir: Path, thumbs_dir: Path, dedup_threshold: int, fps: float, max_workers: int = None):
+    """Run parallel deduplication on extracted frames. Returns dedup results dict."""
+    import time
+    from src.utils.parallel_hash import compute_hashes_parallel
+    from src.utils.parallel_file_ops import delete_frames_parallel
+    
+    extracted_frames = sorted(frames_dir.glob("frame_*.jpg"))
+    original_count = len(extracted_frames)
+    
+    logger.info(f"Starting parallel deduplication for {original_count} frames")
+    logger.info(f"Threshold: {dedup_threshold}, FPS: {fps}, Max workers: {max_workers}")
+    
+    # Store original frame metadata
+    original_timestamps = {}
+    for fp in extracted_frames:
+        old_num = int(fp.stem.split("_")[1])
+        original_timestamps[old_num] = round((old_num - 1) / fps, 3)
+    
+    # Early return for trivial cases
+    if dedup_threshold <= 0 or original_count <= 1:
+        logger.info(f"Trivial case: threshold={dedup_threshold}, frames={original_count}")
+        return {
+            "original_count": original_count,
+            "deduped_count": original_count,
+            "threshold": dedup_threshold,
+            "original_to_dedup_mapping": {str(k): k for k in range(1, original_count + 1)},
+            "original_timestamps": {str(k): v for k, v in original_timestamps.items()},
+            "dedup_to_original_mapping": {str(k): k for k in range(1, original_count + 1)},
+        }
+    
+    performance_metrics = {}
+    
+    try:
+        # PHASE 1: Parallel hash computation
+        logger.info("PHASE 1: Computing perceptual hashes in parallel...")
+        hash_start = time.time()
+        
+        hash_results = compute_hashes_parallel(
+            extracted_frames,
+            max_workers=max_workers,
+            chunk_size=100
+        )
+        
+        hash_time = time.time() - hash_start
+        performance_metrics["hash_computation_time"] = hash_time
+        
+        if not hash_results:
+            logger.error("No hashes computed successfully, falling back to sequential")
+            return _run_dedup_sequential(frames_dir, thumbs_dir, dedup_threshold, fps)
+        
+        # PHASE 2: Sequential dedup logic (fast with pre-computed hashes)
+        logger.info("PHASE 2: Running deduplication logic...")
+        dedup_start = time.time()
+        
+        # Extract hashes in frame order
+        hashes = []
+        frame_order = []
+        for fp in extracted_frames:
+            if fp in hash_results:
+                phash, frame_num = hash_results[fp]
+                hashes.append(phash)
+                frame_order.append((fp, frame_num))
+            else:
+                # Use placeholder for failed frames (kept by default)
+                hashes.append(None)
+                frame_order.append((fp, -1))
+        
+        # Run dedup algorithm
+        keep_indices = [0]  # Always keep first frame
+        prev_hash = hashes[0]
+        
+        for i in range(1, len(hashes)):
+            if hashes[i] is None:
+                # Keep frames with failed hash computation
+                keep_indices.append(i)
+                prev_hash = hashes[i-1] if i > 0 and hashes[i-1] is not None else None
+            elif prev_hash is not None and (prev_hash - hashes[i]) >= dedup_threshold:
+                keep_indices.append(i)
+                prev_hash = hashes[i]
+        
+        # Get frames to keep
+        keep_frames = [frame_order[i][0] for i in keep_indices]
+        actual_count = len(keep_frames)
+        removed = original_count - actual_count
+        
+        dedup_time = time.time() - dedup_start
+        performance_metrics["dedup_logic_time"] = dedup_time
+        
+        logger.info(f"Dedup logic complete: {removed} frames to remove, {actual_count} to keep")
+        
+        # PHASE 3: Parallel file deletion
+        if removed > 0:
+            logger.info(f"PHASE 3: Deleting {removed} frames in parallel...")
+            delete_start = time.time()
+            
+            # Determine frames to delete
+            frames_to_delete = []
+            for i, (fp, _) in enumerate(frame_order):
+                if i not in keep_indices:
+                    frames_to_delete.append(fp)
+            
+            # Delete in parallel
+            delete_stats = delete_frames_parallel(
+                frames_to_delete,
+                thumbs_dir,
+                max_workers=min(max_workers or 30, len(frames_to_delete) // 10 + 1)
+            )
+            
+            delete_time = time.time() - delete_start
+            performance_metrics["file_deletion_time"] = delete_time
+            performance_metrics["deletion_stats"] = delete_stats
+            
+            logger.info(f"Deleted {delete_stats['successful']}/{delete_stats['total']} frames "
+                       f"({delete_stats['success_rate']}% success)")
+            
+            if delete_stats['failed'] > 0:
+                logger.warning(f"Failed to delete {delete_stats['failed']} frames")
+        
+        else:
+            logger.info("PHASE 3: No frames to delete")
+            performance_metrics["file_deletion_time"] = 0
+        
+        # PHASE 4: Build results mapping
+        logger.info("PHASE 4: Building results mapping...")
+        mapping_start = time.time()
+        
+        original_to_dedup = {}
+        dedup_to_original = {}
+        kept_timestamps = {}
+        
+        for new_idx, (fp, old_num) in enumerate([frame_order[i] for i in keep_indices], start=1):
+            if old_num > 0:  # Valid frame number
+                original_to_dedup[str(old_num)] = new_idx
+                dedup_to_original[str(new_idx)] = old_num
+                kept_timestamps[str(new_idx)] = round((old_num - 1) / fps, 3)
+            else:
+                # Handle frames with unknown original number
+                try:
+                    actual_num = int(fp.stem.split("_")[1])
+                    original_to_dedup[str(actual_num)] = new_idx
+                    dedup_to_original[str(new_idx)] = actual_num
+                    kept_timestamps[str(new_idx)] = round((actual_num - 1) / fps, 3)
+                except:
+                    # Fallback: use index
+                    original_to_dedup[str(new_idx)] = new_idx
+                    dedup_to_original[str(new_idx)] = new_idx
+                    kept_timestamps[str(new_idx)] = round((new_idx - 1) / fps, 3)
+        
+        mapping_time = time.time() - mapping_start
+        performance_metrics["mapping_time"] = mapping_time
+        
+        # Calculate total time
+        total_time = hash_time + dedup_time + performance_metrics.get("file_deletion_time", 0) + mapping_time
+        performance_metrics["total_time"] = total_time
+        
+        logger.info(f"Parallel deduplication completed in {total_time:.2f}s:")
+        logger.info(f"  Hash computation: {hash_time:.2f}s")
+        logger.info(f"  Dedup logic: {dedup_time:.2f}s")
+        logger.info(f"  File deletion: {performance_metrics.get('file_deletion_time', 0):.2f}s")
+        logger.info(f"  Mapping: {mapping_time:.2f}s")
+        logger.info(f"  Removed {removed} similar frames (threshold={dedup_threshold}), {actual_count} remaining")
+        
+        return {
+            "original_count": original_count,
+            "deduped_count": actual_count,
+            "threshold": dedup_threshold,
+            "original_to_dedup_mapping": original_to_dedup,
+            "original_timestamps": kept_timestamps,
+            "dedup_to_original_mapping": dedup_to_original,
+            "performance_metrics": performance_metrics
+        }
+        
+    except Exception as e:
+        logger.error(f"Parallel dedup failed: {e}", exc_info=True)
+        logger.warning("Falling back to sequential dedup")
+        
+        # Fall back to sequential
+        return _run_dedup_sequential(frames_dir, thumbs_dir, dedup_threshold, fps)
+
+
+def _run_dedup(frames_dir: Path, thumbs_dir: Path, dedup_threshold: int, fps: float):
+    """Smart deduplication dispatcher - chooses parallel or sequential based on workload."""
+    extracted_frames = sorted(frames_dir.glob("frame_*.jpg"))
+    original_count = len(extracted_frames)
+    
+    # Check if parallel utilities are available
+    if not PARALLEL_DEDUP_AVAILABLE:
+        logger.warning("Parallel deduplication utilities not available, using sequential")
+        return _run_dedup_sequential(frames_dir, thumbs_dir, dedup_threshold, fps)
+    
+    try:
+        from src.utils.dedup_scheduler import get_dedup_strategy, log_dedup_start, log_dedup_completion
+        
+        # Get dedup strategy
+        strategy = get_dedup_strategy(
+            frame_count=original_count,
+            dedup_threshold=dedup_threshold,
+            video_duration=original_count / fps if fps > 0 else 0,
+            available_memory_gb=192  # System has 192GB RAM
+        )
+        
+        # Log start
+        log_dedup_start(strategy)
+        
+        # Execute chosen strategy
+        if strategy["use_parallel"]:
+            logger.info("Executing PARALLEL deduplication")
+            results = _run_dedup_parallel(
+                frames_dir, 
+                thumbs_dir, 
+                dedup_threshold, 
+                fps, 
+                max_workers=strategy["worker_count"]
+            )
+        else:
+            logger.info("Executing SEQUENTIAL deduplication")
+            results = _run_dedup_sequential(frames_dir, thumbs_dir, dedup_threshold, fps)
+        
+        # Add strategy info to results
+        results["dedup_strategy"] = {
+            "method": "parallel" if strategy["use_parallel"] else "sequential",
+            "worker_count": strategy["worker_count"],
+            "reason": strategy["reason"]
+        }
+        
+        # Log completion
+        performance = results.get("performance_metrics", {})
+        log_dedup_completion(strategy, results, performance)
+        
+        return results
+        
+    except Exception as e:
+        logger.error(f"Error in smart dedup dispatcher: {e}", exc_info=True)
+        logger.warning("Falling back to sequential dedup")
+        return _run_dedup_sequential(frames_dir, thumbs_dir, dedup_threshold, fps)
+
+
 def _renumber_frames(frames_dir: Path, thumbs_dir: Path, fps: float):
     """Renumber frames sequentially and build timestamp index."""
     kept_frames = sorted(frames_dir.glob("frame_*.jpg"))
     actual_count = len(kept_frames)
     frames_index = {}
+    
+    # Detect if we need to adjust FPS for timestamp calculation
+    # If fps is 1.0 (analysis FPS) but frame numbers suggest original video FPS,
+    # we need to estimate the correct FPS for timestamp calculation
+    adjusted_fps = fps
+    if actual_count > 0 and fps == 1.0:
+        # Get the largest frame number
+        max_frame_num = 0
+        for frame in kept_frames:
+            try:
+                frame_num = int(frame.stem.split("_")[1])
+                max_frame_num = max(max_frame_num, frame_num)
+            except (ValueError, IndexError):
+                pass
+        
+        # If max frame number is much larger than frame count * expected duration,
+        # we're likely dealing with original FPS frames, not 1fps frames
+        # A 7-minute (420s) video at 1fps should have ~420 frames
+        # If we have frame numbers like 10342, that suggests original FPS ~25-30
+        if max_frame_num > actual_count * 10:  # Heuristic: frame numbers are much larger than expected
+            # Try to estimate original FPS from frame numbers
+            # Common video FPS values
+            common_fps = [23.976, 24.0, 25.0, 29.97, 30.0, 50.0, 59.94, 60.0]
+            video_duration_guess = 300  # Guess 5 minutes as typical video duration
+            
+            for orig_fps in common_fps:
+                estimated_max_frame = video_duration_guess * orig_fps
+                if abs(max_frame_num - estimated_max_frame) < estimated_max_frame * 0.5:  # Within 50%
+                    adjusted_fps = orig_fps
+                    logger.info(f"Detected original video FPS ≈ {orig_fps} from frame numbers (max={max_frame_num}, was using fps={fps})")
+                    break
+    
     for new_idx, old_frame in enumerate(kept_frames, start=1):
         old_num = int(old_frame.stem.split("_")[1])
-        timestamp_s = (old_num - 1) / fps
+        timestamp_s = (old_num - 1) / adjusted_fps
         frames_index[new_idx] = round(timestamp_s, 3)
         if new_idx != old_num:
             new_name = f"frame_{new_idx:06d}.jpg"
@@ -717,9 +1081,409 @@ def _renumber_frames(frames_dir: Path, thumbs_dir: Path, fps: float):
             new_thumb = thumbs_dir / new_name.replace("frame_", "thumb_")
             if old_thumb.exists():
                 old_thumb.rename(new_thumb)
-    logger.info(f"Renumbered {actual_count} frames sequentially with timestamp index")
-    return frames_index, actual_count
+    logger.info(f"Renumbered {actual_count} frames sequentially with timestamp index (using fps={adjusted_fps})")
+    return frames_index, actual_count, adjusted_fps
 
+
+def _extract_frames_direct(video_path: str, original_video_path: str = None):
+    """
+    Direct frame extraction from original video (no transcode step).
+    Extracts all frames from video at original resolution/framerate.
+    If original_video_path is provided, it will be deleted after successful extraction.
+    """
+    video = Path(video_path)
+    original_video = Path(original_video_path) if original_video_path else None
+    
+    # Use the video stem for the directory name
+    stem = video.stem.rsplit('_720p', 1)[0] if '_720p' in video.stem else video.stem
+    if video.parent.name == 'uploads':
+        # In uploads directory, create subdirectory for frames
+        video_dir = video.parent / stem
+    else:
+        # In a subdirectory (like after transcode), use existing structure
+        video_dir = video.parent / stem
+    
+    frames_dir = video_dir / "frames"
+    thumbs_dir = frames_dir / "thumbs"
+    
+    # Fix permissions on any root-owned dirs created by Docker
+    _fix_permissions(video.parent)
+    
+    frames_dir.mkdir(parents=True, exist_ok=True)
+    thumbs_dir.mkdir(parents=True, exist_ok=True)
+    
+    duration_s = 0.0
+    fps = 1.0
+    total_video_frames = 0
+    try:
+        probe = subprocess.run(
+            [
+                "ffprobe", "-v", "error",
+                "-show_entries", "format=duration",
+                "-show_entries", "stream=r_frame_rate,nb_frames,width,height",
+                "-of", "json", str(video),
+            ],
+            capture_output=True, text=True, timeout=15,
+        )
+        if probe.returncode == 0:
+            info = json.loads(probe.stdout)
+            fmt = info.get("format", {})
+            streams = info.get("streams", [])
+            duration_s = float(fmt.get("duration", 0))
+            
+            logger.debug(f"Direct frame extraction probe for {video.name}: found {len(streams)} streams")
+            
+            if streams:
+                # Find first video stream
+                video_stream = None
+                for i, stream in enumerate(streams):
+                    codec_type = stream.get("codec_type", "unknown")
+                    r_fr = stream.get("r_frame_rate", "N/A")
+                    width = stream.get("width", "N/A")
+                    height = stream.get("height", "N/A")
+                    logger.debug(f"  Stream {i}: codec_type={codec_type}, r_frame_rate={r_fr}, resolution={width}x{height}")
+                    if codec_type == "video":
+                        video_stream = stream
+                        logger.debug(f"  Found video stream at index {i}")
+                        break
+                
+                # If no video stream found, use first stream
+                if video_stream is None:
+                    video_stream = streams[0]
+                    logger.debug("No video stream found, using first stream")
+                
+                nb = video_stream.get("nb_frames")
+                if nb:
+                    total_video_frames = int(nb)
+                r_fr = video_stream.get("r_frame_rate", "1/1")
+                logger.debug(f"Selected stream r_frame_rate: {r_fr}")
+                if "/" in r_fr:
+                    num, den = r_fr.split("/")
+                    fps = float(num) / float(den) if float(den) else 1.0
+                    logger.debug(f"Parsed as fraction: {num}/{den} = {fps} fps")
+    except Exception as e:
+        logger.warning(f"Failed to probe video for direct frame extraction: {e}")
+
+    if total_video_frames == 0 and duration_s > 0:
+        total_video_frames = int(duration_s * fps)
+
+    src_name = video.name
+
+    def _emit(stage, progress, error=None):
+        socketio.emit(
+            "frame_extraction_progress",
+            {
+                "source": src_name, "stage": stage, "progress": progress,
+                "current_frame": 0, "total_frames": total_video_frames, "error": error,
+            },
+        )
+
+    _emit("extracting_frames", 0, f"Extracting {total_video_frames} frames from original video")
+    logger.info(f"Direct frame extraction from {src_name} ({total_video_frames} frames at {fps}fps)")
+
+    # Extract frames using ffmpeg
+    frame_pattern = frames_dir / "frame_%06d.jpg"
+    extract_cmd = [
+        "ffmpeg", "-y", "-i", str(video),
+        "-q:v", "2",  # Quality factor (2-31, lower is better)
+        "-f", "image2",
+        str(frame_pattern),
+    ]
+
+    try:
+        proc = subprocess.Popen(
+            extract_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+            universal_newlines=True,
+        )
+
+        def read_output(stream, prefix="", progress_callback=None):
+            for line in stream:
+                line = line.strip()
+                if line:
+                    # Parse frame number from ffmpeg output
+                    if "frame=" in line:
+                        try:
+                            parts = line.split()
+                            for part in parts:
+                                if part.startswith("frame="):
+                                    frame_num = int(part.split("=")[1])
+                                    if total_video_frames > 0:
+                                        progress = min(100, int((frame_num / total_video_frames) * 100))
+                                        _emit("extracting_frames", progress, f"Extracted {frame_num}/{total_video_frames} frames")
+                                    break
+                        except (ValueError, IndexError):
+                            pass
+
+        stdout_thread = threading.Thread(target=read_output, args=(proc.stdout, "stdout"))
+        stderr_thread = threading.Thread(target=read_output, args=(proc.stderr, "stderr"))
+        
+        stdout_thread.start()
+        stderr_thread.start()
+        
+        proc.wait(timeout=3600)  # 1 hour timeout
+        stdout_thread.join(timeout=5)
+        stderr_thread.join(timeout=5)
+
+        if proc.returncode == 0:
+            # Count actually extracted frames
+            extracted_frames = sorted(frames_dir.glob("frame_*.jpg"))
+            actual_count = len(extracted_frames)
+            
+            # Save frame index with original timestamps
+            frames_index = {}
+            for i, frame_file in enumerate(extracted_frames, start=1):
+                frame_num = i
+                timestamp_seconds = round((frame_num - 1) / fps, 3)
+                frames_index[frame_num] = timestamp_seconds
+            
+            index_file = video_dir / "frames_index.json"
+            with open(index_file, "w") as f:
+                json.dump(frames_index, f, indent=2)
+            
+            # Create thumbnail from first frame
+            if extracted_frames:
+                try:
+                    from PIL import Image
+                    first_frame = extracted_frames[0]
+                    thumb_path = video.parent / "thumbs" / f"{stem}.jpg"
+                    thumb_path.parent.mkdir(parents=True, exist_ok=True)
+                    
+                    img = Image.open(first_frame)
+                    img.thumbnail((320, 240))
+                    img.save(thumb_path, "JPEG", quality=85)
+                except Exception as e:
+                    logger.warning(f"Failed to create thumbnail: {e}")
+                    # Copy first frame as thumbnail
+                    import shutil
+                    thumb_path.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(first_frame, thumb_path)
+            
+            _emit("complete", 100, f"Extracted {actual_count} frames")
+            logger.info(f"Direct frame extraction complete: {actual_count} frames from {src_name}")
+            
+            # Delete original video if specified
+            if original_video and original_video.exists():
+                try:
+                    original_video.unlink()
+                    logger.info(f"Deleted original video: {original_video.name}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete original video {original_video.name}: {e}")
+            
+            return {
+                "frames_dir": str(frames_dir),
+                "frame_count": actual_count,
+                "fps": fps,
+                "duration": duration_s,
+                "video_dir": str(video_dir),
+            }
+        else:
+            stderr_content = proc.stderr.read() if proc.stderr else "unknown error"
+            error_msg = f"Frame extraction failed: {stderr_content[-300:]}"
+            _emit("failed", 0, error=error_msg)
+            logger.error(f"Direct frame extraction failed for {src_name}: {stderr_content}")
+            return None
+
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+        _emit("failed", 0, error="Frame extraction timed out")
+        logger.error(f"Direct frame extraction timed out for {src_name}")
+        return None
+    except Exception as e:
+        _emit("failed", 0, error=str(e))
+        logger.error(f"Direct frame extraction error for {src_name}: {e}")
+        return None
+
+def _process_video_direct(src_path: str, whisper_model: str = "base", language: str = "en"):
+    """
+    Process uploaded video directly: extract frames and transcribe audio in parallel.
+    Deletes original video after successful extraction.
+    """
+    input_path = Path(src_path)
+    src_name = input_path.name
+    
+    logger.info(f"Direct video processing started for {src_name}")
+    
+    def _emit_progress(stage, progress, error=None, source=None):
+        socketio.emit(
+            "video_processing_progress",
+            {
+                "source": source or src_name,
+                "stage": stage,
+                "progress": progress,
+                "error": error,
+            },
+        )
+    
+    # Start both processes in parallel
+    import concurrent.futures
+    
+    _emit_progress("starting", 0, "Starting parallel processing")
+    
+    results = {}
+    errors = {}
+    
+    def extract_frames_task():
+        try:
+            _emit_progress("extracting_frames", 5, "Starting frame extraction", f"{src_name}_frames")
+            result = _extract_frames_direct(str(input_path), str(input_path))
+            if result:
+                results["frames"] = result
+                _emit_progress("extracting_frames", 100, "Frame extraction complete", f"{src_name}_frames")
+                return True
+            else:
+                errors["frames"] = "Frame extraction failed"
+                _emit_progress("extracting_frames", 0, "Frame extraction failed", f"{src_name}_frames")
+                return False
+        except Exception as e:
+            errors["frames"] = str(e)
+            _emit_progress("extracting_frames", 0, f"Frame extraction error: {e}", f"{src_name}_frames")
+            return False
+    
+    def transcribe_audio_task():
+        try:
+            _emit_progress("transcribing_audio", 5, "Starting audio transcription", f"{src_name}_transcription")
+            # Extract audio first
+            stem = input_path.stem.rsplit('_720p', 1)[0] if '_720p' in input_path.stem else input_path.stem
+            video_dir = input_path.parent / stem
+            video_dir.mkdir(parents=True, exist_ok=True)
+            
+            audio_path = video_dir / "audio.wav"
+            
+            # Extract audio
+            extract_cmd = [
+                "ffmpeg", "-y", "-i", str(input_path),
+                "-vn", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1",
+                str(audio_path),
+            ]
+            
+            proc = subprocess.run(extract_cmd, capture_output=True, text=True, timeout=300)
+            if proc.returncode != 0:
+                stderr = proc.stderr or ""
+                if "does not contain any stream" in stderr or "no audio" in stderr.lower():
+                    _emit_progress("transcribing_audio", 100, "No audio stream found", f"{src_name}_transcription")
+                    results["transcription"] = {"source": src_name, "model": whisper_model, "language": language, "text": "", "segments": []}
+                    return True
+                else:
+                    _emit_progress("transcribing_audio", 0, f"Audio extraction failed: {stderr[-200:]}", f"{src_name}_transcription")
+                    return False
+            
+            if not audio_path.exists() or audio_path.stat().st_size == 0:
+                _emit_progress("transcribing_audio", 100, "No audio extracted", f"{src_name}_transcription")
+                results["transcription"] = {"source": src_name, "model": whisper_model, "language": language, "text": "", "segments": []}
+                return True
+            
+            # Transcribe with GPU
+            _emit_progress("transcribing_audio", 30, "Loading Whisper model", f"{src_name}_transcription")
+            
+            from faster_whisper import WhisperModel
+            
+            device = "cuda"
+            compute_type = "float16"
+            
+            try:
+                model = WhisperModel(whisper_model, device=device, compute_type=compute_type)
+            except Exception as cuda_err:
+                logger.warning(f"CUDA unavailable for Whisper ({cuda_err}), falling back to CPU")
+                device = "cpu"
+                compute_type = "int8"
+                model = WhisperModel(whisper_model, device=device, compute_type=compute_type)
+            
+            _emit_progress("transcribing_audio", 50, "Transcribing audio", f"{src_name}_transcription")
+            
+            # Language detection/validation
+            accepted_languages = {
+                "af","am","ar","as","az","ba","be","bg","bn","bo","br","bs","ca","cs",
+                "cy","da","de","el","en","es","et","eu","fa","fi","fo","fr","gl","gu",
+                "ha","haw","he","hi","hr","ht","hu","hy","id","is","it","ja","jw","ka",
+                "kk","km","kn","ko","la","lb","ln","lo","lt","lv","mg","mi","mk","ml",
+                "mn","mr","ms","mt","my","ne","nl","nn","no","oc","pa","pl","ps","pt",
+                "ro","ru","sa","sd","si","sk","sl","sn","so","sq","sr","su","sv","sw",
+                "ta","te","tg","th","tk","tl","tr","tt","uk","ur","uz","vi","yi","yo",
+                "zh","yue",
+            }
+            lang_param = language if language in accepted_languages else None
+            
+            segments_generator, info = model.transcribe(
+                str(audio_path),
+                language=lang_param,
+                beam_size=5,
+                vad_filter=True,
+            )
+            
+            segments = []
+            for segment in segments_generator:
+                segments.append({
+                    "id": len(segments),
+                    "start": round(segment.start, 2),
+                    "end": round(segment.end, 2),
+                    "text": segment.text.strip(),
+                })
+            
+            _emit_progress("transcribing_audio", 90, "Saving transcription", f"{src_name}_transcription")
+            
+            # Save transcription
+            transcript_path = video_dir / "transcript.json"
+            # Concatenate all segment texts
+            full_text = " ".join(seg["text"] for seg in segments).strip()
+            transcript_data = {
+                "source": src_name,
+                "model": whisper_model,
+                "language": info.language if hasattr(info, 'language') else language,
+                "text": full_text,
+                "segments": segments,
+            }
+            with open(transcript_path, "w") as f:
+                json.dump(transcript_data, f, indent=2)
+            
+            # Clean up audio file
+            try:
+                audio_path.unlink()
+            except Exception:
+                pass
+            
+            results["transcription"] = transcript_data
+            _emit_progress("transcribing_audio", 100, "Transcription complete", f"{src_name}_transcription")
+            return True
+            
+        except Exception as e:
+            errors["transcription"] = str(e)
+            _emit_progress("transcribing_audio", 0, f"Transcription error: {e}", f"{src_name}_transcription")
+            return False
+    
+    # Run both tasks in parallel with timeout
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        future_frames = executor.submit(extract_frames_task)
+        future_transcribe = executor.submit(transcribe_audio_task)
+        
+        try:
+            frames_result = future_frames.result(timeout=7200)  # 2 hours for frame extraction
+            transcribe_result = future_transcribe.result(timeout=1800)  # 30 minutes for transcription
+            
+            if frames_result and transcribe_result:
+                _emit_progress("complete", 100, "Processing complete")
+                logger.info(f"Direct video processing complete for {src_name}")
+                return True
+            else:
+                error_msg = "Processing failed: "
+                if errors:
+                    error_msg += "; ".join([f"{k}: {v}" for k, v in errors.items()])
+                _emit_progress("failed", 0, error_msg)
+                logger.error(f"Direct video processing failed for {src_name}: {errors}")
+                return False
+                
+        except concurrent.futures.TimeoutError:
+            _emit_progress("failed", 0, "Processing timed out")
+            logger.error(f"Direct video processing timed out for {src_name}")
+            return False
+        except Exception as e:
+            _emit_progress("failed", 0, f"Processing error: {e}")
+            logger.error(f"Direct video processing error for {src_name}: {e}")
+            return False
 
 def _extract_frames(video_path: str):
     """Extract all frames and thumbnails from a transcoded video."""
@@ -752,14 +1516,35 @@ def _extract_frames(video_path: str):
             fmt = info.get("format", {})
             streams = info.get("streams", [])
             duration_s = float(fmt.get("duration", 0))
+            
+            logger.debug(f"Frame extraction probe for {video.name}: found {len(streams)} streams")
+            
             if streams:
-                nb = streams[0].get("nb_frames")
+                # Find first video stream
+                video_stream = None
+                for i, stream in enumerate(streams):
+                    codec_type = stream.get("codec_type", "unknown")
+                    r_fr = stream.get("r_frame_rate", "N/A")
+                    logger.debug(f"  Stream {i}: codec_type={codec_type}, r_frame_rate={r_fr}")
+                    if codec_type == "video":
+                        video_stream = stream
+                        logger.debug(f"  Found video stream at index {i}")
+                        break
+                
+                # If no video stream found, use first stream
+                if video_stream is None:
+                    video_stream = streams[0]
+                    logger.debug("No video stream found, using first stream")
+                
+                nb = video_stream.get("nb_frames")
                 if nb:
                     total_video_frames = int(nb)
-                r_fr = streams[0].get("r_frame_rate", "1/1")
+                r_fr = video_stream.get("r_frame_rate", "1/1")
+                logger.debug(f"Selected stream r_frame_rate: {r_fr}")
                 if "/" in r_fr:
                     num, den = r_fr.split("/")
                     fps = float(num) / float(den) if float(den) else 1.0
+                    logger.debug(f"Parsed as fraction: {num}/{den} = {fps} fps")
     except Exception as e:
         logger.warning(f"Failed to probe video for frame extraction: {e}")
 
@@ -807,7 +1592,7 @@ def _extract_frames(video_path: str):
 
     # Renumber frames sequentially and build timestamp index
     _emit("renumbering", 45)
-    frames_index, actual_count = _renumber_frames(frames_dir, thumbs_dir, fps)
+    frames_index, actual_count, actual_fps = _renumber_frames(frames_dir, thumbs_dir, fps)
 
     # Save frames_index.json: {frame_num: timestamp_seconds}
     index_path = video.parent / stem / "frames_index.json"
@@ -828,7 +1613,13 @@ def _extract_frames(video_path: str):
     except Exception as e:
         logger.warning(f"Thumbnail extraction error (non-fatal): {e}")
 
-    meta = {"frame_count": actual_count, "fps": fps, "duration": duration_s}
+    # Use same rounding logic as _transcode_and_delete_with_cleanup
+        if fps < 5:
+            fps_rounded = round(fps, 1)
+        else:
+            fps_rounded = round(fps)
+        
+        meta = {"frame_count": actual_count, "fps": fps_rounded, "duration": duration_s}
     meta_path = video.parent / stem / "frames_meta.json"
     meta_path.write_text(json.dumps(meta))
     logger.info(f"Wrote frame metadata: {meta_path} ({meta})")
@@ -961,11 +1752,32 @@ def init_providers():
     ollama_local = OllamaProvider("Ollama-Local", "http://localhost:11434")
     providers["Ollama-Local"] = ollama_local
 
-    discovered = discovery.scan()
-    for url in discovered:
+    # Load existing Ollama instances from config without scanning
+    config_path = Path(__file__).parent / "config" / "default_config.json"
+    known_instances = []
+    if config_path.exists():
+        try:
+            config = json.loads(config_path.read_text())
+            known_instances = config.get("ollama_instances", [])
+        except Exception as e:
+            logger.warning(f"Could not load config: {e}")
+
+    # Add known instances from config
+    for url in known_instances:
         if "localhost" not in url and "127.0.0.1" not in url:
             name = f"Ollama-{url.split('//')[1].split(':')[0]}"
             providers[name] = OllamaProvider(name, url)
+            discovery.add_host(url)
+
+    # Add specific Ollama instances on the network (hardcoded fallback)
+    additional_ollama_hosts = [
+        ("Ollama-192.168.1.237", "http://192.168.1.237:11434"),
+        ("Ollama-192.168.1.241", "http://192.168.1.241:11434"),
+    ]
+    for name, url in additional_ollama_hosts:
+        if url not in known_instances:
+            providers[name] = OllamaProvider(name, url)
+            discovery.add_host(url)
 
     # Initialize OpenRouter provider with API key from environment
     openrouter_key = os.environ.get("OPENROUTER_API_KEY")

@@ -7,8 +7,8 @@ from pathlib import Path
 from datetime import datetime
 from flask import Blueprint, jsonify, request, send_file
 
-from src.utils.file import allowed_file, secure_filename as secure_filename_util, validate_upload_size
-from src.utils.transcode import probe_all_videos
+from src.utils.security import allowed_file, secure_filename as secure_filename_util, validate_upload_size
+from src.utils.video import probe_all_videos
 from thumbnail import get_thumbnail_path, ensure_thumbnail
 
 videos_bp = Blueprint("videos", __name__)

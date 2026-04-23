@@ -1,6 +1,7 @@
 """
 Application initialization for Video Analyzer Web
 """
+import json
 import logging
 from pathlib import Path
 
@@ -19,11 +20,21 @@ def initialize_app(app, socketio):
     from app import providers
     providers["Ollama-Local"] = ollama_local
 
-    discovered = discovery.scan()
-    for url in discovered:
+    # Load existing instances without scanning
+    config_path = Path(__file__).parent.parent.parent / "config" / "default_config.json"
+    known_instances = []
+    if config_path.exists():
+        try:
+            config = json.loads(config_path.read_text())
+            known_instances = config.get("ollama_instances", [])
+        except Exception as e:
+            logger.warning(f"Could not load config: {e}")
+
+    for url in known_instances:
         if "localhost" not in url and "127.0.0.1" not in url:
             name = f"Ollama-{url.split('//')[1].split(':')[0]}"
             providers[name] = OllamaProvider(name, url)
+            discovery.add_host(url)
 
     # Wire up ollama ps check for VRAM manager
     def get_loaded_ollama_models():

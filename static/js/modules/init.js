@@ -33,7 +33,8 @@ document.addEventListener('DOMContentLoaded', () => {
         state.currentVideo = document.getElementById('video-select').value;
         updateStartButton();
         initFrameBrowserForSelectedVideo();
-        loadDedupResults();
+        // Commented out auto-dedup to prevent hanging
+        // loadDedupResults();
     });
 
     // Dedup multi-scan button
@@ -76,7 +77,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Save settings on change
-    document.querySelectorAll('#spf-input, #temperature-input, #whisper-select, #language-input, #device-select')
+    document.querySelectorAll('#temperature-input, #whisper-select, #language-input, #device-select')
         .forEach(el => el.addEventListener('change', saveSettings));
 
     // Clear server log
@@ -84,6 +85,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Knowledge Base handlers
     initKbHandlers();
+
+    // Ollama Instances handlers
+    initOllamaInstancesHandlers();
 });
 
 async function submitAnalysis() {
@@ -112,7 +116,6 @@ async function submitAnalysis() {
         temperature: parseFloat(document.getElementById('temperature-input')?.value || '0.0'),
         start_frame: fb.startFrame > 1 ? fb.startFrame : 0,
         end_frame: fb.endFrame < fb.totalFrames ? fb.endFrame : undefined,
-        fps: parseFloat(document.getElementById('spf-input')?.value || '1'),
         whisper_model: document.getElementById('whisper-select')?.value || 'large',
         language: document.getElementById('language-input')?.value || 'en',
         device: document.getElementById('device-select')?.value || 'gpu',

@@ -215,13 +215,26 @@ def run_analysis(job_dir: Path):
     # Stage 3: Load transcript
     update_status(stage="loading_transcript", progress=85)
     transcript_data = {}
-    transcript_path = Path(video_path).parent / Path(video_path).stem / "transcript.json"
-    if transcript_path.exists():
-        try:
-            transcript_data = json.loads(transcript_path.read_text())
+    
+    try:
+        # Use shared transcript loading utility for consistent path resolution
+        from src.utils import load_transcript
+        transcript_data = load_transcript(video_path, video_frames_dir)
+        
+        if transcript_data:
             logger.info(f"Loaded transcript: {len(transcript_data.get('segments', []))} segments")
-        except Exception as e:
-            logger.warning(f"Failed to load transcript: {e}")
+        else:
+            logger.info("No transcript found")
+    except ImportError as e:
+        logger.warning(f"Failed to import transcript utilities: {e}")
+        # Fallback to original logic for backward compatibility
+        transcript_path = Path(video_path).parent / Path(video_path).stem / "transcript.json"
+        if transcript_path.exists():
+            try:
+                transcript_data = json.loads(transcript_path.read_text())
+                logger.info(f"Loaded transcript: {len(transcript_data.get('segments', []))} segments")
+            except Exception as e2:
+                logger.warning(f"Failed to load transcript: {e2}")
 
     transcript_text = ""
     if isinstance(transcript_data, dict):

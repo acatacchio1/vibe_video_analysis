@@ -1,0 +1,102 @@
+# Docker ignore file for video-analyzer-web
+# This prevents large directories from being copied during docker build
+
+# Large data directories (should be mounted as volumes)
+uploads/
+jobs/
+cache/
+output/
+test_videos/
+
+# Python temporary files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sitemedia/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environment
+venv/
+env/
+.venv/
+.env/
+
+# Testing and coverage
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+htmlcov/
+*.log
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Documentation
+docs/_build/
+
+# Local config files
+config/local*.json
+config/*.local.*
+*.local.yml
+*.local.yaml
+*.local.json
+
+# Large test files
+test*.mp4
+test*.avi
+test*.mov
+test*.mkv
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
+
+# Log files
+*.log
+logs/
+
+# Backup files
+*.bak
+*.backup
+backup/
+
+# OS files
+.DS_Store
+Thumbs.db

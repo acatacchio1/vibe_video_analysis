@@ -27,7 +27,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     ffmpeg \
     build-essential \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+    pkg-config \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Ensure pip installs are available system-wide
 RUN pip3 install --upgrade pip setuptools wheel

@@ -83,12 +83,15 @@ async function initFrameBrowser(videoName) {
             fb.transcript = null;
         }
 
-        updateTranscriptContext('start', 1);
-        updateTranscriptContext('end', fb.totalFrames);
-    } catch (error) {
-        console.error('Failed to load frame metadata:', error);
-        section.classList.add('hidden');
-    }
+updateTranscriptContext('start', 1);
+    updateTranscriptContext('end', fb.totalFrames);
+    
+    // Load scene detection data if available
+    await loadSceneVisualization(videoName);
+} catch (error) {
+    console.error('Failed to load frame metadata:', error);
+    section.classList.add('hidden');
+}
 }
 
 function hideFrameBrowser() {
@@ -300,4 +303,124 @@ function updateTranscriptContext(which, frameNum) {
 
     el.classList.remove('empty');
     el.textContent = selected.map(s => s.text.trim()).join(' ');
+}
+
+// Scene visualization for frame browser
+async function loadSceneVisualization(videoName) {
+    const fb = state.frameBrowser;
+    const dualRangeTrack = document.querySelector('.dual-range-track');
+    
+    if (!dualRangeTrack) return;
+    
+    // Remove existing scene markers
+    const existingMarkers = dualRangeTrack.querySelector('.scene-markers');
+    if (existingMarkers) {
+        existingMarkers.remove();
+    }
+    
+    // Try to load scene detection data
+    try {
+        const response = await fetch(`/api/videos/${encodeURIComponent(videoName)}/scenes`);
+        
+        if (response.ok) {
+            const scenes = await response.json();
+            fb.scenes = scenes;
+            
+            if (scenes && scenes.length > 0) {
+                // Add scene markers container
+                const sceneMarkers = document.createElement('div');
+                sceneMarkers.className = 'scene-markers';
+                
+                // Add scene markers
+                scenes.forEach((scene, index) => {
+                    if (scene.start && scene.end) {
+                        const sceneNumber = index + 1;
+                        
+                        // Add start boundary
+                        const startPct = ((scene.start - 1) / fb.totalFrames) * 100;
+                        const startMarker = document.createElement('div');
+                        startMarker.className = 'scene-boundary';
+                        startMarker.style.left = `${startPct}%`;
+                        startMarker.title = `Scene ${sceneNumber} Start (frame ${scene.start})`;
+                        sceneMarkers.appendChild(startMarker);
+                        
+                        // Add end boundary (except for last scene)
+                        if (index < scenes.length - 1) {
+                            const endPct = ((scene.end - 1) / fb.totalFrames) * 100;
+                            const endMarker = document.createElement('div');
+                            endMarker.className = 'scene-boundary';
+                            endMarker.style.left = `${endPct}%`;
+                            endMarker.title = `Scene ${sceneNumber} End (frame ${scene.end})`;
+                            sceneMarkers.appendChild(endMarker);
+                        }
+                        
+                        // Add scene marker in the middle of the scene
+                        const midFrame = Math.floor((scene.start + scene.end) / 2);
+                        const midPct = ((midFrame - 1) / fb.totalFrames) * 100;
+                        const sceneMarker = document.createElement('div');
+                        sceneMarker.className = 'scene-marker';
+                        sceneMarker.style.left = `${midPct}%`;
+                        sceneMarker.title = `Scene ${sceneNumber}: frames ${scene.start}-${scene.end}`;
+                        
+                        // Add label
+                        const label = document.createElement('span');
+                        label.className = 'scene-marker-label';
+                        label.textContent = `Scene ${sceneNumber}`;
+                        sceneMarker.appendChild(label);
+                        
+                        // Add click handler
+                        sceneMarker.addEventListener('click', () => {
+                            // Set frame range to this scene
+                            document.getElementById('start-frame-input').value = scene.start;
+                            document.getElementById('end-frame-input').value = scene.end;
+                            
+                            const startSlider = document.getElementById('start-frame-slider');
+                            const endSlider = document.getElementById('end-frame-slider');
+                            
+                            if (startSlider && endSlider) {
+                                startSlider.value = scene.start;
+                                endSlider.value = scene.end;
+                                
+                                fb.startFrame = scene.start;
+                                fb.endFrame = scene.end;
+                                
+                                startSlider.dispatchEvent(new Event('input'));
+                                endSlider.dispatchEvent(new Event('input'));
+                                
+                                updateRangeHighlight();
+                                updateFrameRangeSummary();
+                                loadFrameThumb('start', scene.start);
+                                loadFrameThumb('end', scene.end);
+                                updateTranscriptContext('start', scene.start);
+                                updateTranscriptContext('end', scene.end);
+                            }
+                        });
+                        
+                        sceneMarkers.appendChild(sceneMarker);
+                    }
+                });
+                
+                dualRangeTrack.appendChild(sceneMarkers);
+                console.log(`Added ${scenes.length} scene markers to frame browser`);
+            }
+        }
+    } catch (error) {
+        console.warn('Failed to load scene data for visualization:', error);
+        fb.scenes = null;
+    }
+}
+
+// Update scene visualization when scenes are detected
+if (typeof window !== 'undefined') {
+    window.updateSceneVisualization = function(scenes) {
+        const fb = state.frameBrowser;
+        if (!fb || fb.totalFrames === 0) return;
+        
+        fb.scenes = scenes;
+        
+        // Re-create scene markers
+        if (fb.videoName) {
+            loadSceneVisualization(fb.videoName);
+        }
+    };
 }

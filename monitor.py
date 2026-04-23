@@ -12,9 +12,9 @@ class SystemMonitor:
     """Monitors system status (nvidia-smi, ollama ps via API)"""
 
     def __init__(self):
-        self.nvidia_smi_interval = 10  # seconds
+        self.nvidia_smi_interval = 60  # seconds
         self.ollama_ps_interval = (
-            15  # seconds - more frequent since it's just an API call
+            45  # seconds - more frequent since it's just an API call
         )
         self.callbacks: List[Callable] = []
         self.running = False

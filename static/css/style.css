@@ -574,6 +574,109 @@ section > h2::before,
 }
 
 /* ========================================
+   Video Processing Status (Parallel Extraction + Transcription)
+   ======================================== */
+
+.video-processing-status {
+    background: linear-gradient(135deg, rgba(31, 111, 235, 0.1), rgba(88, 166, 255, 0.05));
+    border: 1px solid rgba(88, 166, 255, 0.2);
+    border-radius: var(--border-radius);
+    padding: var(--spacing-md);
+    margin: var(--spacing-md);
+    backdrop-filter: blur(10px);
+    animation: pulse 2s infinite;
+}
+
+.processing-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--spacing-md);
+    font-size: 0.95rem;
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+#overall-pct {
+    color: var(--accent-primary);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.process-section {
+    margin-bottom: var(--spacing-md);
+    padding: var(--spacing-sm) 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.process-section:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+}
+
+.process-label-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--spacing-xs);
+    font-size: 0.85rem;
+}
+
+.process-name {
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+.process-pct {
+    color: var(--accent-primary);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.process-bar {
+    height: 6px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: var(--spacing-xs);
+}
+
+.process-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent-primary), #8a63d2);
+    width: 0%;
+    transition: width 0.5s ease;
+    position: relative;
+}
+
+.process-fill::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    animation: shimmer 2s infinite;
+}
+
+/* Different colors for different processes */
+#frames-fill {
+    background: linear-gradient(90deg, #10b981, #3b82f6);
+}
+
+#transcription-fill {
+    background: linear-gradient(90deg, #f59e0b, #ec4899);
+}
+
+.process-details {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    min-height: 1em;
+    line-height: 1.4;
+}
+
+/* ========================================
    Videos List
    ======================================== */
 
@@ -1213,6 +1316,66 @@ section > h2::before,
     top: 50%;
     transform: translateY(-50%);
     z-index: 1;
+}
+
+.scene-markers {
+    position: absolute;
+    width: 100%;
+    height: 36px;
+    pointer-events: none;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 0;
+}
+
+.scene-marker {
+    position: absolute;
+    height: 12px;
+    width: 2px;
+    background: rgba(255, 215, 0, 0.8);
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 0;
+    transition: all 0.2s ease;
+}
+
+.scene-marker:hover {
+    width: 4px;
+    background: rgba(255, 215, 0, 1);
+    box-shadow: 0 0 8px rgba(255, 215, 0, 0.6);
+}
+
+.scene-marker-label {
+    position: absolute;
+    top: -20px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.7rem;
+    color: rgba(255, 215, 0, 0.9);
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    pointer-events: none;
+}
+
+.scene-marker:hover .scene-marker-label {
+    opacity: 1;
+}
+
+.scene-boundary {
+    position: absolute;
+    height: 16px;
+    width: 1px;
+    background: rgba(255, 165, 0, 0.6);
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 0;
+}
+
+.scene-boundary:hover {
+    background: rgba(255, 165, 0, 1);
+    width: 2px;
+    box-shadow: 0 0 6px rgba(255, 165, 0, 0.5);
 }
 
 .range-slider {
@@ -2598,6 +2761,173 @@ section > h2::before,
 }
 
 /* ========================================
+   Scene Detection
+   ======================================== */
+
+.scene-detection-controls {
+    margin-top: var(--spacing-md);
+    padding-top: var(--spacing-md);
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.scene-detection-controls h4 {
+    font-size: 0.95rem;
+    color: var(--text-primary);
+    margin-bottom: var(--spacing-sm);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+}
+
+.scene-detection-controls h4::before {
+    content: "🎬";
+    font-size: 1rem;
+}
+
+.scene-threshold-row {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: var(--spacing-sm);
+}
+
+.scene-threshold-row input[type="number"] {
+    width: 60px;
+    padding: 4px 8px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+    border-radius: var(--border-radius-sm);
+    color: var(--text-primary);
+    font-size: 0.85rem;
+}
+
+.scene-options-row {
+    font-size: 0.85rem;
+    margin-bottom: var(--spacing-sm);
+}
+
+.scene-options-row label {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    cursor: pointer;
+    color: var(--text-secondary);
+}
+
+.scene-options-row input[type="checkbox"] {
+    cursor: pointer;
+}
+
+.scene-results {
+    background: var(--bg-input);
+    border: 1px solid rgba(88, 166, 255, 0.2);
+    border-radius: var(--border-radius);
+    padding: var(--spacing-md);
+    margin-top: var(--spacing-sm);
+}
+
+.scene-summary {
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    margin-bottom: var(--spacing-sm);
+}
+
+.scene-summary span {
+    font-weight: 600;
+    color: var(--accent-primary);
+}
+
+.scene-list-wrap {
+    margin: 0.5rem 0;
+    max-height: 200px;
+    overflow-y: auto;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: var(--border-radius-sm);
+}
+
+.scene-list-header {
+    display: flex;
+    background: var(--bg-tertiary);
+    padding: 6px 10px;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.scene-list-header span {
+    flex: 1;
+}
+
+.scene-list-header span:first-child {
+    flex: 0.5;
+}
+
+.scene-list {
+    display: flex;
+    flex-direction: column;
+}
+
+.scene-item {
+    display: flex;
+    align-items: center;
+    padding: 6px 10px;
+    font-size: 0.85rem;
+    color: var(--text-primary);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    transition: background 0.15s ease;
+}
+
+.scene-item:hover {
+    background: var(--bg-hover);
+}
+
+.scene-item span {
+    flex: 1;
+}
+
+.scene-item span:first-child {
+    flex: 0.5;
+    font-weight: 500;
+    color: var(--accent-primary);
+}
+
+.scene-preview-btn {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: var(--border-radius-sm);
+    transition: color 0.15s ease, background 0.15s ease;
+}
+
+.scene-preview-btn:hover {
+    color: var(--accent-primary);
+    background: rgba(88, 166, 255, 0.1);
+}
+
+.scene-empty {
+    padding: var(--spacing-md);
+    text-align: center;
+    color: var(--text-muted);
+    font-style: italic;
+    font-size: 0.9rem;
+}
+
+.scene-actions {
+    display: flex;
+    gap: var(--spacing-sm);
+    margin-top: var(--spacing-sm);
+}
+
+.scene-actions .btn {
+    flex: 1;
+}
+
+/* ========================================
    Knowledge Base Settings
    ======================================== */
 
@@ -2810,4 +3140,76 @@ section > h2::before,
     border-radius: var(--border-radius-sm);
     color: var(--text-secondary);
     font-size: 0.85rem;
+}
+
+/* ========================================
+   Ollama Instances Modal
+   ======================================== */
+
+.ollama-instances-actions {
+    display: flex;
+    gap: var(--spacing-md);
+    margin-bottom: var(--spacing-md);
+}
+
+.ollama-discovered-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    max-height: 200px;
+    overflow-y: auto;
+    padding: var(--spacing-sm);
+    background: var(--bg-input);
+    border-radius: var(--border-radius-sm);
+}
+
+.ollama-instance-row {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-xs) var(--spacing-sm);
+    background: var(--bg-tertiary);
+    border-radius: var(--border-radius-sm);
+    font-size: 0.9rem;
+}
+
+.ollama-instance-row code {
+    font-family: var(--font-mono, monospace);
+    color: var(--accent-primary);
+}
+
+/* ========================================
+   Ollama Instances Modal
+   ======================================== */
+
+.ollama-instances-actions {
+    display: flex;
+    gap: var(--spacing-md);
+    margin-bottom: var(--spacing-md);
+}
+
+.ollama-discovered-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    max-height: 200px;
+    overflow-y: auto;
+    padding: var(--spacing-sm);
+    background: var(--bg-input);
+    border-radius: var(--border-radius-sm);
+}
+
+.ollama-instance-row {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-xs) var(--spacing-sm);
+    background: var(--bg-tertiary);
+    border-radius: var(--border-radius-sm);
+    font-size: 0.9rem;
+}
+
+.ollama-instance-row code {
+    font-family: var(--font-mono, monospace);
+    color: var(--accent-primary);
 }

@@ -526,16 +526,40 @@ def run_analysis(job_dir: Path):
         logger.info(f"Analyzer frame_prompt type: {type(analyzer.frame_prompt)}")
         if analyzer.frame_prompt:
             # Check for transcript tokens
+            has_context = "{TRANSCRIPT_CONTEXT}" in analyzer.frame_prompt
             has_recent = "{TRANSCRIPT_RECENT}" in analyzer.frame_prompt
             has_prior = "{TRANSCRIPT_PRIOR}" in analyzer.frame_prompt
-            logger.info(f"Frame prompt transcript tokens: TRANSCRIPT_RECENT={has_recent}, TRANSCRIPT_PRIOR={has_prior}")
-            if has_recent or has_prior:
+            logger.info(f"Frame prompt transcript tokens: TRANSCRIPT_CONTEXT={has_context}, TRANSCRIPT_RECENT={has_recent}, TRANSCRIPT_PRIOR={has_prior}")
+            if has_context or has_recent or has_prior:
                 logger.info("Transcript tokens found in frame prompt template")
             else:
                 logger.warning("Transcript tokens NOT found in frame prompt template - will append transcript if available")
                 # Log first 200 chars of prompt for debugging
                 preview = analyzer.frame_prompt[:200] + "..." if len(analyzer.frame_prompt) > 200 else analyzer.frame_prompt
                 logger.info(f"Frame prompt preview: {preview}")
+
+        # Save original prompt template for each frame
+        original_frame_prompt = analyzer.frame_prompt
+        
+        # Try to load prompt with transcript support if current prompt doesn't have transcript tokens
+        has_context = "{TRANSCRIPT_CONTEXT}" in analyzer.frame_prompt
+        has_recent = "{TRANSCRIPT_RECENT}" in analyzer.frame_prompt
+        has_prior = "{TRANSCRIPT_PRIOR}" in analyzer.frame_prompt
+        
+        if not (has_context or has_recent or has_prior):
+            # Current prompt doesn't have transcript tokens, try to load one that does
+            transcript_prompt_paths = [
+                Path("/home/anthony/venvs/video-analyzer/lib/python3.13/site-packages/video_analyzer/prompts/frame_analysis/frame_with_transcript.txt"),
+                Path("/usr/local/lib/python3.10/dist-packages/video_analyzer/prompts/frame_analysis/frame_with_transcript.txt"),
+                Path("/app/venvs/video-analyzer/lib/python3.13/site-packages/video_analyzer/prompts/frame_analysis/frame_with_transcript.txt"),
+            ]
+            
+            for prompt_path in transcript_prompt_paths:
+                if prompt_path.exists():
+                    analyzer.frame_prompt = prompt_path.read_text()
+                    original_frame_prompt = analyzer.frame_prompt
+                    logger.info(f"Loaded transcript-aware prompt from {prompt_path}")
+                    break
 
         frame_analyses = []
         analyzer._total_frames = total_frames
@@ -602,9 +626,9 @@ def run_analysis(job_dir: Path):
             recent_transcript = ""
             prior_transcript = ""
             transcript_note = ""
+            current_ts = orig_ts
 
             if len(transcript_segments) > 0:
-                current_ts = orig_ts
                 
                 # Find transcript time bounds
                 first_seg_start = transcript_segments[0]["start"]
@@ -665,12 +689,35 @@ def run_analysis(job_dir: Path):
                     else:  # current_ts > last_seg_end
                         transcript_note = f"[Transcript ended {time_from_end:.0f}s ago, may not be relevant]"
 
-            # Inject transcript context into prompt using separate tokens
-            # First check if tokens exist in the prompt template
+            # Inject transcript context into prompt
+            # Check for different transcript token formats
+            has_context_token = "{TRANSCRIPT_CONTEXT}" in analyzer.frame_prompt
             has_recent_token = "{TRANSCRIPT_RECENT}" in analyzer.frame_prompt
             has_prior_token = "{TRANSCRIPT_PRIOR}" in analyzer.frame_prompt
             
-            if has_recent_token or has_prior_token:
+            # Build context_section for logging in results
+            context_section = ""
+            
+            if has_context_token:
+                # Old format: {TRANSCRIPT_CONTEXT} token
+                if recent_transcript or prior_transcript or transcript_note:
+                    # Build transcript context in old format
+                    prior_text = prior_transcript if prior_transcript else "(none)"
+                    transcript_context = f"\nRECENT TRANSCRIPT: {recent_transcript}\n\nPRIOR TRANSCRIPT: {prior_text}\n"
+                    if transcript_note:
+                        transcript_context += f"\nNOTE: {transcript_note}\n"
+                    
+                    analyzer.frame_prompt = analyzer.frame_prompt.replace("{TRANSCRIPT_CONTEXT}", transcript_context)
+                    context_section = transcript_context.strip()
+                    logger.info(f"Frame {i+1}: transcript injected via {TRANSCRIPT_CONTEXT} token")
+                else:
+                    # No transcript available
+                    analyzer.frame_prompt = analyzer.frame_prompt.replace("{TRANSCRIPT_CONTEXT}", "\nRECENT TRANSCRIPT: \n\nPRIOR TRANSCRIPT: none\n")
+                    context_section = "No transcript available"
+                    logger.info(f"Frame {i+1}: {TRANSCRIPT_CONTEXT} token present but no transcript context")
+                    
+            elif has_recent_token or has_prior_token:
+                # New format: separate {TRANSCRIPT_RECENT} and {TRANSCRIPT_PRIOR} tokens
                 # Replace tokens if they exist
                 if has_recent_token:
                     analyzer.frame_prompt = analyzer.frame_prompt.replace("{TRANSCRIPT_RECENT}", recent_transcript)
@@ -680,8 +727,15 @@ def run_analysis(job_dir: Path):
                 if recent_transcript or transcript_note:
                     if recent_transcript:
                         logger.info(f"Frame {i+1}: transcript injected via tokens (recent={len(recent_transcript)} chars, prior={len(prior_transcript)} chars)")
+                        context_section = f"RECENT: {recent_transcript}"
+                        if prior_transcript:
+                            context_section += f"\nPRIOR: {prior_transcript}"
                     if transcript_note:
                         logger.info(f"Frame {i+1}: {transcript_note}")
+                        if context_section:
+                            context_section += f"\nNOTE: {transcript_note}"
+                        else:
+                            context_section = f"NOTE: {transcript_note}"
                     # Debug: check if tokens actually got replaced
                     if has_recent_token and "{TRANSCRIPT_RECENT}" in analyzer.frame_prompt:
                         logger.warning(f"TRANSCRIPT_RECENT token not replaced in frame_prompt!")
@@ -689,29 +743,36 @@ def run_analysis(job_dir: Path):
                         logger.warning(f"TRANSCRIPT_PRIOR token not replaced in frame_prompt!")
                 else:
                     logger.info(f"Frame {i+1}: transcript tokens present but no transcript context available")
+                    context_section = "No transcript context available"
             else:
                 # Tokens not found in prompt - append transcript context to prompt
                 # This is a fallback for prompts that don't have the tokens
                 transcript_context = ""
                 if recent_transcript:
                     transcript_context = f"\n\nTranscript context for this timeframe: {recent_transcript}"
+                    context_section = f"RECENT: {recent_transcript}"
                     if prior_transcript:
                         transcript_context += f"\nPrevious context: {prior_transcript}"
+                        context_section += f"\nPRIOR: {prior_transcript}"
                     if transcript_note:
                         transcript_context += f"\n{transcript_note}"
+                        context_section += f"\nNOTE: {transcript_note}"
                     analyzer.frame_prompt += transcript_context
                     logger.info(f"Frame {i+1}: transcript appended to prompt (tokens not found in template)")
                 elif transcript_note:
                     # Even if no transcript text, add note about transcript timing
                     transcript_context = f"\n\n{transcript_note}"
+                    context_section = f"NOTE: {transcript_note}"
                     analyzer.frame_prompt += transcript_context
                     logger.info(f"Frame {i+1}: {transcript_note}")
+                else:
+                    context_section = "No transcript available"
             
-            if not recent_transcript and (has_recent_token or has_prior_token):
-                logger.info(f"Frame {i+1}: no transcript context available (tokens present in prompt: recent={has_recent_token}, prior={has_prior_token})")
+            if not recent_transcript and (has_context_token or has_recent_token or has_prior_token):
+                logger.info(f"Frame {i+1}: no transcript context available (tokens present in prompt)")
 
             # Update tracking
-            _prev_frame_ts = corrected_ts
+            _prev_frame_ts = current_ts
 
             # === FRAME ANALYSIS ===
             logger.info(f"Analyzing frame {i+1}/{_total_frames}: {frame.path}")
@@ -737,7 +798,7 @@ def run_analysis(job_dir: Path):
                 "original_frame": orig_frame,
                 "timestamp": frame.timestamp,
                 "original_ts": orig_ts,
-                "corrected_ts": corrected_ts,
+                "corrected_ts": current_ts,
                 "analysis": analysis.get("response", ""),
                 "transcript_context": context_section if 'context_section' in locals() else "",
                 "tokens": analysis.get("usage", {}),

@@ -2,7 +2,6 @@
 function saveSettings() {
     const settings = {
         temperature: document.getElementById('temperature-input')?.value,
-        spf: document.getElementById('spf-input')?.value,
         whisper_model: document.getElementById('whisper-select')?.value,
         language: document.getElementById('language-input')?.value,
         device: document.getElementById('device-select')?.value
@@ -14,31 +13,8 @@ function saveSettings() {
 
 function restoreSettings() {
     if (state.settings) {
-        const idMap = {
-            spf: 'spf-input',
-        };
         Object.entries(state.settings).forEach(([key, value]) => {
-            const elId = idMap[key] || key.replace(/_/g, '-') + '-input';
-            const el = document.getElementById(elId) ||
-                      document.getElementById(key.replace(/_/g, '-') + '-select');
-            if (el) {
-                if (el.type === 'checkbox') {
-                    el.checked = value;
-                } else {
-                    el.value = value;
-                }
-            }
-        });
-    }
-}
-
-function restoreSettings() {
-    if (state.settings) {
-        const idMap = {
-            spf: 'spf-input',
-        };
-        Object.entries(state.settings).forEach(([key, value]) => {
-            const elId = idMap[key] || key.replace(/_/g, '-') + '-input';
+            const elId = key.replace(/_/g, '-') + '-input';
             const el = document.getElementById(elId) ||
                       document.getElementById(key.replace(/_/g, '-') + '-select');
             if (el) {

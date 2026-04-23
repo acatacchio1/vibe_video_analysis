@@ -58,6 +58,11 @@ function initSocket() {
         handleTranscodeProgress(data);
     });
 
+    state.socket.on('video_processing_progress', (data) => {
+        debugLog('RECV:video_processing_progress', data);
+        handleVideoProcessingProgress(data);
+    });
+
     state.socket.on('frame_extraction_progress', (data) => {
         debugLog('RECV:frame_extraction_progress', data);
         handleFrameExtractionProgress(data);

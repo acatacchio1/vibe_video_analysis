@@ -11,7 +11,7 @@ import os
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from src.utils.file import (
+from src.utils.security import (
     allowed_file,
     secure_filename,
     verify_path,

@@ -105,7 +105,6 @@ function initUploadHandlers() {
 async function handleVideoUpload(file) {
     const formData = new FormData();
     formData.append('video', file);
-    formData.append('fps', document.getElementById('spf-input')?.value || '1');
     formData.append('whisper_model', document.getElementById('upload-whisper-select')?.value || 'base');
     formData.append('language', document.getElementById('upload-language-input')?.value || 'en');
 
@@ -152,6 +151,7 @@ async function handleVideoUpload(file) {
 }
 
 function handleTranscodeProgress(data) {
+    // Old transcode progress - keep for backward compatibility
     const status = document.getElementById('transcode-status');
     const label = document.getElementById('transcode-label');
     const pct = document.getElementById('transcode-pct');
@@ -169,13 +169,117 @@ function handleTranscodeProgress(data) {
     }
 }
 
+function handleVideoProcessingProgress(data) {
+    // New parallel processing progress
+    const status = document.getElementById('video-processing-status');
+    const overallLabel = document.getElementById('processing-label');
+    const overallPct = document.getElementById('overall-pct');
+    
+    // Frame extraction progress
+    const framesPct = document.getElementById('frames-pct');
+    const framesFill = document.getElementById('frames-fill');
+    const framesDetails = document.getElementById('frames-details');
+    
+    // Transcription progress  
+    const transcriptionPct = document.getElementById('transcription-pct');
+    const transcriptionFill = document.getElementById('transcription-fill');
+    const transcriptionDetails = document.getElementById('transcription-details');
+
+    if (!status) return;
+    
+    // Check if this is a frame extraction or transcription specific update
+    if (data.source && data.source.endsWith('_frames')) {
+        // Frame extraction specific update
+        const progress = data.progress || 0;
+        const stage = data.stage || 'waiting';
+        const details = data.error || data.message || `Frame extraction: ${stage}`;
+        
+        if (framesPct) framesPct.textContent = `${progress}%`;
+        if (framesFill) framesFill.style.width = `${progress}%`;
+        if (framesDetails) framesDetails.textContent = details;
+        
+        // Update overall progress (frames are ~70% of total work)
+        const overallProgress = Math.min(100, Math.round(progress * 0.7));
+        updateOverallProgress(overallProgress, stage);
+        
+    } else if (data.source && data.source.endsWith('_transcription')) {
+        // Transcription specific update
+        const progress = data.progress || 0;
+        const stage = data.stage || 'waiting';
+        const details = data.error || data.message || `Transcription: ${stage}`;
+        
+        if (transcriptionPct) transcriptionPct.textContent = `${progress}%`;
+        if (transcriptionFill) transcriptionFill.style.width = `${progress}%`;
+        if (transcriptionDetails) transcriptionDetails.textContent = details;
+        
+        // Update overall progress (transcription is ~30% of total work)
+        const overallProgress = 70 + Math.round(progress * 0.3);
+        updateOverallProgress(overallProgress, stage);
+        
+    } else {
+        // Overall update
+        const stage = data.stage || 'unknown';
+        const progress = data.progress || 0;
+        
+        updateOverallProgress(progress, stage);
+        
+        if (overallLabel) overallLabel.textContent = `${stage}: ${data.source || 'video'}`;
+    }
+    
+    // Show/hide status based on stage
+    status.classList.remove('hidden');
+    
+    if (data.stage === 'complete' || data.stage === 'failed') {
+        if (overallLabel && data.stage === 'complete') {
+            overallLabel.textContent = `Processing complete: ${data.source || 'video'}`;
+        }
+        if (overallLabel && data.stage === 'failed') {
+            overallLabel.textContent = `Processing failed: ${data.source || 'video'}`;
+            if (overallPct) overallPct.textContent = "Failed";
+        }
+        setTimeout(() => status.classList.add('hidden'), 5000);
+    }
+}
+
+function updateOverallProgress(progress, stage) {
+    const overallPct = document.getElementById('overall-pct');
+    if (overallPct) {
+        if (stage === 'failed') {
+            overallPct.textContent = "Failed";
+        } else if (stage === 'complete') {
+            overallPct.textContent = "100%";
+        } else {
+            overallPct.textContent = `${progress}%`;
+        }
+    }
+}
+
 function handleFrameExtractionProgress(data) {
-    // Frame extraction progress - could show in transcode status or separate UI
-    console.log(`Frame extraction: ${data.stage} - ${data.progress}%`);
+    // Legacy frame extraction progress - convert to new format
+    const stage = data.stage || 'extracting_frames';
+    const progress = data.progress || 0;
+    const details = data.error || `Extracting frames: ${progress}%`;
+    
+    handleVideoProcessingProgress({
+        source: `${data.source}_frames`,
+        stage: stage,
+        progress: progress,
+        message: details
+    });
 }
 
 function handleTranscriptionProgress(data) {
-    console.log(`Transcription: ${data.stage} - ${data.progress}%`);
+    // Legacy transcription progress - convert to new format
+    const stage = data.stage || 'transcribing';
+    const progress = data.progress || 0;
+    const details = data.error || `Transcribing audio: ${progress}%`;
+    
+    handleVideoProcessingProgress({
+        source: `${data.source}_transcription`,
+        stage: stage,
+        progress: progress,
+        message: details
+    });
 }
 
 function appendServerLog(data) {
@@ -210,7 +314,6 @@ function openReprocessModal(name, path) {
 
 async function submitReprocess() {
     const path = document.getElementById('reprocess-video-path').value;
-    const fps = document.getElementById('reprocess-fps').value || '1';
     const whisper = document.getElementById('reprocess-whisper').value || 'base';
     const language = document.getElementById('reprocess-language').value || 'en';
 
@@ -220,7 +323,6 @@ async function submitReprocess() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 video_path: path,
-                fps: parseFloat(fps),
                 whisper_model: whisper,
                 language: language,
             }),

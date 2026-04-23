@@ -55,7 +55,7 @@ class TestUploadPipelineIntegration:
         mock_probe.return_value = mock_process
 
         # Simulate list_videos function behavior
-        from src.utils.transcode import get_video_duration
+        from src.utils.video import get_video_duration
 
         duration = get_video_duration("/uploads/test.mp4")
 
@@ -71,7 +71,7 @@ class TestUploadPipelineIntegration:
         mock_process.stderr = ""
         mock_probe.return_value = mock_process
 
-        from src.utils.transcode import probe_all_videos
+        from src.utils.video import probe_all_videos
 
         video_paths = [
             "/uploads/video1.mp4",
@@ -237,7 +237,7 @@ class TestErrorHandlingIntegration:
         mock_process.stderr = "error"
         mock_probe.return_value = mock_process
 
-        from src.utils.transcode import get_video_duration
+        from src.utils.video import get_video_duration
 
         duration = get_video_duration("/nonexistent/video.mp4")
 

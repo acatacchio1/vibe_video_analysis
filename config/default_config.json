@@ -55,6 +55,6 @@
     "api_key": "",
     "knowledge_base_name": "Video Analyzer",
     "auto_sync": true
-  }
-}
+  },
+  "ollama_instances": []
 }

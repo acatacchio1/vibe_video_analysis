@@ -1,10 +1,10 @@
 # Video Analyzer Web - Agent Development Guide
 
-> Version 3.5.0 | Last updated: 2026-04-23
+> Version 0.4.0 | Last updated: 2026-04-23
 
 This document provides essential context for AI agents working on this codebase.
 
-**Important Update (v3.5.0)**: Fixed critical transcript handling bug that caused job failures with "'dict' object has no attribute 'text'" error. Added robust transcript access functions.
+**Important Update (v0.4.0)**: Comprehensive documentation overhaul, parallel deduplication, scene detection, and enhanced transcript utilities. Live monitoring shows frame analysis + transcript separately with plans for combined view.
 
 **Previous Update (v0.3.4)**: Fixed transcription flow inconsistencies. See "Transcription Flow & Gotchas" section below.
 
@@ -292,3 +292,50 @@ These directories exist but are not yet wired into the application:
 | `src/queue/` | Common base class for VRAMManager and ChatQueueManager |
 
 When ready to activate these, refactor `app.py` to use `src.core.app.create_app()` factory pattern.
+
+---
+
+## Documentation
+
+### Current Documentation Structure
+Video Analyzer Web now has comprehensive documentation:
+
+| File | Purpose | Audience |
+|---|---|---|
+| `README.md` | Project overview, quick start, features | Users, developers |
+| `AGENTS.md` | Internal developer guide, architecture, gotchas | AI agents, developers |
+| `CHANGELOG.md` | Version history, breaking changes, upgrades | Users, developers |
+| `CONTRIBUTING.md` | Development guidelines, code style, workflow | Contributors |
+| `DEVELOPMENT.md` | Architecture guide, components, data flow | Developers |
+| `API.md` | REST API documentation, SocketIO events | API consumers, developers |
+| `TROUBLESHOOTING.md` | Common issues, solutions, debugging | Users, administrators |
+| `SECURITY.md` | Security considerations, best practices | Administrators, security |
+
+### Archived Documentation
+The following files have been moved to `archive/docs/`:
+- `IMPROVEMENTS_SUMMARY.md` - Historical improvements (implemented)
+- `YOUTUBE_INTEGRATION.md` - Unused feature documentation  
+- `CODE_REVIEW_DOCUMENTATION.md` - 2080-line comprehensive review (superseded by new docs)
+
+### Dead Code Removed (v3.5.0+)
+The following unused code has been removed:
+- `yt_downloader/` - Unused YouTube downloader module
+- `youtube_dl/` - Empty directory
+- `src/utils/file.py` - Unused re-exports (use `src.utils.security` instead)
+- `src/utils/transcode.py` - Unused re-exports (use `src.utils.video` instead)
+- `src/core/` - Scaffolded Flask factory (unused)
+- `src/queue/` - Empty scaffolding
+- Root test scripts (`test_*.py`, `extract_*.py`) - Moved to `archive/development_scripts/`
+
+### Key Documentation Updates
+1. **Transcript bug fix** - Added to CHANGELOG.md with details
+2. **API documentation** - Complete REST API and SocketIO events in API.md
+3. **Security guidance** - Comprehensive security considerations in SECURITY.md
+4. **Troubleshooting** - Common issues and solutions in TROUBLESHOOTING.md
+5. **Development guide** - Architecture and patterns in DEVELOPMENT.md
+
+### Documentation Maintenance
+- Update `CHANGELOG.md` for all version changes
+- Update `AGENTS.md` for architectural changes
+- Update `API.md` for API endpoint changes
+- Run documentation consistency checks periodically
