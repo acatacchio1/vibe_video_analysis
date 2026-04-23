@@ -196,15 +196,40 @@ def format_results_as_markdown(results: dict, video_name: str, job_id: str) -> s
             lines.append("")
 
     transcript = results.get("transcript")
-    if transcript and transcript.get("text"):
+    # Safely access transcript data
+    transcript_text = None
+    transcript_language = "unknown"
+    transcript_model = "unknown"
+    segments = []
+    
+    if transcript:
+        # Try to get text
+        if hasattr(transcript, 'get'):
+            transcript_text = transcript.get("text")
+            transcript_language = transcript.get("language", "unknown")
+            transcript_model = transcript.get("whisper_model", "unknown")
+            segments = transcript.get("segments", [])
+        elif hasattr(transcript, 'text'):
+            transcript_text = transcript.text
+            if hasattr(transcript, 'language'):
+                transcript_language = transcript.language
+            if hasattr(transcript, 'whisper_model'):
+                transcript_model = transcript.whisper_model
+            if hasattr(transcript, 'segments'):
+                segments = transcript.segments
+        elif isinstance(transcript, dict):
+            transcript_text = transcript.get("text")
+            transcript_language = transcript.get("language", "unknown")
+            transcript_model = transcript.get("whisper_model", "unknown")
+            segments = transcript.get("segments", [])
+    
+    if transcript_text:
         lines.append("## Transcript")
         lines.append("")
-        lines.append(f"*Language: {transcript.get('language', 'unknown')} (Whisper model: {transcript.get('whisper_model', 'unknown')})*")
+        lines.append(f"*Language: {transcript_language} (Whisper model: {transcript_model})*")
         lines.append("")
-        lines.append(transcript["text"])
+        lines.append(transcript_text)
         lines.append("")
-
-        segments = transcript.get("segments", [])
         if segments:
             lines.append("### Transcript Segments (with timestamps)")
             lines.append("")
