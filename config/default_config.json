@@ -12,6 +12,16 @@
       "api_url": "https://openrouter.ai/api/v1"
     }
   },
+  "analysis_pipeline": {
+    "two_step_enabled": true,
+    "phase2_defaults": {
+      "provider_type": "ollama",
+      "model": "llama3.1:8b",
+      "temperature": 0.0
+    },
+    "max_concurrent_synthesis": 3,
+    "synthesis_timeout": 30
+  },
   "prompt_dir": "prompts",
   "prompts": [
     {
@@ -21,6 +31,10 @@
     {
       "name": "Video Reconstruction",
       "path": "frame_analysis/describe.txt"
+    },
+    {
+      "name": "Frame Synthesis",
+      "path": "frame_analysis/synthesis.txt"
     }
   ],
   "output_dir": "output",
@@ -35,7 +49,8 @@
   "response_length": {
     "frame": 1500,
     "reconstruction": 1500,
-    "narrative": 1000
+    "narrative": 1000,
+    "synthesis": 2000
   },
   "audio": {
     "whisper_model": "large",

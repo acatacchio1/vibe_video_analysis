@@ -1,0 +1,21 @@
+Combine the visual analysis with transcript context to create an enhanced description.
+
+VISION ANALYSIS:
+{vision_analysis}
+
+TRANSCRIPT CONTEXT:
+{transcript_context}
+
+TIMESTAMP: {timestamp:.2f} seconds (original: {original_ts:.2f}s)
+
+Create a comprehensive analysis that integrates what's visually present with what's being said at this moment in the video. Focus on:
+
+1. **Integration**: How does the transcript context relate to or explain what's shown visually?
+2. **Relationships**: What connections can you draw between the audio content and visual elements?
+3. **Contradictions/Confirmations**: Are there any contradictions or confirmations between what's said and what's shown?
+4. **Enhanced Understanding**: What additional understanding does the transcript provide about the visual scene?
+5. **Contextualization**: How does this moment fit into the broader narrative suggested by the transcript?
+
+Provide a rich, detailed analysis that goes beyond simply combining the two sources. Look for deeper insights that emerge from considering audio and visual information together.
+
+ENHANCED ANALYSIS:

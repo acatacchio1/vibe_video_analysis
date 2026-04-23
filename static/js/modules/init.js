@@ -18,6 +18,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // Provider select
     document.getElementById('provider-select')?.addEventListener('change', handleProviderChange);
     document.getElementById('model-select')?.addEventListener('change', handleModelChange);
+    
+    // Phase 2 provider select
+    document.getElementById('phase2-provider-select')?.addEventListener('change', handlePhase2ProviderChange);
+    document.getElementById('phase2-model-select')?.addEventListener('change', handlePhase2ModelChange);
 
     // Discover button
     document.getElementById('discover-btn')?.addEventListener('click', discoverProviders);
@@ -58,6 +62,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // Monitor tabs
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.addEventListener('click', () => switchMonitorTab(btn.dataset.tab));
+    });
+
+    // Analysis tabs (within live analysis)
+    document.querySelectorAll('.analysis-tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => switchAnalysisTab(btn.dataset.tab));
     });
 
     // Settings
@@ -127,6 +136,64 @@ async function submitAnalysis() {
         const ollamaUrl = providerOption?.dataset.url;
         if (ollamaUrl) {
             data.provider_config = { url: ollamaUrl };
+        }
+    }
+
+    // Add Phase 2 (synthesis) configuration
+    const phase2ProviderSelect = document.getElementById('phase2-provider-select');
+    const phase2ModelSelect = document.getElementById('phase2-model-select');
+    const phase2TemperatureInput = document.getElementById('phase2-temperature-input');
+    
+    if (phase2ProviderSelect && phase2ModelSelect && phase2TemperatureInput) {
+        const phase2ProviderType = phase2ProviderSelect.value;
+        const phase2Model = phase2ModelSelect.value;
+        const phase2Temperature = parseFloat(phase2TemperatureInput.value || '0.0');
+        const phase2ProviderOption = phase2ProviderSelect.selectedOptions[0];
+        
+        console.log('Phase 2 config debug:', {
+            phase2ProviderType,
+            phase2Model,
+            phase2Temperature,
+            phase2ProviderOption,
+            datasetUrl: phase2ProviderOption?.dataset.url,
+            optionText: phase2ProviderOption?.text
+        });
+        
+        // Only add Phase 2 config if a provider and model are selected
+        if (phase2ProviderType && phase2Model) {
+            // Initialize params object if it doesn't exist
+            if (!data.params) {
+                data.params = {};
+            }
+            
+            data.params.two_step_enabled = true;
+            data.params.phase2_provider_type = phase2ProviderType;
+            data.params.phase2_model = phase2Model;
+            data.params.phase2_temperature = phase2Temperature;
+            
+            if (phase2ProviderType === 'ollama') {
+                // Get URL from selected option's data-url attribute
+                const phase2OllamaUrl = phase2ProviderOption?.dataset.url;
+                if (phase2OllamaUrl) {
+                    data.params.phase2_provider_config = { url: phase2OllamaUrl };
+                    console.log('Setting Phase 2 URL to:', phase2OllamaUrl);
+                } else {
+                    // Default URL if no specific instance selected
+                    data.params.phase2_provider_config = { url: "http://192.168.1.237:11434" };
+                    console.log('Using default Phase 2 URL');
+                }
+            } else if (phase2ProviderType === 'same_as_phase1') {
+                // Use same provider as Phase 1
+                data.params.phase2_provider_type = providerType;
+                data.params.phase2_model = model;
+                data.params.phase2_temperature = data.temperature; // Use same temperature
+                if (providerType === 'ollama' && data.provider_config?.url) {
+                    data.params.phase2_provider_config = { url: data.provider_config.url };
+                    console.log('Phase 2 using same as Phase 1 URL:', data.provider_config.url);
+                }
+            }
+            // OpenRouter for Phase 2 would use environment variable server-side
+            console.log('Final Phase 2 config in params:', data.params.phase2_provider_config);
         }
     }
 

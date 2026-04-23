@@ -5,6 +5,40 @@ All notable changes to Video Analyzer Web will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-04-23
+
+### Added
+- **Two-step video analysis system**: Concurrent Phase 1 (vision-only) + Phase 2 (vision+transcript synthesis) processing
+- **Separate provider configuration**: Users can select different Ollama instances/models/temperature for each phase
+- **Dual view interface**: "Vision Analysis" tab shows Phase 1 results, "Combined Analysis" tab shows Phase 2 synthesized results
+- **Live concurrent monitoring**: Real-time updates for both analysis phases via SocketIO events
+- **Phase 2 provider selection UI**: Dynamic dropdowns for selecting secondary LLM provider, model, and temperature
+- **Warning system**: Alerts users when using same provider for both phases without blocking
+- **Synthesis queue system**: Concurrent execution of Phase 2 analysis alongside Phase 1 completion
+
+### Changed
+- **Worker architecture**: Modified `worker.py` to support concurrent synthesis via `synthesize_frame()` function
+- **WebSocket event handling**: Added `frame_synthesis` event for real-time Phase 2 updates
+- **Frontend job handling**: Enhanced `jobs.js` with `appendCombinedLog()` and tab switching functionality
+- **Configuration management**: Updated `config/default_config.json` with `analysis_pipeline` settings
+- **Documentation**: Updated AGENTS.md and ARCHITECTURE_DECISIONS.md with two-step analysis details
+- **Default models**: Changed Phase 2 default to `qwen3.5:9b-q8-128k` (available model)
+
+### Fixed
+- **Phase 2 provider selection**: Fixed duplicate function definitions and missing event listeners in `providers.js`
+- **WebSocket parameter passing**: Updated `src/websocket/handlers.py` to correctly pass Phase 2 config from frontend
+- **Docker container issues**: Fixed default Phase 2 URL from `localhost:11434` to `192.168.1.237:11434` (reachable instance)
+- **Configuration serialization**: Fixed Phase 2 config not being included in job `params` object
+- **Thumbnail display**: Fixed blank thumbnails in combined analysis view
+- **Model availability**: Changed default from non-existent `llama3.1:8b` to available `qwen3.5:9b-q8-128k`
+
+### Performance
+- **Concurrent execution**: Phase 2 synthesis starts as soon as each frame's Phase 1 analysis completes
+- **Resource distribution**: Work can be distributed across multiple Ollama instances (e.g., .237 for vision, .241 for synthesis)
+- **Memory efficiency**: Synthesis uses separate provider configuration without loading additional models unnecessarily
+
+## [0.4.0] - 2026-04-23
+
 ## [0.4.0] - 2026-04-23
 
 ### Added

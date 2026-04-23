@@ -1,104 +1,84 @@
 # Video Analyzer Web - Architecture Decision Records
 
-## ADR-001: Transcript Injection Architecture (Legacy/Abandoned)
+## ADR-002: Two-Step Video Analysis System
 
 ### Status
-**ABANDONED** - Date: 2026-04-23
+**IMPLEMENTED** (v0.5.0) - Date: 2026-04-23  
+**Note**: Current implementation has sequential synthesis limitation - needs proper queue for full parallelism
 
 ### Context
-Video Analyzer Web processes videos through multiple stages: frame extraction, transcription, frame analysis (using LLMs), and video reconstruction. A key feature is injecting transcript context into frame analysis prompts to provide the LLM with audio context for each video frame.
+Video analysis involves both visual understanding (what's shown) and contextual understanding (what's being said). Traditional single-pass analysis either:
+1. Analyzed visuals only, missing audio context
+2. Combined visuals and audio in single prompt, requiring complex prompt engineering
+3. Used sequential processing, slowing down analysis
 
-The original implementation attempted to inject transcript segments into frame analysis prompts by:
-1. Loading transcript segments with timestamps
-2. For each frame, finding relevant transcript segments based on frame timestamp
-3. Injecting transcript context into the LLM prompt template
+Goal: Create a system that can:
+- Use different LLM providers/models for vision vs. synthesis tasks
+- Process frames in parallel across multiple GPU instances
+- Provide real-time feedback for both analysis stages
+- Allow users to compare vision-only vs. combined analysis
 
 ### Decision
-The original transcript injection approach used runtime prompt modification within the worker process loop, with the following characteristics:
+Implemented a **two-step concurrent analysis system**:
 
 **Architecture:**
-- **Prompt Token System**: Used placeholder tokens in prompt templates (`{TRANSCRIPT_CONTEXT}`, `{TRANSCRIPT_RECENT}`, `{TRANSCRIPT_PRIOR}`)
-- **Runtime Injection**: Modified `analyzer.frame_prompt` property during frame iteration
-- **Timestamp Matching**: Mapped frame numbers to video timestamps using `frames_index.json`
-- **Context Selection**: Selected "recent" (current timeframe) and "prior" (previous context) transcript segments
+- **Phase 1 (Vision Analysis)**: Frame-by-frame visual analysis using primary LLM
+- **Phase 2 (Synthesis)**: Combines Phase 1 results with transcript using secondary LLM
+- **Concurrent Execution**: Phase 2 starts as soon as Phase 1 completes for each frame
+- **Separate Configuration**: Users select different providers/models/temperature for each phase
+- **Dual View Interface**: Separate tabs for Vision Analysis vs. Combined Analysis results
 
 **Implementation Details:**
 1. **Worker Process Flow** (`worker.py`):
-   - Loaded transcript segments with validated end times
-   - For each frame, calculated `current_ts` from dedup mapping
-   - Found transcript segments near frame timestamp (15-second buffer)
-   - Built `recent_transcript` (current segment) and `prior_transcript` (up to 2 prior segments)
-   - Injected via token replacement or fallback appending
+   - Modified main analysis loop to call `synthesize_frame()` after each frame analysis
+   - Added Phase 2 configuration extraction from job params
+   - Writes Phase 2 results to `synthesis.jsonl` alongside `frames.jsonl`
 
-2. **Prompt Templates**:
-   - `frame_with_transcript.txt`: Used single `{TRANSCRIPT_CONTEXT}` token with formatted section
-   - `frame_analysis.txt`: Used separate `{TRANSCRIPT_RECENT}` and `{TRANSCRIPT_PRIOR}` tokens
-   - Fallback: Appended transcript context if no tokens found
+2. **Frontend Interface**:
+   - Added Phase 2 provider/model/temperature selection controls
+   - Created dual-tab display (Vision Analysis / Combined Analysis)
+   - Added `appendCombinedLog()` function for Phase 2 results display
+   - SocketIO `frame_synthesis` event for real-time Phase 2 updates
 
-3. **Data Flow**:
+3. **Configuration Management**:
+   - Phase 2 settings passed via `params.phase2_*` in job config
+   - WebSocket handler (`handlers.py`) merges Phase 2 config into job params
+   - Default Phase 2 model: `qwen3.5:9b-q8-128k` (available model)
+   - Default Phase 2 URL: `192.168.1.237:11434` (not localhost for Docker)
+
+4. **Data Flow**:
    ```
-   Frame → Timestamp → Transcript Segments → Context Building → Prompt Injection → LLM Analysis
+   Frame → Phase 1 (Vision LLM) → frames.jsonl → [Vision Tab]
+                     ↓
+            Phase 2 (Text LLM) → synthesis.jsonl → [Combined Tab]
    ```
+
+**Current Limitation (To Be Fixed):**
+Phase 2 synthesis runs **sequentially within the same loop** as Phase 1, causing vision analysis to wait for synthesis completion. This prevents full parallel GPU utilization across Ollama instances. A proper synthesis queue is needed for true parallelism.
 
 ### Consequences
 
-#### Positive (Intended)
-- **Contextual Analysis**: Provided audio context for visual analysis
-- **Timestamp Accuracy**: Used frame-to-timestamp mapping for precise alignment
-- **Flexible Prompts**: Supported multiple prompt template formats
+#### Positive
+- **Flexible Resource Allocation**: Different Ollama instances can handle vision vs. synthesis (e.g., .237 for vision, .241 for synthesis)
+- **Specialized Models**: Can use vision-optimized models for Phase 1, text-optimized for Phase 2
+- **Real-time Comparison**: Users can switch between vision-only and combined analysis views
+- **Resource Efficiency**: Secondary Ollama instance can process synthesis while primary focuses on vision
 
-#### Negative (Observed Issues)
-1. **Complex State Management**:
-   - Modified shared `analyzer.frame_prompt` property in loop
-   - State corruption across frames (duplicate transcript injections)
-   - Required restoring original prompt each iteration
+#### Negative (Current Implementation)
+- **Sequential Bottleneck**: Phase 1 waits for Phase 2 completion before next frame
+- **Suboptimal GPU Utilization**: GPUs idle while waiting for sequential processing
+- **Complex Configuration**: Users need to understand two different provider setups
 
-2. **External Dependency Issues**:
-   - Relied on `video-analyzer` package's internal `VideoAnalyzer` API
-   - No clear interface for transcript injection
-   - Monkey-patching required for per-frame context
+#### Risks
+- **Configuration Errors**: Users might select incompatible Phase 2 models
+- **Network Latency**: Multiple Ollama instances increase network dependencies
+- **Synchronization Issues**: Phase 2 depends on Phase 1 completion; failures could cascade
 
-3. **Error-Prone Implementation**:
-   - Multiple token formats created confusion
-   - `context_section` variable referenced but not always defined
-   - `corrected_ts` variable bug (referenced but never defined)
-   - Path-dependent prompt loading with hardcoded paths
+### Future Improvements
+1. **Implement Proper Synthesis Queue**: Allow Phase 2 to lag behind Phase 1 with configurable queue depth
+2. **Batch Processing**: Process multiple frames in parallel for Phase 2 when using same provider
+3. **Fallback Strategies**: Automatic fallback if Phase 2 provider is unavailable
+4. **Progress Tracking**: Separate progress bars for Phase 1 vs. Phase 2
+5. **Resource Monitoring**: Track GPU utilization across both phases
 
-4. **Maintenance Challenges**:
-   - Difficult to debug transcript injection failures
-   - Silent failures when tokens not found in prompts
-   - Complex logic with multiple fallback paths
-
-5. **Performance Issues**:
-   - Repeated string operations on prompt templates
-   - No caching of transcript segment lookups
-   - O(n) search through transcript segments for each frame
-
-### Abandonment Rationale
-The approach is being abandoned due to:
-
-1. **Architectural Flaws**: Tight coupling with external package internals
-2. **Maintenance Burden**: Complex, bug-prone implementation
-3. **Poor Observability**: Difficult to verify transcript injection worked
-4. **Limited Flexibility**: Hard to extend or modify injection logic
-5. **Implementation Bugs**: Critical issues like `corrected_ts` undefined variable
-
-**Evidence of Failure**: Frame analysis outputs showed no transcript context despite the injection logic appearing to run successfully in logs.
-
-### Future Direction
-A new approach will be developed with these principles:
-1. **Clean Separation**: Decouple transcript injection from frame analysis
-2. **Explicit Interfaces**: Well-defined APIs between components
-3. **Testability**: Unit-testable injection logic
-4. **Observability**: Clear logging and validation of injection results
-5. **Simplicity**: Reduce complexity and edge cases
-
-### Lessons Learned
-1. **Avoid modifying shared state** in iteration loops
-2. **Prefer composition over monkey-patching** of external APIs
-3. **Validate assumptions** about prompt template formats
-4. **Design for testability** from the beginning
-5. **Implement proper error handling** for edge cases
-
----
-*This decision record documents the legacy approach to inform future architectural decisions and prevent recurrence of similar issues.*
+## ADR-001: Transcript Injection Architecture (Legacy/Abandoned)

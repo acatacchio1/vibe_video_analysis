@@ -203,6 +203,7 @@ def monitor_job(job_id: str, job_dir: Path, proc: subprocess.Popen):
     status_file = job_dir / "status.json"
     last_status = {}
     last_frame_count = 0
+    last_synthesis_count = 0
 
     while proc.poll() is None:
         try:
@@ -271,6 +272,34 @@ def monitor_job(job_id: str, job_dir: Path, proc: subprocess.Popen):
                         last_frame_count = len(lines)
                     except Exception as e:
                         logger.error(f"Error reading frames file for job {job_id}: {e}")
+                
+                # Monitor synthesis.jsonl for combined analysis
+                synthesis_file = job_dir / "synthesis.jsonl"
+                if synthesis_file.exists():
+                    try:
+                        lines = [
+                            l for l in synthesis_file.read_text().strip().split("\n") if l
+                        ]
+                        new_synthesis = lines[last_synthesis_count:]
+                        if new_synthesis:
+                            logger.debug(
+                                f"Emitting {len(new_synthesis)} new synthesis results for job {job_id}"
+                            )
+                            for line in new_synthesis:
+                                try:
+                                    synthesis_data = json.loads(line)
+                                    socketio.emit(
+                                        "frame_synthesis",
+                                        {"job_id": job_id, **synthesis_data},
+                                        room=f"job_{job_id}",
+                                    )
+                                except Exception as e:
+                                    logger.error(
+                                        f"Failed to emit synthesis for job {job_id}: {e}"
+                                    )
+                        last_synthesis_count = len(lines)
+                    except Exception as e:
+                        logger.error(f"Error reading synthesis file for job {job_id}: {e}")
 
         except Exception as e:
             logger.error(f"Error monitoring job {job_id}: {e}")

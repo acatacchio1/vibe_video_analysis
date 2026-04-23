@@ -33,6 +33,11 @@ function initSocket() {
         handleFrameAnalysis(data);
     });
 
+    state.socket.on('frame_synthesis', (data) => {
+        debugLog('RECV:frame_synthesis', { frame: data.frame_number || data.frame, combined_len: (data.combined_analysis || '').length });
+        handleFrameSynthesis(data);
+    });
+
     state.socket.on('job_transcript', (data) => {
         debugLog('RECV:job_transcript', { job_id: data.job_id, text_len: (data.transcript || '').length });
         handleJobTranscript(data);

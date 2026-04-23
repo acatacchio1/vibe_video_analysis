@@ -32,6 +32,8 @@ function renderProviderStatus() {
 
 function updateProviderSelect() {
     const select = document.getElementById('provider-select');
+    const phase2Select = document.getElementById('phase2-provider-select');
+    
     if (!select) return;
 
     const currentValue = select.value;
@@ -47,6 +49,58 @@ function updateProviderSelect() {
         '</optgroup>';
 
     if (currentValue) select.value = currentValue;
+    
+    // Also update Phase 2 provider select if it exists
+    if (phase2Select) {
+        // Save current value
+        const currentPhase2Value = phase2Select.value;
+        
+        // Build options for Phase 2
+        let phase2Options = '<option value="">Select provider...</option>';
+        
+        // Add specific Ollama instances
+        const ollamaProviders = Object.values(state.providers).filter(p => p.type === 'ollama');
+        if (ollamaProviders.length > 0) {
+            phase2Options += ollamaProviders
+                .map(p => `<option value="ollama" data-url="${p.url}">${p.name} (${p.status})</option>`)
+                .join('');
+        }
+        
+        // Add other options
+        phase2Options += '<option value="openrouter">OpenRouter</option>' +
+                         '<option value="same_as_phase1">Same as Phase 1</option>';
+        
+        phase2Select.innerHTML = phase2Options;
+        
+        // Auto-select the first Ollama instance for Phase 2 (if available)
+        const ollamaOptions = Array.from(phase2Select.options).filter(opt => opt.value === 'ollama' && opt.dataset.url);
+        if (ollamaOptions.length > 0) {
+            // Try to select a different Ollama instance than Phase 1 if possible
+            const phase1Select = document.getElementById('provider-select');
+            const phase1SelectedOption = phase1Select?.selectedOptions[0];
+            const phase1Url = phase1SelectedOption?.dataset.url;
+            
+            // Find an Ollama instance different from Phase 1, or just use the first one
+            const differentOption = ollamaOptions.find(opt => opt.dataset.url !== phase1Url) || ollamaOptions[0];
+            phase2Select.value = differentOption.value;
+            
+            // Trigger change event to load models
+            setTimeout(() => {
+                handlePhase2ProviderChange();
+            }, 100);
+        }
+        
+        // Restore previous selection if it still exists (but auto-selection above takes precedence)
+        if (currentPhase2Value && !phase2Select.value) {
+            // Try to find and restore the exact option
+            const options = Array.from(phase2Select.options);
+            const matchingOption = options.find(opt => opt.value === currentPhase2Value || 
+                (currentPhase2Value === 'ollama' && opt.dataset.url && opt.text.includes(currentPhase2Value)));
+            if (matchingOption) {
+                phase2Select.value = matchingOption.value;
+            }
+        }
+    }
 }
 
 async function discoverProviders() {
@@ -99,12 +153,11 @@ async function handleProviderChange() {
             const response = await fetch('/api/providers/openrouter/models');
             const data = await response.json();
 
-            if (data.error) {
-                modelSelect.innerHTML = `<option value="">${data.error}</option>`;
-            } else if (data.models && data.models.length > 0) {
+            if (data.models && data.models.length > 0) {
                 modelSelect.innerHTML = '<option value="">Select model...</option>' +
                     data.models.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
                 modelSelect.disabled = false;
+                if (costEstimate) costEstimate.classList.remove('hidden');
             } else {
                 modelSelect.innerHTML = '<option value="">No models available</option>';
             }
@@ -113,65 +166,173 @@ async function handleProviderChange() {
             modelSelect.innerHTML = '<option value="">Failed to load models</option>';
         }
     }
-
-    updateStartButton();
+    
+    // Update Phase 2 warnings when Phase 1 changes
+    handlePhase1ProviderChangeForPhase2Warning();
 }
 
-async function handleModelChange() {
+function handleModelChange() {
     const modelSelect = document.getElementById('model-select');
     const costEstimate = document.getElementById('cost-estimate');
-    if (!modelSelect || !costEstimate) return;
-
-    const providerType = document.getElementById('provider-select')?.value;
+    
+    if (!modelSelect) return;
+    
+    const selectedOption = modelSelect.selectedOptions[0];
+    if (!selectedOption) return;
+    
     const modelId = modelSelect.value;
-
+    const providerSelect = document.getElementById('provider-select');
+    const providerType = providerSelect?.value;
+    
     if (providerType === 'openrouter' && modelId) {
-        try {
-            const videoSelect = document.getElementById('video-select');
-            const videoOption = videoSelect?.selectedOptions[0];
-            const videoName = videoOption?.dataset.name || '';
-
-            const response = await fetch(`/api/providers/openrouter/cost?model=${encodeURIComponent(modelId)}&frames=50`);
-            const cost = await response.json();
-
-            if (cost.error) {
-                console.error('Cost estimation error:', cost.error);
-            } else if (cost.estimated_cost !== undefined || cost.min !== undefined) {
-                const estimatedCost = cost.estimated_cost || cost.avg || 0;
-                document.getElementById('cost-value').textContent = `$${estimatedCost.toFixed(4)}`;
-                document.getElementById('vram-required').textContent = 'N/A (Cloud)';
-                costEstimate.classList.remove('hidden');
-            }
-        } catch (error) {
-            console.error('Failed to estimate cost:', error);
-        }
-    } else if (providerType === 'ollama' && modelId) {
-        const provider = Object.values(state.providers).find(p => p.type === 'ollama');
-        if (provider) {
-            const model = provider.models?.find(m => m.id === modelId);
-            if (model?.size) {
-                const sizeGb = (model.size / 1024 / 1024 / 1024).toFixed(1);
-                document.getElementById('vram-required').textContent = `~${sizeGb} GB`;
-                document.getElementById('cost-value').textContent = '$0.0000 (Local)';
-                costEstimate.classList.remove('hidden');
-            }
-        }
+        // Estimate cost for OpenRouter
+        estimateOpenRouterCost(modelId);
+    } else if (costEstimate) {
+        costEstimate.classList.add('hidden');
     }
-
-    updateStartButton();
+    
+    // Update Phase 2 warnings when Phase 1 model changes
+    handlePhase1ProviderChangeForPhase2Warning();
 }
 
-async function checkOpenRouterBalance() {
-    try {
-        const response = await fetch('/api/providers/openrouter/balance');
-        const data = await response.json();
+// Phase 2 (synthesis) provider handling
+async function handlePhase2ProviderChange() {
+    const phase2ProviderSelect = document.getElementById('phase2-provider-select');
+    const phase2ModelSelect = document.getElementById('phase2-model-select');
+    const phase2Warning = document.getElementById('phase2-warning');
+    
+    if (!phase2ProviderSelect || !phase2ModelSelect) return;
 
-        if (data.balance !== undefined) {
-            showToast(`OpenRouter balance: $${data.balance.toFixed(4)}`);
-        } else if (data.error) {
-            showToast(data.error, 'error');
+    const phase2ProviderType = phase2ProviderSelect.value;
+    const selectedOption = phase2ProviderSelect.selectedOptions[0];
+    
+    phase2ModelSelect.innerHTML = '<option value="">Loading models...</option>';
+    phase2ModelSelect.disabled = true;
+    if (phase2Warning) phase2Warning.classList.add('hidden');
+
+    // Get Phase 1 provider for warning checking
+    const phase1ProviderSelect = document.getElementById('provider-select');
+    const phase1ModelSelect = document.getElementById('model-select');
+    const phase1ProviderType = phase1ProviderSelect?.value;
+    const phase1Model = phase1ModelSelect?.value;
+
+    if (phase2ProviderType === 'same_as_phase1') {
+        if (phase1ProviderType && phase1Model) {
+            // Use Phase 1 settings
+            phase2ModelSelect.innerHTML = `<option value="${phase1Model}" selected>${phase1Model} (same as Phase 1)</option>`;
+            phase2ModelSelect.disabled = false;
+        } else {
+            phase2ModelSelect.innerHTML = '<option value="">Phase 1 not configured</option>';
         }
-    } catch (error) {
-        showToast('Failed to check balance: ' + error.message, 'error');
+        return;
+    }
+
+    if (phase2ProviderType === 'ollama') {
+        // Get URL - default to localhost for Phase 2
+        const url = selectedOption?.dataset.url || "http://localhost:11434";
+        
+        try {
+            const response = await fetch(`/api/providers/ollama/models?server=${encodeURIComponent(url)}`);
+            const data = await response.json();
+
+            if (data.models && data.models.length > 0) {
+                phase2ModelSelect.innerHTML = '<option value="">Select model...</option>' +
+                    data.models.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
+                phase2ModelSelect.disabled = false;
+                
+                // Set default Phase 2 model if available
+                const defaultModel = data.models.find(m => m.id.includes('llama3.1:8b') || m.id.includes('llama3'));
+                if (defaultModel && !phase2ModelSelect.value) {
+                    phase2ModelSelect.value = defaultModel.id;
+                }
+            } else {
+                phase2ModelSelect.innerHTML = '<option value="">No models available</option>';
+            }
+        } catch (error) {
+            console.error('Failed to load Phase 2 Ollama models:', error);
+            phase2ModelSelect.innerHTML = '<option value="">Failed to load models</option>';
+        }
+        
+    } else if (phase2ProviderType === 'openrouter') {
+        try {
+            const response = await fetch('/api/providers/openrouter/models');
+            const data = await response.json();
+
+            if (data.models && data.models.length > 0) {
+                phase2ModelSelect.innerHTML = '<option value="">Select model...</option>' +
+                    data.models.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
+                phase2ModelSelect.disabled = false;
+                
+                // Set default Phase 2 model if available
+                const defaultModel = data.models.find(m => m.id.includes('gpt-4') || m.id.includes('claude'));
+                if (defaultModel && !phase2ModelSelect.value) {
+                    phase2ModelSelect.value = defaultModel.id;
+                }
+            } else {
+                phase2ModelSelect.innerHTML = '<option value="">No models available</option>';
+            }
+        } catch (error) {
+            console.error('Failed to load Phase 2 OpenRouter models:', error);
+            phase2ModelSelect.innerHTML = '<option value="">Failed to load models</option>';
+        }
+    }
+    
+    // Check for warnings
+    if (phase2ProviderType === phase1ProviderType && phase1ProviderType) {
+        phase2Warning.textContent = 'Warning: Using the same provider for both phases may overload the system. Consider using a secondary Ollama instance for Phase 2.';
+        phase2Warning.classList.remove('hidden');
+    }
+}
+
+function handlePhase2ModelChange() {
+    // Update any warnings or UI based on Phase 2 model selection
+    const phase2ModelSelect = document.getElementById('phase2-model-select');
+    const phase2Warning = document.getElementById('phase2-warning');
+    
+    if (!phase2ModelSelect || !phase2Warning) return;
+    
+    const phase2Model = phase2ModelSelect.value;
+    const phase1ModelSelect = document.getElementById('model-select');
+    const phase1Model = phase1ModelSelect?.value;
+    
+    // Show warning if using same model (only relevant when Phase 2 provider is "same as Phase 1")
+    const phase2ProviderSelect = document.getElementById('phase2-provider-select');
+    const phase2ProviderType = phase2ProviderSelect?.value;
+    
+    if (phase2ProviderType === 'same_as_phase1' && phase2Model === phase1Model) {
+        phase2Warning.textContent = 'Note: Using identical model for both phases may not provide additional insight.';
+        phase2Warning.classList.remove('hidden');
+    }
+    // Other warnings could be added here based on model selection
+}
+
+// Check for warnings when Phase 1 changes
+function handlePhase1ProviderChangeForPhase2Warning() {
+    const phase1ProviderSelect = document.getElementById('provider-select');
+    const phase1ModelSelect = document.getElementById('model-select');
+    const phase2ProviderSelect = document.getElementById('phase2-provider-select');
+    const phase2Warning = document.getElementById('phase2-warning');
+    
+    if (!phase1ProviderSelect || !phase2ProviderSelect || !phase2Warning) return;
+    
+    const phase1ProviderType = phase1ProviderSelect.value;
+    const phase1Model = phase1ModelSelect?.value;
+    const phase2ProviderType = phase2ProviderSelect.value;
+    
+    // If Phase 2 is set to "same as Phase 1" and Phase 1 changes, update Phase 2
+    if (phase2ProviderType === 'same_as_phase1' && phase1Model) {
+        const phase2ModelSelect = document.getElementById('phase2-model-select');
+        if (phase2ModelSelect) {
+            phase2ModelSelect.innerHTML = `<option value="${phase1Model}" selected>${phase1Model} (same as Phase 1)</option>`;
+            phase2ModelSelect.disabled = false;
+        }
+    }
+    
+    // Show warning if using same provider (but don't block)
+    if (phase2ProviderType === phase1ProviderType && phase1ProviderType) {
+        phase2Warning.textContent = 'Warning: Using the same provider for both phases may overload the system. Consider using a secondary Ollama instance for Phase 2.';
+        phase2Warning.classList.remove('hidden');
+    } else {
+        phase2Warning.classList.add('hidden');
     }
 }

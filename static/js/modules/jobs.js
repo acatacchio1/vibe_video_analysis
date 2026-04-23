@@ -89,6 +89,12 @@ function handleFrameAnalysis(data) {
     appendFrameLog(data);
 }
 
+function handleFrameSynthesis(data) {
+    const combinedSection = document.getElementById('combined-analysis');
+    if (combinedSection) combinedSection.classList.remove('hidden');
+    appendCombinedLog(data);
+}
+
 function handleJobTranscript(data) {
     const panel = document.getElementById('transcript-panel');
     if (panel) {
@@ -217,6 +223,63 @@ function appendFrameLog(data) {
             </div>
             <div class="frame-text">${formatFrameAnalysis(data.analysis || data.response || '')}</div>
             ${transcriptHtml}
+        </div>
+    `;
+    log.appendChild(entry);
+    log.scrollTop = log.scrollHeight;
+}
+
+function appendCombinedLog(data) {
+    const log = document.getElementById('combined-log');
+    if (!log) {
+        if (state.debug) console.log('[DEBUG:JOBS] appendCombinedLog: no combined-log element');
+        return;
+    }
+
+    const frameNum = data.frame_number || data.frame;
+    const origFrame = data.original_frame;
+    const ts = formatVideoTimestamp(data.video_ts ?? data.timestamp);
+    const origTs = data.original_ts;
+
+    const origHtml = (origFrame && origFrame !== frameNum)
+        ? `<span class="frame-original">(orig: ${origFrame}${origTs !== undefined ? ' @ ' + formatVideoTimestamp(origTs) : ''})</span>`
+        : '';
+    const tsHtml = ts !== null ? `<span class="frame-timestamp">${ts}</span>` : '';
+
+    // Prefer the name captured at analysis-start time; fall back to frame browser
+    // or currentVideo (extracting just the filename to avoid path-encoded 404s).
+    const rawVideo = state.analysisVideoName || state.frameBrowser?.videoName || state.currentVideo || '';
+    const videoName = rawVideo.split('/').pop();
+    const thumbUrl = videoName ? `/api/videos/${encodeURIComponent(videoName)}/frames/${frameNum}/thumb` : '';
+    const thumbHtml = thumbUrl
+        ? `<div class="frame-thumbnail"><img src="${thumbUrl}" alt="Frame ${frameNum}" loading="lazy"></div>`
+        : '';
+
+    // Show both vision analysis and combined analysis for comparison
+    const visionHtml = data.vision_analysis
+        ? `<div class="vision-analysis-section">
+             <div class="section-label">Vision Analysis:</div>
+             <div class="vision-analysis-text">${formatFrameAnalysis(data.vision_analysis)}</div>
+           </div>`
+        : '';
+    
+    const combinedHtml = data.combined_analysis
+        ? `<div class="combined-analysis-section">
+             <div class="section-label">Combined Analysis:</div>
+             <div class="combined-analysis-text">${formatFrameAnalysis(data.combined_analysis)}</div>
+           </div>`
+        : '';
+
+    const entry = document.createElement('div');
+    entry.className = 'frame-entry combined-entry';
+    entry.innerHTML = `
+        ${thumbHtml}
+        <div class="frame-content">
+            <div class="frame-header">
+                <span class="frame-number">Frame ${frameNum}</span>${origHtml}${tsHtml}
+            </div>
+            ${visionHtml}
+            ${combinedHtml}
         </div>
     `;
     log.appendChild(entry);
@@ -472,4 +535,12 @@ function switchMainTab(tab) {
 
     document.querySelector(`.main-tab-btn[data-tab="${tab}"]`)?.classList.add('active');
     document.getElementById(`tab-${tab}`)?.classList.remove('hidden');
+}
+
+function switchAnalysisTab(tab) {
+    document.querySelectorAll('.analysis-tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.analysis-tab-content').forEach(c => c.classList.add('hidden'));
+
+    document.querySelector(`.analysis-tab-btn[data-tab="${tab}"]`)?.classList.add('active');
+    document.getElementById(`${tab}-analysis-panel`)?.classList.remove('hidden');
 }

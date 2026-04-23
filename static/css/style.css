@@ -3213,3 +3213,127 @@ section > h2::before,
     font-family: var(--font-mono, monospace);
     color: var(--accent-primary);
 }
+
+/* Phase 2 Analysis Styles */
+.form-section-separator {
+    margin: var(--spacing-md) 0;
+    padding-top: var(--spacing-md);
+    border-top: 1px solid var(--border-color, rgba(255,255,255,0.08));
+}
+
+.form-section-separator h4 {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0 0 var(--spacing-xs) 0;
+}
+
+.form-help {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin: 0 0 var(--spacing-sm) 0;
+    line-height: 1.4;
+}
+
+.warning-message {
+    background: rgba(255, 193, 7, 0.1);
+    border: 1px solid rgba(255, 193, 7, 0.3);
+    border-radius: var(--border-radius);
+    padding: var(--spacing-sm);
+    margin-bottom: var(--spacing-sm);
+    font-size: 0.85rem;
+    color: #ffc107;
+}
+
+.warning-message.hidden {
+    display: none;
+}
+
+/* Combined analysis display */
+.combined-entry .vision-analysis-section,
+.combined-entry .combined-analysis-section {
+    margin-top: var(--spacing-sm);
+    padding: var(--spacing-sm);
+    background: var(--bg-tertiary);
+    border-radius: var(--border-radius);
+    border-left: 3px solid var(--border-color);
+}
+
+.combined-entry .vision-analysis-section {
+    border-left-color: #4CAF50;
+}
+
+.combined-entry .combined-analysis-section {
+    border-left-color: #2196F3;
+}
+
+.combined-entry .section-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: var(--spacing-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* Phase 2 Analysis Styles */
+.form-section-separator {
+    margin: var(--spacing-md) 0;
+    padding-top: var(--spacing-md);
+    border-top: 1px solid var(--border-color, rgba(255,255,255,0.08));
+}
+
+.form-section-separator h4 {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0 0 var(--spacing-xs) 0;
+}
+
+.form-help {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin: 0 0 var(--spacing-sm) 0;
+    line-height: 1.4;
+}
+
+.warning-message {
+    background: rgba(255, 193, 7, 0.1);
+    border: 1px solid rgba(255, 193, 7, 0.3);
+    border-radius: var(--border-radius);
+    padding: var(--spacing-sm);
+    margin-bottom: var(--spacing-sm);
+    font-size: 0.85rem;
+    color: #ffc107;
+}
+
+.warning-message.hidden {
+    display: none;
+}
+
+/* Combined analysis display */
+.combined-entry .vision-analysis-section,
+.combined-entry .combined-analysis-section {
+    margin-top: var(--spacing-sm);
+    padding: var(--spacing-sm);
+    background: var(--bg-tertiary);
+    border-radius: var(--border-radius);
+    border-left: 3px solid var(--border-color);
+}
+
+.combined-entry .vision-analysis-section {
+    border-left-color: #4CAF50;
+}
+
+.combined-entry .combined-analysis-section {
+    border-left-color: #2196F3;
+}
+
+.combined-entry .section-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: var(--spacing-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}

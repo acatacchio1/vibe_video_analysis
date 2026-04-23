@@ -170,6 +170,24 @@ def register_socket_handlers(socketio):
         base_dir = Path(__file__).parent.parent.parent
         video_frames_dir = str(base_dir / "uploads" / video_stem / "frames") if video_stem else ""
 
+        # Start with default params
+        params = {
+            "temperature": data.get("temperature", 0.0),
+            "start_frame": data.get("start_frame", 0),
+            "end_frame": data.get("end_frame"),
+            "fps": data.get("fps", 1),
+            "frames_per_minute": data.get("frames_per_minute", 60),
+            "similarity_threshold": data.get("similarity_threshold", 10),
+            "whisper_model": data.get("whisper_model", "large"),
+            "language": data.get("language", "en"),
+            "device": data.get("device", "gpu"),
+            "user_prompt": data.get("user_prompt", ""),
+        }
+        
+        # Merge any params from data.params (includes Phase 2 config)
+        if "params" in data and isinstance(data["params"], dict):
+            params.update(data["params"])
+        
         config = {
             "job_id": job_id,
             "video_path": video_path,
@@ -178,18 +196,7 @@ def register_socket_handlers(socketio):
             "provider_config": provider_config,
             "model": model_id,
             "video_frames_dir": video_frames_dir,
-            "params": {
-                "temperature": data.get("temperature", 0.0),
-                "start_frame": data.get("start_frame", 0),
-                "end_frame": data.get("end_frame"),
-                "fps": data.get("fps", 1),
-                "frames_per_minute": data.get("frames_per_minute", 60),
-                "similarity_threshold": data.get("similarity_threshold", 10),
-                "whisper_model": data.get("whisper_model", "large"),
-                "language": data.get("language", "en"),
-                "device": data.get("device", "gpu"),
-                "user_prompt": data.get("user_prompt", ""),
-            },
+            "params": params,
         }
         (job_dir / "input.json").write_text(json.dumps(config))
 

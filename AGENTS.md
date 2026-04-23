@@ -1,10 +1,12 @@
 # Video Analyzer Web - Agent Development Guide
 
-> Version 0.4.0 | Last updated: 2026-04-23
+> Version 0.5.0 | Last updated: 2026-04-23
 
 This document provides essential context for AI agents working on this codebase.
 
-**Important Update (v0.4.0)**: Comprehensive documentation overhaul, parallel deduplication, scene detection, and enhanced transcript utilities. Live monitoring shows frame analysis + transcript separately with plans for combined view.
+**Important Update (v0.5.0)**: Two-step video analysis system with concurrent Phase 1 (vision) and Phase 2 (vision+transcript synthesis) processing. Users can select separate providers/models for each phase, with real-time monitoring in dual tabs.
+
+**Previous Update (v0.4.0)**: Comprehensive documentation overhaul, parallel deduplication, scene detection, and enhanced transcript utilities. Live monitoring shows frame analysis + transcript separately with plans for combined view.
 
 **Previous Update (v0.3.4)**: Fixed transcription flow inconsistencies. See "Transcription Flow & Gotchas" section below.
 
@@ -153,13 +155,22 @@ These files are part of the `video-analyzer` Python package or are external util
 3. **SocketIO events** - Registered via `register_socket_handlers(socketio)` in `src/websocket/handlers.py`.
 4. **SocketIO handlers must accept `auth=None` parameter** - Flask-SocketIO passes an auth argument on connect/disconnect.
 5. **Socket log handler** - `SocketLogHandler` in `app.py` emits all log records to clients via `socketio.emit('log_message', ...)`. Must be instantiated AFTER `socketio` is created.
-6. **Job lifecycle**:
+6. **Two-step analysis architecture (v0.5.0+)**:
+   - **Phase 1 (Vision)**: Frame-by-frame vision analysis using primary LLM provider
+   - **Phase 2 (Synthesis)**: Concurrent synthesis combining vision results with transcript using secondary LLM
+   - **Separate configuration**: Users can select different providers/models/temperature for each phase
+   - **Concurrent execution**: Phase 2 starts as soon as each frame's Phase 1 completes
+   - **Dual view interface**: "Vision Analysis" tab shows Phase 1 results, "Combined Analysis" tab shows synthesized results
+   - **Data flow**: `frames.jsonl` → Phase 1 results → `synthesis.jsonl` → Phase 2 results
+   - **SocketIO events**: `frame_analysis` (Phase 1), `frame_synthesis` (Phase 2)
+   - **Configuration**: Phase 2 settings passed via `params.phase2_*` in job config
+7. **Job lifecycle**:
    ```
    Client emits "start_analysis" → VRAM manager queues job → 
    on_vram_event("started") → spawn_worker() → monitor_job() → 
    worker.py runs stages → results.json saved → emit job_complete
    ```
-7. **Worker stages**: Get frames → Analyze each frame (Ollama/OpenRouter) → Load transcript → Generate video description → Save results → Auto-LLM (if configured).
+7. **Worker stages**: Get frames → Analyze each frame (Ollama/OpenRouter) → Load transcript → Generate video description → **Concurrent Phase 2 synthesis** → Save results → Auto-LLM (if configured).
 8. **Transcode flow**: Upload → `_transcode_and_delete_with_cleanup()` → `_extract_frames()` → `_transcribe_video()` → emit `videos_updated`.
 9. **Frame renumbering**: After dedup, frames are renamed sequentially (frame_000001, frame_000002, ...) and `frames_index.json` maps each new frame number to its actual video timestamp. This ensures transcript context is always accurate.
 
@@ -260,6 +271,7 @@ The worker (`worker.py`) injects transcript context into frame analysis prompts:
 8. **SocketLogHandler must be created after socketio** - Otherwise `socketio.emit()` silently fails
 9. **Port 10000** - Non-privileged port. Port 1000 requires root on Linux.
 10. **`request` comes from `flask`, NOT `flask_socketio`** - Common import error in SocketIO handlers
+11. **Two-step analysis current limitation (v0.5.0)**: Phase 2 synthesis runs sequentially within the same loop as Phase 1, causing vision analysis to wait for synthesis completion. This prevents full parallel GPU utilization across Ollama instances. A proper synthesis queue is needed for true parallelism.
 
 ---
 
@@ -310,6 +322,7 @@ Video Analyzer Web now has comprehensive documentation:
 | `API.md` | REST API documentation, SocketIO events | API consumers, developers |
 | `TROUBLESHOOTING.md` | Common issues, solutions, debugging | Users, administrators |
 | `SECURITY.md` | Security considerations, best practices | Administrators, security |
+| `ARCHITECTURE_DECISIONS.md` | Architecture decision records, lessons learned | Developers, architects |
 
 ### Archived Documentation
 The following files have been moved to `archive/docs/`:

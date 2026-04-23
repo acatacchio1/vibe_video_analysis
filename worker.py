@@ -11,8 +11,9 @@ import time
 import types
 import logging
 import subprocess
+import uuid
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 
 # Constants
 LLM_TIMEOUT = 300  # seconds (5 minutes)
@@ -41,6 +42,108 @@ def update_status(job_dir: Path, updates: Dict[str, Any]):
         logger.error(f"Failed to update status: {e}")
 
 
+def synthesize_frame(
+    frame_result: Dict[str, Any],
+    phase2_provider_type: str,
+    phase2_model: str,
+    phase2_temperature: float,
+    phase2_provider_config: Dict[str, Any],
+    job_dir: Path,
+) -> Optional[Dict[str, Any]]:
+    """Synthesize frame analysis with transcript using secondary LLM"""
+    try:
+        import requests
+        
+        # Build synthesis prompt
+        synthesis_prompt = f"""Combine the visual analysis with transcript context to create an enhanced description.
+
+VISION ANALYSIS:
+{frame_result.get('analysis', '')}
+
+TRANSCRIPT CONTEXT:
+{frame_result.get('transcript_context', '')}
+
+TIMESTAMP: {frame_result.get('corrected_ts', frame_result.get('timestamp', 0)):.2f} seconds (original: {frame_result.get('original_ts', frame_result.get('timestamp', 0)):.2f}s)
+
+Create a comprehensive analysis that integrates what's visually present with what's being said at this moment in the video. Focus on:
+1. How the transcript context relates to or explains what's shown visually
+2. Connections between audio content and visual elements
+3. Any contradictions or confirmations between what's said and what's shown
+4. Additional understanding the transcript provides about the visual scene
+5. How this moment fits into the broader narrative
+
+ENHANCED ANALYSIS:"""
+        
+        if phase2_provider_type == "ollama":
+            ollama_url = phase2_provider_config.get("url", "http://192.168.1.237:11434")  # Use the instance with text models
+            resp = requests.post(
+                f"{ollama_url.rstrip('/')}/api/chat",
+                json={
+                    "model": phase2_model,
+                    "messages": [{"role": "user", "content": synthesis_prompt}],
+                    "stream": False,
+                    "think": False,
+                    "options": {
+                        "temperature": phase2_temperature,
+                        "num_predict": 4096,
+                    },
+                },
+                timeout=300,
+            )
+            resp.raise_for_status()
+            result = resp.json().get("message", {}).get("content", "")
+            tokens = resp.json().get("usage", {})
+            
+        else:  # openrouter
+            api_key = phase2_provider_config.get("api_key", "")
+            resp = requests.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": phase2_model,
+                    "messages": [{"role": "user", "content": synthesis_prompt}],
+                    "temperature": phase2_temperature,
+                    "max_tokens": 4096,
+                },
+                timeout=300,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            result = data["choices"][0]["message"]["content"]
+            tokens = data.get("usage", {})
+        
+        # Create synthesis result
+        synthesis_result = {
+            "frame_number": frame_result["frame_number"],
+            "original_frame": frame_result.get("original_frame", frame_result["frame_number"]),
+            "timestamp": frame_result.get("timestamp", 0),
+            "original_ts": frame_result.get("original_ts", frame_result.get("timestamp", 0)),
+            "corrected_ts": frame_result.get("corrected_ts", frame_result.get("timestamp", 0)),
+            "vision_analysis": frame_result.get("analysis", ""),
+            "transcript_context": frame_result.get("transcript_context", ""),
+            "combined_analysis": result,
+            "tokens": tokens,
+            "phase2_provider_type": phase2_provider_type,
+            "phase2_model": phase2_model,
+            "phase2_temperature": phase2_temperature,
+        }
+        
+        # Write to synthesis.jsonl
+        synthesis_file = job_dir / "synthesis.jsonl"
+        with open(synthesis_file, "a") as f:
+            f.write(json.dumps(synthesis_result) + "\n")
+        
+        logger.info(f"Frame {frame_result['frame_number']} synthesis completed")
+        return synthesis_result
+        
+    except Exception as e:
+        logger.error(f"Frame {frame_result.get('frame_number', 'unknown')} synthesis failed: {e}")
+        return None
+
+
 def run_analysis(job_dir: Path):
     """Run video analysis job"""
     import traceback
@@ -63,6 +166,17 @@ def run_analysis(job_dir: Path):
     params = config.get("params", {})
     job_id = config["job_id"]
     video_frames_dir = config.get("video_frames_dir", "")
+    
+    # Phase 2 (synthesis) configuration
+    two_step_enabled = params.get("two_step_enabled", True)
+    phase2_provider_type = params.get("phase2_provider_type", "ollama")
+    phase2_model = params.get("phase2_model", "qwen3.5:9b-q8-128k")  # Default to an available model
+    phase2_temperature = params.get("phase2_temperature", 0.0)
+    phase2_provider_config = params.get("phase2_provider_config", {})
+    
+    # Ensure Phase 2 Ollama URL defaults to a reachable instance with text models (not localhost in Docker)
+    if phase2_provider_type == "ollama" and not phase2_provider_config.get("url"):
+        phase2_provider_config["url"] = "http://192.168.1.237:11434"  # Use the instance with text models
 
     logger.info(f"video_path={video_path}")
     logger.info(f"provider_type={provider_type}")
@@ -151,10 +265,18 @@ def run_analysis(job_dir: Path):
                 "default": provider_type if provider_type == "ollama" else "openai_api",
                 "temperature": params.get("temperature", 0.0),
             },
+            "analysis_pipeline": {
+                "two_step_enabled": params.get("two_step_enabled", True),
+                "phase2_provider_type": params.get("phase2_provider_type", "ollama"),
+                "phase2_model": params.get("phase2_model", "qwen3.5:9b-q8-128k"),  # Default to an available model
+                "phase2_temperature": params.get("phase2_temperature", 0.0),
+                "max_concurrent_synthesis": params.get("max_concurrent_synthesis", 3),
+            },
             "prompt_dir": "prompts",
             "prompts": [
                 {"name": "Frame Analysis", "path": "frame_analysis/frame_analysis.txt"},
                 {"name": "Video Reconstruction", "path": "frame_analysis/describe.txt"},
+                {"name": "Frame Synthesis", "path": "frame_analysis/synthesis.txt"},
             ],
             "output_dir": str(output_dir),
             "frames": {
@@ -169,7 +291,7 @@ def run_analysis(job_dir: Path):
             "prompt": params.get("user_prompt", ""),
         }
 
-        # Add provider-specific config
+        # Add provider-specific config for Phase 1
         if provider_type == "ollama":
             config_data["clients"]["ollama"] = {
                 "url": provider_config.get("url", "http://localhost:11434"),
@@ -180,6 +302,22 @@ def run_analysis(job_dir: Path):
                 "api_key": provider_config["api_key"],
                 "api_url": "https://openrouter.ai/api/v1",
                 "model": model,
+            }
+        
+        # Add Phase 2 provider config if different from Phase 1
+        phase2_provider_type = params.get("phase2_provider_type", "ollama")
+        phase2_provider_config = params.get("phase2_provider_config", {})
+        
+        if phase2_provider_type == "ollama":
+            config_data["clients"]["phase2_ollama"] = {
+                "url": phase2_provider_config.get("url", "http://localhost:11434"),
+                "model": params.get("phase2_model", "qwen3.5:9b-q8-128k"),  # Default to an available model
+            }
+        else:  # openrouter
+            config_data["clients"]["phase2_openai_api"] = {
+                "api_key": phase2_provider_config.get("api_key", ""),
+                "api_url": "https://openrouter.ai/api/v1",
+                "model": params.get("phase2_model", "meta-llama/llama-3.1-8b-instruct"),
             }
 
         # Write temp config
@@ -818,6 +956,36 @@ def run_analysis(job_dir: Path):
                     "last_frame_analysis": analysis.get("response", ""),
                 },
             )
+            
+            # Phase 2: Synthesis if enabled
+            if two_step_enabled and frame_result.get("analysis"):
+                logger.info(f"Starting synthesis for frame {frame_result['frame_number']}")
+                try:
+                    synthesis_result = synthesize_frame(
+                        frame_result=frame_result,
+                        phase2_provider_type=phase2_provider_type,
+                        phase2_model=phase2_model,
+                        phase2_temperature=phase2_temperature,
+                        phase2_provider_config=phase2_provider_config,
+                        job_dir=job_dir,
+                    )
+                    
+                    if synthesis_result:
+                        # Update synthesis progress
+                        synthesis_progress = (i + 1) / _total_frames * 100
+                        update_status(
+                            job_dir,
+                            {
+                                "synthesis_progress": synthesis_progress,
+                                "last_synthesis_frame": frame_result['frame_number'],
+                            },
+                        )
+                        logger.info(f"Frame {frame_result['frame_number']} synthesis completed successfully")
+                    else:
+                        logger.warning(f"Frame {frame_result['frame_number']} synthesis failed")
+                        
+                except Exception as e:
+                    logger.error(f"Error during frame {frame_result['frame_number']} synthesis: {e}")
 
         # Stage 4: Video reconstruction
         logger.info("=== STAGE 4: Video reconstruction ===")
