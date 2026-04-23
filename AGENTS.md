@@ -1,8 +1,12 @@
 # Video Analyzer Web - Agent Development Guide
 
-> Version 0.3.2 | Last updated: 2026-04-19
+> Version 3.5.0 | Last updated: 2026-04-23
 
 This document provides essential context for AI agents working on this codebase.
+
+**Important Update (v3.5.0)**: Fixed critical transcript handling bug that caused job failures with "'dict' object has no attribute 'text'" error. Added robust transcript access functions.
+
+**Previous Update (v0.3.4)**: Fixed transcription flow inconsistencies. See "Transcription Flow & Gotchas" section below.
 
 ---
 
@@ -83,7 +87,8 @@ video-analyzer-web/
 │   │   ├── security.py             # secure_filename(), allowed_file(), verify_path()
 │   │   ├── video.py                # get_video_duration(), probe_video(), probe_all_videos()
 │   │   ├── file.py                 # Re-exports from security.py (backward compat)
-│   │   └── transcode.py            # Re-exports from video.py (backward compat)
+│   │   ├── transcode.py            # Re-exports from video.py (backward compat)
+│   │   └── transcript.py           # Transcript loading utilities (v0.3.4+)
 │   │
 │   ├── services/
 │   │   └── openwebui_kb.py         # OpenWebUI Knowledge Base API client
@@ -175,6 +180,48 @@ These files are part of the `video-analyzer` Python package or are external util
 4. **GPU access**: `deploy.resources.reservations.devices` with `driver: nvidia`.
 
 ---
+
+## Transcription Flow & Gotchas
+
+### Overview
+The transcription flow has been refactored in v0.3.3 to fix inconsistencies between upload processing and analysis phases:
+
+1. **Upload phase**: Video is transcribed during upload, transcript saved to `uploads/<video_name>/transcript.json`
+2. **Dedup phase**: When creating a deduped video, transcript is copied to `uploads/<video_name_dedup>/transcript.json`
+3. **Analysis phase**: Worker loads transcript using shared utility in `src/utils/transcript.py`
+
+### Key Changes (v0.3.4)
+- **Shared transcript utility**: `src/utils/transcript.py` provides consistent path resolution across all components
+- **Unified path resolution**: Frontend API and workers now use same logic to locate transcripts
+- **Robust transcript injection**: Worker checks for `{TRANSCRIPT_RECENT}`/`{TRANSCRIPT_PRIOR}` tokens in prompts, appends transcript if tokens not found
+- **Better validation**: Transcript segments validated for required fields and end times
+
+### Transcript Path Resolution
+The `get_video_directory_from_path()` function handles naming conventions:
+- Removes `_720p` suffix (transcoded videos)
+- Keeps `_dedup` suffix (deduped videos have their own directory)
+- Tries multiple candidate directories in priority order
+
+### Worker Transcript Injection
+The worker (`worker.py`) injects transcript context into frame analysis prompts:
+1. **Token-based injection**: If prompt contains `{TRANSCRIPT_RECENT}`/`{TRANSCRIPT_PRIOR}` tokens, replaces them with transcript context
+2. **Fallback injection**: If tokens not found, appends transcript context to the prompt
+3. **Timestamp-aware**: Uses `frames_index.json` to map frame numbers to video timestamps for accurate transcript segment selection
+
+### File Locations
+- **Original video**: `uploads/<video_name_720p.mp4>` → transcript at `uploads/<video_name>/transcript.json`
+- **Deduped video**: `uploads/<video_name_dedup_720p.mp4>` → transcript at `uploads/<video_name_dedup>/transcript.json` (copied from original)
+- **Frame metadata**: `frames_index.json` maps renumbered frame numbers to original video timestamps
+
+### Common Issues Fixed
+1. **Path inconsistency**: Frontend and workers previously used different logic to find transcripts
+2. **Missing prompt tokens**: Default prompts might not contain transcript tokens, causing silent failures
+3. **Dedup integration**: Transcript copy race condition during dedup process
+4. **Missing end times**: Transcript segments without end times caused timestamp calculation issues
+
+---
+
+## Gotchas
 
 ## Common Tasks
 

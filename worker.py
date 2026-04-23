@@ -92,6 +92,53 @@ def run_analysis(job_dir: Path):
         from video_analyzer.prompt import PromptLoader
         logger.info("All imports successful")
 
+        # Helper function to safely get transcript text
+        def safe_get_transcript_text(transcript):
+            """Safely extract text from transcript which could be dict, object, or None."""
+            if transcript is None:
+                return None
+            # Try dictionary access first
+            if hasattr(transcript, 'get'):
+                try:
+                    return transcript.get('text')
+                except (AttributeError, KeyError):
+                    pass
+            # Try attribute access
+            if hasattr(transcript, 'text'):
+                try:
+                    return transcript.text
+                except AttributeError:
+                    pass
+            # Try item access (for dict-like objects without .get)
+            try:
+                return transcript['text']
+            except (KeyError, TypeError):
+                pass
+            return None
+        
+        def safe_get_transcript_segments(transcript):
+            """Safely extract segments from transcript which could be dict, object, or None."""
+            if transcript is None:
+                return None
+            # Try dictionary access first
+            if hasattr(transcript, 'get'):
+                try:
+                    return transcript.get('segments')
+                except (AttributeError, KeyError):
+                    pass
+            # Try attribute access
+            if hasattr(transcript, 'segments'):
+                try:
+                    return transcript.segments
+                except AttributeError:
+                    pass
+            # Try item access (for dict-like objects without .get)
+            try:
+                return transcript['segments']
+            except (KeyError, TypeError):
+                pass
+            return None
+
         # Setup paths
         output_dir = job_dir / "output"
         output_dir.mkdir(exist_ok=True)
@@ -212,7 +259,7 @@ def run_analysis(job_dir: Path):
                 segments = []
                 full_text = []
                 for seg in segments_iter:
-                    segments.append({"text": seg.text, "start": seg.start})
+                    segments.append({"text": seg.text, "start": seg.start, "end": seg.end})
                     full_text.append(seg.text)
 
                 transcript = {
@@ -233,6 +280,45 @@ def run_analysis(job_dir: Path):
                     logger.info(f"Cleaned up {audio_path}")
             except Exception:
                 pass
+
+        # If no audio was extracted (e.g. dedup'd video has no audio stream),
+        # try loading pre-existing transcript.json from the video metadata directory
+        if transcript is None:
+            # Use shared transcript loading utility for consistent path resolution
+            try:
+                from src.utils import load_transcript
+                transcript = load_transcript(video_path, video_frames_dir)
+                
+                if transcript:
+                    segments = safe_get_transcript_segments(transcript) or []
+                    seg_count = len(segments)
+                    logger.info(f"Loaded pre-existing transcript with {seg_count} segments")
+                else:
+                    logger.info("No pre-existing transcript found, proceeding without audio context")
+            except ImportError as e:
+                logger.warning(f"Failed to import transcript utilities: {e}")
+                # Fallback to original logic for backward compatibility
+                transcript_candidates = []
+                video_stem = Path(video_path).stem
+                base_stem = video_stem.replace("_dedup", "")
+                transcript_candidates.append(Path(video_path).parent / video_stem / "transcript.json")
+                transcript_candidates.append(Path(video_path).parent / base_stem / "transcript.json")
+                if video_frames_dir:
+                    transcript_candidates.append(Path(video_frames_dir).parent / "transcript.json")
+
+                for transcript_file in transcript_candidates:
+                    if transcript_file.exists():
+                        try:
+                            transcript = json.loads(transcript_file.read_text())
+                            segments = safe_get_transcript_segments(transcript) or []
+                            seg_count = len(segments)
+                            logger.info(f"Loaded pre-existing transcript from {transcript_file} ({seg_count} segments)")
+                            break
+                        except Exception as e2:
+                            logger.warning(f"Failed to load {transcript_file}: {e2}")
+
+                if transcript is None:
+                    logger.info("No pre-existing transcript found, proceeding without audio context")
 
         # Stage 2: Frame extraction
         logger.info("=== STAGE 2: Frame preparation ===")
@@ -435,6 +521,21 @@ def run_analysis(job_dir: Path):
             config_data["clients"]["temperature"],
             config_data["prompt"],
         )
+        
+        # Log prompt information for debugging
+        logger.info(f"Analyzer frame_prompt type: {type(analyzer.frame_prompt)}")
+        if analyzer.frame_prompt:
+            # Check for transcript tokens
+            has_recent = "{TRANSCRIPT_RECENT}" in analyzer.frame_prompt
+            has_prior = "{TRANSCRIPT_PRIOR}" in analyzer.frame_prompt
+            logger.info(f"Frame prompt transcript tokens: TRANSCRIPT_RECENT={has_recent}, TRANSCRIPT_PRIOR={has_prior}")
+            if has_recent or has_prior:
+                logger.info("Transcript tokens found in frame prompt template")
+            else:
+                logger.warning("Transcript tokens NOT found in frame prompt template - will append transcript if available")
+                # Log first 200 chars of prompt for debugging
+                preview = analyzer.frame_prompt[:200] + "..." if len(analyzer.frame_prompt) > 200 else analyzer.frame_prompt
+                logger.info(f"Frame prompt preview: {preview}")
 
         frame_analyses = []
         analyzer._total_frames = total_frames
@@ -451,20 +552,23 @@ def run_analysis(job_dir: Path):
 
         # Load transcript segments with end timestamps
         transcript_segments = []
-        if transcript and transcript.get("segments"):
-            transcript_segments = transcript["segments"]
+        if transcript:
+            try:
+                from src.utils import get_transcript_segments_with_end_times
+                transcript_segments = get_transcript_segments_with_end_times(transcript)
+                logger.info(f"Loaded {len(transcript_segments)} transcript segments with validated timestamps")
+            except ImportError as e:
+                logger.warning(f"Failed to import transcript utilities: {e}")
+                # Fallback to original logic
+                transcript_segments = safe_get_transcript_segments(transcript)
+                if transcript_segments:
+                    logger.info(f"Loaded {len(transcript_segments)} transcript segments (no timestamp validation)")
 
         # Initialize tracking variables
         _prev_frame_ts = None
         _total_frames = len(frames)
 
-        # Load new prompt template with transcript support
-        new_prompt_path = Path("/home/anthony/venvs/video-analyzer/lib/python3.13/site-packages/video_analyzer/prompts/frame_analysis/frame_with_transcript.txt")
-        if new_prompt_path.exists():
-            analyzer.frame_prompt = new_prompt_path.read_text()
-            logger.info("Loaded new prompt template with transcript support")
-
-        # Monkey-patch to handle previous frames only (transcript injected before call)
+        # Monkey-patch analyze_frame to handle transcript injection per-frame
         MAX_PREVIOUS_FRAMES = 3
         _original_analyze_frame = analyzer.analyze_frame
 
@@ -497,44 +601,117 @@ def run_analysis(job_dir: Path):
             # === TRANSCRIPT CONTEXT INJECTION ===
             recent_transcript = ""
             prior_transcript = ""
+            transcript_note = ""
 
             if len(transcript_segments) > 0:
-                if i == 0:
-                    # First frame
-                    if disk_frame_num == 1:
-                        # First frame of original video - only first segment
-                        recent_transcript = transcript_segments[0]["text"]
-                    else:
-                        # First frame is deduplicated; include ALL segments up to this frame as PRIOR
-                        # because there are no frames for them
-                        for seg in transcript_segments:
-                            if seg["start"] <= orig_ts:
-                                prior_transcript += seg["text"] + " "
-                        prior_transcript = prior_transcript.strip()
-                elif i == _total_frames - 1:
-                    # Last frame - include all remaining segments
-                    for seg in transcript_segments:
-                        if _prev_frame_ts is None or seg["start"] > _prev_frame_ts:
-                            recent_transcript += seg["text"] + " "
-                    recent_transcript = recent_transcript.strip()
-                else:
-                    # Middle frames - include segments between prev and current frame
-                    for seg in transcript_segments:
-                        if _prev_frame_ts < seg["start"] <= orig_ts:
-                            recent_transcript += seg["text"] + " "
-                    recent_transcript = recent_transcript.strip()
+                current_ts = orig_ts
+                
+                # Find transcript time bounds
+                first_seg_start = transcript_segments[0]["start"]
+                last_seg = transcript_segments[-1]
+                last_seg_end = last_seg.get("end", last_seg["start"] + 5)
+                
+                # Check if frame is within or near transcript time range
+                # Allow 15-second buffer before/after transcript
+                time_buffer = 15.0
+                is_near_transcript = (
+                    (first_seg_start - time_buffer) <= current_ts <= (last_seg_end + time_buffer)
+                )
+                
+                if is_near_transcript:
+                    # Find the segment that contains or is closest to this frame's timestamp
+                    current_seg_idx = -1
+                    for idx, seg in enumerate(transcript_segments):
+                        seg_end = seg.get("end", seg["start"] + 5)
+                        if seg["start"] <= current_ts <= seg_end:
+                            current_seg_idx = idx
+                            break
+                        elif seg["start"] < current_ts:
+                            current_seg_idx = idx
 
-            # Inject transcript context into prompt
-            if recent_transcript or prior_transcript:
-                prior_text = prior_transcript if prior_transcript else "(none - all segments have corresponding frames)"
-                context_section = f"\nRECENT TRANSCRIPT: {recent_transcript}\n\nPRIOR TRANSCRIPT: {prior_text}\n"
-                analyzer.frame_prompt = analyzer.frame_prompt.replace("{TRANSCRIPT_CONTEXT}", context_section)
+                    if current_seg_idx >= 0:
+                        # Check how close this segment is to the frame
+                        seg_start = transcript_segments[current_seg_idx]["start"]
+                        seg_end = transcript_segments[current_seg_idx].get("end", seg_start + 5)
+                        
+                        if seg_start <= current_ts <= seg_end:
+                            # Frame is within this segment
+                            recent_transcript = transcript_segments[current_seg_idx]["text"]
+                            
+                            # Include up to 2 prior segments as PRIOR for context
+                            prior_start = max(0, current_seg_idx - 2)
+                            if current_seg_idx > prior_start:
+                                prior_segs = transcript_segments[prior_start:current_seg_idx]
+                                prior_transcript = " ".join(s["text"] for s in prior_segs)
+                        elif current_ts < first_seg_start:
+                            # Frame is before transcript starts
+                            transcript_note = "[Transcript begins later in video]"
+                        elif current_ts > last_seg_end:
+                            # Frame is after transcript ends  
+                            if current_ts - last_seg_end < 30:  # Within 30 seconds of transcript end
+                                # Use last segment as recent context
+                                recent_transcript = last_seg["text"]
+                                transcript_note = f"[Transcript ended {current_ts - last_seg_end:.0f}s ago]"
+                            else:
+                                # Too far after transcript
+                                transcript_note = f"[Transcript ended {current_ts - last_seg_end:.0f}s ago, may not be relevant]"
+                else:
+                    # Frame is far from transcript time range
+                    time_from_start = current_ts - first_seg_start
+                    time_from_end = current_ts - last_seg_end
+                    
+                    if current_ts < first_seg_start:
+                        transcript_note = f"[Transcript begins {abs(time_from_start):.0f}s later in video]"
+                    else:  # current_ts > last_seg_end
+                        transcript_note = f"[Transcript ended {time_from_end:.0f}s ago, may not be relevant]"
+
+            # Inject transcript context into prompt using separate tokens
+            # First check if tokens exist in the prompt template
+            has_recent_token = "{TRANSCRIPT_RECENT}" in analyzer.frame_prompt
+            has_prior_token = "{TRANSCRIPT_PRIOR}" in analyzer.frame_prompt
+            
+            if has_recent_token or has_prior_token:
+                # Replace tokens if they exist
+                if has_recent_token:
+                    analyzer.frame_prompt = analyzer.frame_prompt.replace("{TRANSCRIPT_RECENT}", recent_transcript)
+                if has_prior_token:
+                    analyzer.frame_prompt = analyzer.frame_prompt.replace("{TRANSCRIPT_PRIOR}", prior_transcript)
+                
+                if recent_transcript or transcript_note:
+                    if recent_transcript:
+                        logger.info(f"Frame {i+1}: transcript injected via tokens (recent={len(recent_transcript)} chars, prior={len(prior_transcript)} chars)")
+                    if transcript_note:
+                        logger.info(f"Frame {i+1}: {transcript_note}")
+                    # Debug: check if tokens actually got replaced
+                    if has_recent_token and "{TRANSCRIPT_RECENT}" in analyzer.frame_prompt:
+                        logger.warning(f"TRANSCRIPT_RECENT token not replaced in frame_prompt!")
+                    if has_prior_token and "{TRANSCRIPT_PRIOR}" in analyzer.frame_prompt:
+                        logger.warning(f"TRANSCRIPT_PRIOR token not replaced in frame_prompt!")
+                else:
+                    logger.info(f"Frame {i+1}: transcript tokens present but no transcript context available")
             else:
-                # No transcript available
-                analyzer.frame_prompt = analyzer.frame_prompt.replace("{TRANSCRIPT_CONTEXT}", "\nRECENT TRANSCRIPT: \n\nPRIOR TRANSCRIPT: none\n")
+                # Tokens not found in prompt - append transcript context to prompt
+                # This is a fallback for prompts that don't have the tokens
+                transcript_context = ""
+                if recent_transcript:
+                    transcript_context = f"\n\nTranscript context for this timeframe: {recent_transcript}"
+                    if prior_transcript:
+                        transcript_context += f"\nPrevious context: {prior_transcript}"
+                    if transcript_note:
+                        transcript_context += f"\n{transcript_note}"
+                    analyzer.frame_prompt += transcript_context
+                    logger.info(f"Frame {i+1}: transcript appended to prompt (tokens not found in template)")
+                elif transcript_note:
+                    # Even if no transcript text, add note about transcript timing
+                    transcript_context = f"\n\n{transcript_note}"
+                    analyzer.frame_prompt += transcript_context
+                    logger.info(f"Frame {i+1}: {transcript_note}")
+            
+            if not recent_transcript and (has_recent_token or has_prior_token):
+                logger.info(f"Frame {i+1}: no transcript context available (tokens present in prompt: recent={has_recent_token}, prior={has_prior_token})")
 
             # Update tracking
-            _prev_frame_ts = orig_ts
+            _prev_frame_ts = corrected_ts
 
             # === FRAME ANALYSIS ===
             logger.info(f"Analyzing frame {i+1}/{_total_frames}: {frame.path}")
@@ -560,6 +737,7 @@ def run_analysis(job_dir: Path):
                 "original_frame": orig_frame,
                 "timestamp": frame.timestamp,
                 "original_ts": orig_ts,
+                "corrected_ts": corrected_ts,
                 "analysis": analysis.get("response", ""),
                 "transcript_context": context_section if 'context_section' in locals() else "",
                 "tokens": analysis.get("usage", {}),
@@ -584,8 +762,49 @@ def run_analysis(job_dir: Path):
         logger.info("=== STAGE 4: Video reconstruction ===")
         update_status(job_dir, {"stage": "reconstructing", "progress": 85})
 
+        # Convert transcript dict to AudioTranscript object if needed
+        transcript_for_reconstruct = transcript
+        if isinstance(transcript, dict):
+            try:
+                from video_analyzer.audio_processor import AudioTranscript
+                # Handle old transcripts without "text" field
+                segments = safe_get_transcript_segments(transcript) or []
+                text = safe_get_transcript_text(transcript) or ""
+                if not text and segments:
+                    # Concatenate segment texts - segments could be dicts or objects
+                    text_parts = []
+                    for seg in segments:
+                        if hasattr(seg, 'get'):
+                            text_parts.append(seg.get("text", ""))
+                        elif hasattr(seg, 'text'):
+                            text_parts.append(seg.text)
+                        elif isinstance(seg, dict):
+                            text_parts.append(seg.get("text", ""))
+                        else:
+                            text_parts.append(str(seg))
+                    text = " ".join(text_parts).strip()
+                    
+                # Get language safely
+                language = "en"  # default
+                if hasattr(transcript, 'get'):
+                    language = transcript.get("language", "en")
+                elif hasattr(transcript, 'language'):
+                    language = transcript.language
+                elif isinstance(transcript, dict):
+                    language = transcript.get("language", "en")
+                    
+                transcript_for_reconstruct = AudioTranscript(
+                    text=text,
+                    segments=segments,
+                    language=language
+                )
+                logger.info(f"Converted transcript dict to AudioTranscript object with {len(segments)} segments")
+            except Exception as e:
+                logger.warning(f"Failed to convert transcript to AudioTranscript: {e}")
+                transcript_for_reconstruct = None
+
         video_description = analyzer.reconstruct_video(
-            frame_analyses, frames, transcript
+            frame_analyses, frames, transcript_for_reconstruct
         )
         logger.info(f"Video description generated: type={type(video_description)}")
 
@@ -601,8 +820,8 @@ def run_analysis(job_dir: Path):
                 "user_prompt": user_prompt,
             },
             "transcript": {
-                "text": transcript.text if transcript else None,
-                "segments": transcript.segments if transcript else None,
+                "text": safe_get_transcript_text(transcript),
+                "segments": safe_get_transcript_segments(transcript),
             }
             if transcript
             else None,
@@ -628,7 +847,7 @@ def run_analysis(job_dir: Path):
                 "stage": "complete",
                 "progress": 100,
                 "results_file": str(results_file),
-                "transcript": transcript.text if transcript else None,
+                "transcript": safe_get_transcript_text(transcript),
                 "video_description": video_description.get("response", "")
                 if isinstance(video_description, dict)
                 else str(video_description),
@@ -645,8 +864,10 @@ def run_analysis(job_dir: Path):
 
                 # Format content for LLM
                 content_parts = []
-                if transcript and transcript.text:
-                    content_parts.append(f"TRANSCRIPT:\n{transcript.text}")
+                if transcript:
+                    transcript_text = safe_get_transcript_text(transcript)
+                    if transcript_text:
+                        content_parts.append(f"TRANSCRIPT:\n{transcript_text}")
                 if video_description:
                     desc_text = (
                         video_description.get("response", "")
@@ -706,28 +927,6 @@ def run_analysis(job_dir: Path):
 
     except ValueError as e:
         logger.error(f"Job {job_id} failed - validation error: {e}")
-        logger.error(traceback.format_exc())
-        update_status(job_dir, {"status": "failed", "error": str(e), "stage": "error"})
-        sys.exit(1)
-    except RuntimeError as e:
-        logger.error(f"Job {job_id} failed - runtime error: {e}")
-        logger.error(traceback.format_exc())
-        update_status(job_dir, {"status": "failed", "error": str(e), "stage": "error"})
-        sys.exit(1)
-    except IOError as e:
-        logger.error(f"Job {job_id} failed - I/O error: {e}")
-        logger.error(traceback.format_exc())
-        update_status(job_dir, {"status": "failed", "error": str(e), "stage": "error"})
-        sys.exit(1)
-    except KeyboardInterrupt:
-        logger.info(f"Job {job_id} interrupted by user")
-        update_status(
-            job_dir,
-            {"status": "cancelled", "error": "User cancelled", "stage": "error"},
-        )
-        sys.exit(130)
-    except Exception as e:
-        logger.exception(f"Job {job_id} failed - unexpected error: {e}")
         logger.error(traceback.format_exc())
         update_status(job_dir, {"status": "failed", "error": str(e), "stage": "error"})
         sys.exit(1)

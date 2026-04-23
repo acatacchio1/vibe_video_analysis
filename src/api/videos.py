@@ -2,6 +2,7 @@
 Video API routes
 """
 import json
+import logging
 from pathlib import Path
 from datetime import datetime
 from flask import Blueprint, jsonify, request, send_file
@@ -11,6 +12,34 @@ from src.utils.transcode import probe_all_videos
 from thumbnail import get_thumbnail_path, ensure_thumbnail
 
 videos_bp = Blueprint("videos", __name__)
+
+
+def get_video_directory(filename):
+    """
+    Get the video directory path for a given filename, handling both old and new naming conventions.
+    Old: video_name_720p.mp4 -> video_name_720p directory
+    New: video_name_720p.mp4 -> video_name directory (removes _720p suffix)
+    
+    Also handles video files that haven't been processed yet (no directory exists).
+    """
+    safe_name = secure_filename_util(filename)
+    stem = Path(safe_name).stem
+    base = Path(__file__).parent.parent.parent / "uploads"
+    
+    # Try new naming convention first (removes _720p suffix if present)
+    new_stem = stem.rsplit('_720p', 1)[0] if '_720p' in stem else stem
+    video_dir = base / new_stem
+    
+    # If directory doesn't exist with new convention, try old convention
+    if not video_dir.exists():
+        video_dir = base / stem
+    
+    # If still doesn't exist, the video might not have been processed yet
+    # Return the expected directory path based on new convention
+    if not video_dir.exists():
+        video_dir = base / new_stem
+    
+    return video_dir
 
 
 @videos_bp.route("/")
@@ -62,8 +91,8 @@ def list_videos():
 
 @videos_bp.route("/api/videos/upload", methods=["POST"])
 def upload_video():
-    """Upload a video file"""
-    from app import socketio, _transcode_and_delete_with_cleanup, api_error
+    """Upload a video file (parallel frame extraction + transcription, no transcode)"""
+    from app import socketio, _process_video_direct, api_error
     if "video" not in request.files:
         return api_error("No video file", 400)
     file = request.files["video"]
@@ -85,12 +114,13 @@ def upload_video():
         filepath = Path(__file__).parent.parent.parent / "uploads" / f"{original_stem}_{counter}{filepath.suffix}"
         counter += 1
     file.save(filepath)
-    fps = float(request.form.get("fps", 1))
-    fps = max(0.0167, min(fps, 30))
+    
     whisper_model = request.form.get("whisper_model", "base")
     language = request.form.get("language", "en")
+    
+    # Start parallel processing (extract frames + transcribe audio)
     socketio.start_background_task(
-        _transcode_and_delete_with_cleanup, str(filepath), fps, whisper_model, language
+        _process_video_direct, str(filepath), whisper_model, language
     )
     return jsonify({"success": True, "filename": filepath.name, "path": str(filepath)})
 
@@ -107,7 +137,21 @@ def delete_video(filename):
         return api_error("Video not found", 404)
     _fix_permissions(base / "uploads")
     filepath.unlink()
-    thumb = base / "uploads" / "thumbs" / f"{Path(safe_name).stem}.jpg"
+    # Try to delete thumbnail with both naming conventions
+    stem = Path(safe_name).stem
+    new_stem = stem.rsplit('_720p', 1)[0] if '_720p' in stem else stem
+    thumbs_dir = base / "uploads" / "thumbs"
+    
+    # Try new convention first
+    thumb = thumbs_dir / f"{new_stem}.jpg"
+    if thumb.exists():
+        try:
+            thumb.unlink()
+        except PermissionError:
+            pass
+    
+    # Try old convention
+    thumb = thumbs_dir / f"{stem}.jpg"
     if thumb.exists():
         try:
             thumb.unlink()
@@ -124,7 +168,17 @@ def get_thumbnail(filename):
     """Get video thumbnail"""
     from app import api_error
     safe_name = secure_filename_util(filename)
-    thumb_path = Path(__file__).parent.parent.parent / "uploads" / "thumbs" / f"{Path(safe_name).stem}.jpg"
+    stem = Path(safe_name).stem
+    base = Path(__file__).parent.parent.parent / "uploads" / "thumbs"
+    
+    # Try new naming convention first (removes _720p suffix if present)
+    new_stem = stem.rsplit('_720p', 1)[0] if '_720p' in stem else stem
+    thumb_path = base / f"{new_stem}.jpg"
+    
+    # If not found with new convention, try old convention
+    if not thumb_path.exists():
+        thumb_path = base / f"{stem}.jpg"
+    
     if thumb_path.exists():
         return send_file(thumb_path, mimetype="image/jpeg")
     return api_error("Thumbnail not found", 404)
@@ -132,9 +186,39 @@ def get_thumbnail(filename):
 
 @videos_bp.route("/api/videos/<filename>/frames")
 def get_video_frames_meta(filename):
-    safe_name = secure_filename_util(filename)
-    stem = Path(safe_name).stem
-    meta_path = Path(__file__).parent.parent.parent / "uploads" / stem / "frames_meta.json"
+    """Get frame metadata for a video"""
+    video_dir = get_video_directory(filename)
+    meta_path = video_dir / "frames_meta.json"
+    
+    # Also check for frames_index.json (new system may use this)
+    if not meta_path.exists():
+        index_path = video_dir / "frames_index.json"
+        if index_path.exists():
+            try:
+                with open(index_path, 'r') as f:
+                    frames_index = json.load(f)
+                frame_count = len(frames_index)
+                # Try to get FPS from frames if available
+                fps = 1.0
+                if frame_count > 0:
+                    # Try to get duration from video file if it still exists
+                    video_path = Path(__file__).parent.parent.parent / "uploads" / secure_filename_util(filename)
+                    if video_path.exists():
+                        try:
+                            import subprocess
+                            probe = subprocess.run(
+                                ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", str(video_path)],
+                                capture_output=True, text=True, timeout=10
+                            )
+                            if probe.returncode == 0:
+                                duration = float(probe.stdout.strip())
+                                fps = frame_count / duration if duration > 0 else 1.0
+                        except Exception:
+                            pass
+                return jsonify({"frame_count": frame_count, "fps": fps, "duration": 0})
+            except Exception:
+                pass
+    
     if not meta_path.exists():
         return jsonify({"frame_count": 0, "fps": 0, "duration": 0})
     try:
@@ -146,9 +230,8 @@ def get_video_frames_meta(filename):
 @videos_bp.route("/api/videos/<filename>/frames/<int:frame_num>")
 def get_video_frame(filename, frame_num):
     from app import api_error
-    safe_name = secure_filename_util(filename)
-    stem = Path(safe_name).stem
-    frame_path = Path(__file__).parent.parent.parent / "uploads" / stem / "frames" / f"frame_{frame_num:06d}.jpg"
+    video_dir = get_video_directory(filename)
+    frame_path = video_dir / "frames" / f"frame_{frame_num:06d}.jpg"
     if not frame_path.exists():
         return api_error("Frame not found", 404)
     return send_file(frame_path, mimetype="image/jpeg")
@@ -157,11 +240,10 @@ def get_video_frame(filename, frame_num):
 @videos_bp.route("/api/videos/<filename>/frames/<int:frame_num>/thumb")
 def get_video_frame_thumb(filename, frame_num):
     from app import api_error
-    safe_name = secure_filename_util(filename)
-    stem = Path(safe_name).stem
-    thumb_path = Path(__file__).parent.parent.parent / "uploads" / stem / "frames" / "thumbs" / f"thumb_{frame_num:06d}.jpg"
+    video_dir = get_video_directory(filename)
+    thumb_path = video_dir / "frames" / "thumbs" / f"thumb_{frame_num:06d}.jpg"
     if not thumb_path.exists():
-        frame_path = Path(__file__).parent.parent.parent / "uploads" / stem / "frames" / f"frame_{frame_num:06d}.jpg"
+        frame_path = video_dir / "frames" / f"frame_{frame_num:06d}.jpg"
         if frame_path.exists():
             return send_file(frame_path, mimetype="image/jpeg")
         return api_error("Frame not found", 404)
@@ -175,10 +257,14 @@ def run_video_dedup(filename):
     import subprocess
     import json
     import shutil
+    
+    logger = logging.getLogger(__name__)
+    
     safe_name = secure_filename_util(filename)
     stem = Path(safe_name).stem
     base = Path(__file__).parent.parent.parent
-    video_dir = base / "uploads" / stem
+    
+    video_dir = get_video_directory(filename)
     frames_dir = video_dir / "frames"
     thumbs_dir = frames_dir / "thumbs"
 
@@ -235,13 +321,94 @@ def run_video_dedup(filename):
         for tp in sorted(backup_thumbs.glob("thumb_*.jpg")):
             tp.rename(thumbs_dir / tp.name)
 
-    dedup_results = _run_dedup(frames_dir, thumbs_dir, threshold, fps)
-    frames_index, frame_count = _renumber_frames(frames_dir, thumbs_dir, fps)
+    # Check if we have pre-computed dedup results for this threshold
+    detailed_results_file = video_dir / "dedup_detailed_results.json"
+    if detailed_results_file.exists():
+        try:
+            detailed_results = json.loads(detailed_results_file.read_text())
+            keep_indices_by_threshold = detailed_results.get("keep_indices_by_threshold", {})
+            frame_paths = detailed_results.get("frame_paths", [])
+            
+            # Try both string and integer keys since JSON keys are strings
+            threshold_key_str = str(threshold)
+            threshold_key_int = threshold
+            
+            keep_indices = None
+            if threshold_key_str in keep_indices_by_threshold:
+                keep_indices = keep_indices_by_threshold[threshold_key_str]
+            elif threshold_key_int in keep_indices_by_threshold:
+                keep_indices = keep_indices_by_threshold[threshold_key_int]
+            
+            if keep_indices is not None:
+                logger.info(f"Using pre-computed dedup results for threshold {threshold}")
+                # We have pre-computed results, apply them directly
+                keep_indices = keep_indices_by_threshold[str(threshold)]
+                
+                # Get list of all frame files
+                all_frames = sorted(frames_dir.glob("frame_*.jpg"))
+                
+                # Delete frames not in keep_indices
+                frames_to_keep = [all_frames[i] for i in keep_indices]
+                frames_to_delete = [f for i, f in enumerate(all_frames) if i not in keep_indices]
+                
+                # Delete the frames
+                for frame_file in frames_to_delete:
+                    frame_file.unlink(missing_ok=True)
+                    # Also delete corresponding thumbnail if it exists
+                    # Frame is named like "frame_000123.jpg", thumbnail is "thumb_000123.jpg"
+                    thumb_name = frame_file.name.replace("frame_", "thumb_")
+                    thumb_file = thumbs_dir / thumb_name
+                    thumb_file.unlink(missing_ok=True)
+                
+                # Update dedup_results with information
+                original_count = len(all_frames)
+                deduped_count = len(frames_to_keep)
+                dropped = original_count - deduped_count
+                pct = round((dropped / original_count) * 100, 1) if original_count > 0 else 0
+                
+                dedup_results = {
+                    "original_count": original_count,
+                    "deduped_count": deduped_count,
+                    "dropped": dropped,
+                    "dropped_pct": pct,
+                    "threshold": threshold,
+                    "using_precomputed": True
+                }
+                
+                # Now renumber the remaining frames
+                frames_index, frame_count = _renumber_frames(frames_dir, thumbs_dir, fps)
+                
+            else:
+                # No pre-computed results for this threshold, compute normally
+                logger.info(f"No pre-computed results for threshold {threshold}, computing normally")
+                dedup_results = _run_dedup(frames_dir, thumbs_dir, threshold, fps)
+                frames_index, frame_count, actual_fps = _renumber_frames(frames_dir, thumbs_dir, fps)
+                
+        except Exception as e:
+            logger.error(f"Error using pre-computed dedup results: {e}, falling back to normal dedup")
+            dedup_results = _run_dedup(frames_dir, thumbs_dir, threshold, fps)
+            frames_index, frame_count, actual_fps = _renumber_frames(frames_dir, thumbs_dir, fps)
+    else:
+        # No pre-computed results at all, compute normally
+        dedup_results = _run_dedup(frames_dir, thumbs_dir, threshold, fps)
+        frames_index, frame_count, actual_fps = _renumber_frames(frames_dir, thumbs_dir, fps)
 
     index_path = video_dir / "frames_index.json"
     index_path.write_text(json.dumps(frames_index))
 
-    meta = {"frame_count": frame_count, "fps": fps, "duration": duration}
+    # Use same rounding logic as _transcode_and_delete_with_cleanup
+    # Use actual_fps (detected) instead of original fps (might be wrong)
+    if actual_fps < 5:
+        fps_rounded = round(actual_fps, 1)
+    else:
+        fps_rounded = round(actual_fps)
+    
+    # Calculate actual duration from frames_index (last timestamp)
+    actual_duration = 0
+    if frames_index:
+        actual_duration = max(frames_index.values())
+    
+    meta = {"frame_count": frame_count, "fps": fps_rounded, "duration": actual_duration}
     meta_path.write_text(json.dumps(meta))
 
     dedup_path = video_dir / "dedup_results.json"
@@ -312,81 +479,106 @@ def run_video_dedup(filename):
 
 @videos_bp.route("/api/videos/<filename>/dedup-multi", methods=["POST"])
 def run_video_dedup_multi(filename):
-    """Run dedup at multiple thresholds simultaneously without renumbering frames.
-    Uses the currently selected video from the form (filename is the video name).
-    Returns frame counts for each threshold so the user can pick.
-    """
+    """Run deduplication using standalone dedup_worker.py subprocess."""
+    import json
+    import subprocess
+    import tempfile
+    from pathlib import Path
+    
     from app import api_error
-    from PIL import Image
-    import imagehash
-
+    from src.utils.security import secure_filename as secure_filename_util
+    
+    logger = logging.getLogger(__name__)
+    
     safe_name = secure_filename_util(filename)
     stem = Path(safe_name).stem
     base = Path(__file__).parent.parent.parent
-    video_dir = base / "uploads" / stem
+    
+    new_stem = stem.rsplit('_720p', 1)[0] if '_720p' in stem else stem
+    video_dir = base / "uploads" / new_stem
     frames_dir = video_dir / "frames"
-
-    if not frames_dir.exists() or not any(frames_dir.glob("frame_*.jpg")):
-        return api_error(f"No frames found for {filename}. Upload and transcode first.", 400)
-
+    
+    if not frames_dir.exists():
+        video_dir = base / "uploads" / stem
+        frames_dir = video_dir / "frames"
+    
     data = request.get_json(silent=True) or {}
     thresholds = data.get("thresholds", [5, 10, 15, 20, 30])
     thresholds = sorted(set(max(0, min(t, 64)) for t in thresholds))
+    
+    # Count frames if directory exists
+    original_count = 0
+    if frames_dir.exists():
+        original_count = len(list(frames_dir.glob("frame_*.jpg")))
+    
+    if original_count == 0:
+        return api_error(f"No frames found for {filename}. Upload and transcode first.", 400)
+    
+    logger.info(f"Running dedup for {filename} with {original_count} frames, thresholds: {thresholds}")
+    
+    try:
+        # Run dedup_worker.py as a subprocess with the frames directory and thresholds
+        cmd = ["python3", "dedup_worker.py", str(frames_dir)] + [str(t) for t in thresholds]
+        
+        logger.info(f"Running dedup command: {' '.join(cmd)}")
+        
+        # Run with timeout (60 seconds per 1000 frames)
+        timeout = max(60, original_count * 0.06)
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            cwd=str(base)  # Run from project root so dedup_worker.py can be found
+        )
+        
+        if result.returncode != 0:
+            error_msg = result.stderr.strip() or "Dedup failed with unknown error"
+            logger.error(f"Dedup failed: {error_msg}")
+            return api_error(f"Dedup failed: {error_msg}", 500)
+        
+        # Parse JSON output from dedup_worker.py
+        dedup_results = json.loads(result.stdout)
+        
+        # Add FPS and duration estimation if available
+        meta_path = video_dir / "frames_meta.json"
+        if meta_path.exists():
+            try:
+                meta = json.loads(meta_path.read_text())
+                dedup_results["fps"] = meta.get("fps", 30.0)
+                dedup_results["duration"] = meta.get("duration", original_count / 30.0)
+            except Exception:
+                dedup_results["fps"] = 30.0
+                dedup_results["duration"] = original_count / 30.0
+        
+        # Save detailed results for later use by apply button
+        results_file = video_dir / "dedup_detailed_results.json"
+        results_file.write_text(json.dumps(dedup_results, indent=2))
+        logger.info(f"Saved detailed dedup results to {results_file}")
+        
+        logger.info(f"Dedup completed successfully for {filename}")
+        return jsonify(dedup_results)
+        
+    except subprocess.TimeoutExpired:
+        logger.error(f"Dedup timed out after {timeout} seconds for {filename}")
+        return api_error(f"Dedup timed out after {timeout} seconds", 504)
+        
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse dedup results: {e}")
+        return api_error("Failed to parse dedup results", 500)
+        
+    except Exception as e:
+        logger.error(f"Dedup failed: {e}", exc_info=True)
+        return api_error(f"Dedup failed: {str(e)}", 500)
 
-    fps = 1.0
-    duration = 0.0
-    meta_path = video_dir / "frames_meta.json"
-    if meta_path.exists():
-        try:
-            meta = json.loads(meta_path.read_text())
-            fps = meta.get("fps", 1.0)
-            duration = meta.get("duration", 0)
-        except Exception:
-            pass
-
-    extracted_frames = sorted(frames_dir.glob("frame_*.jpg"))
-    original_count = len(extracted_frames)
-
-    if original_count <= 1:
-        results = [{"threshold": t, "original_count": original_count, "deduped_count": original_count, "dropped": 0, "dropped_pct": 0} for t in thresholds]
-        return jsonify({"results": results, "original_count": original_count, "fps": fps, "duration": duration})
-
-    hashes = []
-    for fp in extracted_frames:
-        hashes.append(imagehash.phash(Image.open(fp)))
-
-    results = []
-    for t in thresholds:
-        if t <= 0:
-            kept = original_count
-        else:
-            keep_indices = [0]
-            prev = hashes[0]
-            for i in range(1, len(hashes)):
-                if (prev - hashes[i]) >= t:
-                    keep_indices.append(i)
-                    prev = hashes[i]
-            kept = len(keep_indices)
-
-        dropped = original_count - kept
-        pct = round((dropped / original_count) * 100, 1) if original_count > 0 else 0
-        results.append({
-            "threshold": t,
-            "original_count": original_count,
-            "deduped_count": kept,
-            "dropped": dropped,
-            "dropped_pct": pct,
-        })
-
-    return jsonify({"results": results, "original_count": original_count, "fps": fps, "duration": duration})
+    
 
 
 @videos_bp.route("/api/videos/<filename>/frames_index")
 def get_video_frames_index(filename):
     """Return frames_index.json mapping sequential frame numbers to video timestamps."""
-    safe_name = secure_filename_util(filename)
-    stem = Path(safe_name).stem
-    index_path = Path(__file__).parent.parent.parent / "uploads" / stem / "frames_index.json"
+    video_dir = get_video_directory(filename)
+    index_path = video_dir / "frames_index.json"
     if not index_path.exists():
         return jsonify({})
     try:
@@ -397,9 +589,8 @@ def get_video_frames_index(filename):
 
 @videos_bp.route("/api/videos/<filename>/transcript")
 def get_video_transcript(filename):
-    safe_name = secure_filename_util(filename)
-    stem = Path(safe_name).stem
-    transcript_path = Path(__file__).parent.parent.parent / "uploads" / stem / "transcript.json"
+    video_dir = get_video_directory(filename)
+    transcript_path = video_dir / "transcript.json"
     if not transcript_path.exists():
         return jsonify({"segments": [], "text": "", "language": None, "whisper_model": None})
     try:
@@ -425,3 +616,214 @@ def _format_bytes(size: int) -> str:
             return f"{size:.1f} {unit}"
         size /= 1024
     return f"{size:.1f} PB"
+
+
+@videos_bp.route("/api/videos/<filename>/scenes", methods=["GET", "POST"])
+def detect_video_scenes(filename):
+    """Detect scenes in a video with extracted frames."""
+    import time
+    import logging
+    
+    from app import api_error
+    
+    logger = logging.getLogger(__name__)
+    
+    video_dir = get_video_directory(filename)
+    frames_dir = video_dir / "frames"
+    
+    if not frames_dir.exists() or not any(frames_dir.glob("frame_*.jpg")):
+        return api_error(f"No frames found for {filename}. Upload and transcode first.", 400)
+    
+    # Get parameters
+    data = request.get_json(silent=True) or {}
+    detector_type = data.get("detector_type", "content")
+    threshold = float(data.get("threshold", 30.0))
+    min_scene_len = int(data.get("min_scene_len", 15))
+    
+    # Get FPS for time calculations
+    fps = 1.0
+    meta_path = video_dir / "frames_meta.json"
+    if meta_path.exists():
+        try:
+            meta = json.loads(meta_path.read_text())
+            fps = meta.get("fps", 1.0)
+        except Exception:
+            pass
+    
+    logger.info(f"Scene detection for {filename}: detector={detector_type}, threshold={threshold}")
+    
+    start_time = time.time()
+    
+    try:
+        # Check if scene detection is available
+        try:
+            from src.utils.scene_detection import detect_scenes_from_frames, save_scene_info, get_scene_statistics
+            from src.utils.scene_detection import integrate_scenes_with_dedup
+        except ImportError as e:
+            logger.error(f"Scene detection utilities not available: {e}")
+            return api_error("Scene detection not available. Please install PySceneDetect.", 501)
+        
+        # Detect scenes
+        scenes = detect_scenes_from_frames(
+            frames_dir,
+            fps=fps,
+            detector_type=detector_type,
+            threshold=threshold,
+            min_scene_len=min_scene_len
+        )
+        
+        detection_time = time.time() - start_time
+        
+        # Save scene info
+        scene_info_path = video_dir / "scene_info.json"
+        save_scene_info(scenes, scene_info_path)
+        
+        # Get scene statistics
+        scene_stats = get_scene_statistics(scenes)
+        
+        # If requested, also integrate with dedup
+        dedup_threshold = data.get("dedup_threshold")
+        dedup_results = {}
+        if dedup_threshold is not None:
+            dedup_start = time.time()
+            dedup_results = integrate_scenes_with_dedup(
+                frames_dir,
+                scenes,
+                fps=fps,
+                dedup_threshold=int(dedup_threshold),
+                use_parallel=data.get("use_parallel", True)
+            )
+            dedup_time = time.time() - dedup_start
+            dedup_results["processing_time"] = dedup_time
+        
+        response = {
+            "video": filename,
+            "scenes": [scene.to_dict() for scene in scenes] if hasattr(scenes[0], 'to_dict') else scenes,
+            "statistics": scene_stats,
+            "detection_time": detection_time,
+            "fps": fps,
+            "detector_config": {
+                "detector_type": detector_type,
+                "threshold": threshold,
+                "min_scene_len": min_scene_len
+            },
+            "dedup_integration": dedup_results if dedup_results else None
+        }
+        
+        logger.info(f"Scene detection completed: {len(scenes)} scenes in {detection_time:.2f}s")
+        
+        return jsonify(response)
+        
+    except Exception as e:
+        logger.error(f"Scene detection failed: {e}", exc_info=True)
+        return api_error(f"Scene detection failed: {str(e)}", 500)
+
+
+@videos_bp.route("/api/videos/<filename>/scene-aware-dedup", methods=["POST"])
+def scene_aware_dedup(filename):
+    """Perform scene-aware deduplication."""
+    import time
+    import logging
+    
+    from app import api_error
+    
+    logger = logging.getLogger(__name__)
+    
+    video_dir = get_video_directory(filename)
+    frames_dir = video_dir / "frames"
+    
+    if not frames_dir.exists() or not any(frames_dir.glob("frame_*.jpg")):
+        return api_error(f"No frames found for {filename}. Upload and transcode first.", 400)
+    
+    # Get parameters
+    data = request.get_json(silent=True) or {}
+    dedup_threshold = int(data.get("threshold", 10))
+    scene_detection_threshold = float(data.get("scene_threshold", 30.0))
+    min_scene_len = int(data.get("min_scene_len", 15))
+    use_parallel = data.get("use_parallel", True)
+    
+    # Get FPS
+    fps = 1.0
+    meta_path = video_dir / "frames_meta.json"
+    if meta_path.exists():
+        try:
+            meta = json.loads(meta_path.read_text())
+            fps = meta.get("fps", 1.0)
+        except Exception:
+            pass
+    
+    logger.info(f"Scene-aware dedup for {filename}: dedup_threshold={dedup_threshold}, scene_threshold={scene_detection_threshold}")
+    
+    start_time = time.time()
+    
+    try:
+        # Check if scene detection is available
+        try:
+            from src.utils.scene_detection import integrate_scenes_with_dedup, detect_scenes_from_frames, save_scene_info
+            from src.utils.dedup_scheduler import get_scene_aware_dedup_plan
+        except ImportError as e:
+            logger.error(f"Scene detection utilities not available: {e}")
+            return api_error("Scene detection not available. Please install PySceneDetect.", 501)
+        
+        # Get scene-aware dedup plan
+        plan = get_scene_aware_dedup_plan(
+            frames_dir,
+            dedup_threshold=dedup_threshold,
+            fps=fps,
+            available_memory_gb=192,  # System has 192GB RAM
+            scene_detection_threshold=scene_detection_threshold
+        )
+        
+        # Perform deduplication
+        dedup_start = time.time()
+        
+        # Detect scenes
+        scenes = detect_scenes_from_frames(
+            frames_dir,
+            fps=fps,
+            detector_type="content",
+            threshold=scene_detection_threshold,
+            min_scene_len=min_scene_len
+        )
+        
+        # Integrate with dedup
+        dedup_results = integrate_scenes_with_dedup(
+            frames_dir,
+            scenes,
+            fps=fps,
+            dedup_threshold=dedup_threshold,
+            use_parallel=use_parallel
+        )
+        
+        dedup_time = time.time() - dedup_start
+        total_time = time.time() - start_time
+        
+        # Save scene info
+        scene_info_path = video_dir / "scene_info.json"
+        save_scene_info(scenes, scene_info_path)
+        
+        response = {
+            "video": filename,
+            "plan": plan,
+            "results": dedup_results,
+            "performance": {
+                "total_time": total_time,
+                "dedup_time": dedup_time,
+                "scene_detection_time": dedup_start - start_time
+            },
+            "config": {
+                "dedup_threshold": dedup_threshold,
+                "scene_threshold": scene_detection_threshold,
+                "min_scene_len": min_scene_len,
+                "use_parallel": use_parallel,
+                "fps": fps
+            }
+        }
+        
+        logger.info(f"Scene-aware dedup completed in {total_time:.2f}s")
+        
+        return jsonify(response)
+        
+    except Exception as e:
+        logger.error(f"Scene-aware dedup failed: {e}", exc_info=True)
+        return api_error(f"Scene-aware dedup failed: {str(e)}", 500)

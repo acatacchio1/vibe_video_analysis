@@ -1,8 +1,30 @@
 # Video Analyzer Web
 
-> **Version 0.3.1**
+> **Version 3.5.0**
 
 A web-based GUI for video-analyzer with multi-provider AI support (Ollama and OpenRouter), multi-GPU VRAM-aware job queueing, LLM chat queue, real-time monitoring, cost estimation, and automatic video transcoding.
+
+## Changelog
+
+### v3.5.0 (2026-04-23) - Critical Bug Fix: Transcript Handling
+
+- **Fixed**: Critical bug causing job failures with "'dict' object has no attribute 'text'" error
+- **Improved**: Robust transcript handling with safe access functions for all transcript data types
+- **Fixed**: Transcript loading logic to handle dictionaries, objects, and None values consistently
+- **Enhanced**: Error recovery for transcript format variations
+
+### v0.3.4 (2026-04-22) - Transcription Flow Fixes
+- **Fixed**: Consistent transcript loading between frontend and workers
+- **Added**: Shared transcript utilities in `src/utils/transcript.py`
+- **Improved**: Transcript injection with fallback for missing prompt tokens
+- **Enhanced**: Better validation of transcript segments with missing fields
+- **Fixed**: Path resolution for deduped videos with `_dedup` suffix
+
+### v0.3.2 (2026-04-19)
+- Various bug fixes and improvements
+
+### v0.3.1 (2026-04-18)
+- Initial public release
 
 ## Features
 
@@ -21,10 +43,7 @@ A web-based GUI for video-analyzer with multi-provider AI support (Ollama and Op
 - **Stored Results**: Browse and retrieve completed analysis results via API
 - **File Security**: Path traversal protection, filename sanitization, upload size validation (1GB max)
 - **Standalone Dedup**: Run frame deduplication independently before analysis to test different thresholds and see frame drop-off without running full analysis
-- **Transcript-Aware Analysis**: Injects relevant transcript context (from last analyzed frame to current+3s) into each frame's LLM prompt for richer, context-aware analysis
-- **Live Frame Preview**: Displays actual frame thumbnails alongside analysis output in the live view, with original (pre-dedup) frame numbers and timestamps
-- **Standalone Dedup**: Run frame deduplication independently before analysis to test different thresholds and see frame drop-off without running full analysis
-- **Transcript-Aware Analysis**: Injects relevant transcript context (from last analyzed frame to current+3s) into each frame's LLM prompt for richer, context-aware analysis
+- **Transcript-Aware Analysis**: Injects relevant transcript context (from last analyzed frame to current+3s) into each frame's LLM prompt for richer, context-aware analysis with robust path resolution and fallback injection
 - **Live Frame Preview**: Displays actual frame thumbnails alongside analysis output in the live view, with original (pre-dedup) frame numbers and timestamps
 
 ## Quick Start
