@@ -376,7 +376,7 @@ def run_video_dedup(filename):
                 }
                 
                 # Now renumber the remaining frames
-                frames_index, frame_count = _renumber_frames(frames_dir, thumbs_dir, fps)
+                frames_index, frame_count, actual_fps = _renumber_frames(frames_dir, thumbs_dir, fps)
                 
             else:
                 # No pre-computed results for this threshold, compute normally

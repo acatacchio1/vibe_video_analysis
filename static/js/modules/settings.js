@@ -1,10 +1,7 @@
 // Settings persistence and UI toggles
 function saveSettings() {
     const settings = {
-        temperature: document.getElementById('temperature-input')?.value,
-        whisper_model: document.getElementById('whisper-select')?.value,
-        language: document.getElementById('language-input')?.value,
-        device: document.getElementById('device-select')?.value
+        temperature: document.getElementById('temperature-input')?.value
     };
 
     state.settings = settings;

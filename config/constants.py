@@ -68,18 +68,6 @@ DEDUP_ERROR_RATE_THRESHOLD = 1.0  # Maximum 1% error rate
 LOG_DEDUP_PERFORMANCE = True
 MONITOR_DEDUP_RESOURCES = True
 
-# Parallel Deduplication
-USE_PARALLEL_DEDUP = os.environ.get("USE_PARALLEL_DEDUP", "").lower() in ("1", "true", "yes")
-MAX_DEDUP_WORKERS = int(os.environ.get("MAX_DEDUP_WORKERS", "30"))
-DEDUP_CHUNK_SIZE = 100  # Frames per worker batch
-DEDUP_MIN_FRAMES_FOR_PARALLEL = 50  # Minimum frames to use parallel
-DEDUP_PARALLEL_FALLBACK = True  # Fallback to sequential if parallel fails
-DEDUP_ERROR_RATE_THRESHOLD = 1.0  # Maximum 1% error rate
-
-# Performance Monitoring
-LOG_DEDUP_PERFORMANCE = True
-MONITOR_DEDUP_RESOURCES = True
-
 # Logging
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"

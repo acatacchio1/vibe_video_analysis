@@ -5,6 +5,24 @@ All notable changes to Video Analyzer Web will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Pipeline architecture**: All analysis logic moved to `src/worker/pipelines/` with factory pattern
+- **Pydantic v2 schemas**: Typed configuration (`JobConfig`, `AnalysisParams`, `AudioConfig`, `FrameConfig`, `Phase2Config`) in `src/schemas/`
+- **Auto-typed config building**: Pipeline factory automatically constructs `JobConfig` from raw dict with legacy field mapping
+- **Pure dispatcher worker**: `worker.py` reduced from ~1242 lines to ~85 lines
+
+### Changed
+- **StandardTwoStepPipeline**: Filled skeleton with full two-step analysis implementation
+- **Typed config access**: Pipeline code uses dot-notation (`params.audio.whisper_model`) instead of dict access
+- **Worker dispatch**: Both `standard_two_step` and `linkedin_extraction` route through `create_pipeline()`
+- **Documentation**: Updated `AGENTS.md` and `DEVELOPMENT.md` with pipeline architecture details
+
+### Removed
+- **Inline standard analysis**: Removed ~1150 lines of duplicated inline code from `worker.py`
+- **Legacy worker re-export**: `src/worker/__init__.py` now exports pipeline classes instead of `run_analysis`
+
 ## [0.5.0] - 2026-04-23
 
 ### Added

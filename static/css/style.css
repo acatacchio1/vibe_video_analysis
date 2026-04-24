@@ -419,68 +419,6 @@ section > h2::before,
     Transcode Progress
     ======================================== */
 
-.server-log {
-    background: var(--bg-input);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: var(--border-radius);
-    margin-top: var(--spacing-md);
-    overflow: hidden;
-}
-
-.server-log-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: var(--spacing-sm) var(--spacing-md);
-    background: var(--bg-tertiary);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-    font-size: 0.85rem;
-    font-weight: 600;
-    color: var(--text-secondary);
-}
-
-.server-log-header .icon-btn {
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-size: 0.9rem;
-    padding: 2px 4px;
-    border-radius: 4px;
-    transition: var(--transition);
-}
-
-.server-log-header .icon-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
-}
-
-.server-log-content {
-    height: 200px;
-    overflow-y: auto;
-    padding: var(--spacing-sm);
-    font-family: 'Courier New', monospace;
-    font-size: 0.75rem;
-    line-height: 1.5;
-    color: var(--text-secondary);
-    scroll-behavior: smooth;
-}
-
-.server-log-content::-webkit-scrollbar {
-    width: 6px;
-}
-
-.server-log-content::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-.server-log-content::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.15);
-    border-radius: 3px;
-}
-
-.server-log-content::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.25);
-}
-
 .log-entry {
     padding: 1px 0;
     border-bottom: 1px solid rgba(255, 255, 255, 0.03);
@@ -1750,61 +1688,6 @@ section > h2::before,
     font-size: 0.95rem;
     line-height: 1.5;
     color: var(--text-primary);
-}
-
-.frame-thumbnail {
-    flex-shrink: 0;
-    width: 160px;
-    height: 90px;
-    border-radius: var(--border-radius-sm);
-    overflow: hidden;
-    background: var(--bg-secondary);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.frame-thumbnail img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-}
-
-.frame-content {
-    flex: 1;
-    min-width: 0;
-}
-
-.frame-original {
-    font-size: 0.8rem;
-    color: var(--text-muted);
-    margin-left: var(--spacing-sm);
-}
-
-.frame-transcript-context {
-    margin-top: var(--spacing-sm);
-    padding: var(--spacing-sm);
-    background: rgba(88, 166, 255, 0.05);
-    border-left: 2px solid var(--accent-secondary);
-    border-radius: 0 var(--border-radius-sm) var(--border-radius-sm) 0;
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-    max-height: 80px;
-    overflow-y: auto;
-    cursor: pointer;
-    transition: max-height 0.3s ease;
-}
-
-.frame-transcript-context.expanded {
-    max-height: 300px;
-}
-
-.frame-transcript-context::before {
-    content: "Transcript: ";
-    font-weight: 600;
-    color: var(--accent-primary);
-}
-
-.frame-transcript-context:empty {
-    display: none;
 }
 
 .frame-thumbnail {

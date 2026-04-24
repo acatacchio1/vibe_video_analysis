@@ -97,6 +97,13 @@ logs/
 *.backup
 backup/
 
+# Node / opencode
+.opencode/
+node_modules/
+
+# Host cache (mounted as volume, not baked into image)
+hf_cache/
+
 # OS files
 .DS_Store
 Thumbs.db

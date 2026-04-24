@@ -23,7 +23,7 @@ This document provides essential context for AI agents working on this codebase.
 
 ### Key Design Decisions
 - **Source videos preserved** - Original uploaded files are NOT deleted after transcode
-- **Whisper models baked into Docker image** - HF cache at `/root/.cache/huggingface` (NOT under volume mount)
+- **Whisper models cached on host volume** - HF cache at `./hf_cache` mounted to `/root/.cache/huggingface`. Downloaded on first run if missing.
 - **Compute type**: `float16` for CUDA, `int8` for CPU (in `_transcribe_video` and `_process_video_direct`)
 - **Job execution**: VRAM-aware scheduler (`vram_manager`) → spawns worker subprocess per job
 - **Real-time updates**: SocketIO for job progress, frame analysis, system monitoring, server logs
@@ -55,9 +55,17 @@ video-analyzer-web/
 │   ├── recover_stale_jobs() - startup recovery
 │   └── init_providers() - Ollama + OpenRouter provider initialization
 │
-├── worker.py                       # Worker entry shim → src.worker.main.run_analysis
-│   ├── synthesize_frame() - Phase 2 synthesis (Ollama/OpenRouter via direct HTTP)
-│   └── run_analysis() - main analysis pipeline
+├── worker.py                       # Worker dispatcher → src.worker.pipelines.create_pipeline()
+│   └── run_analysis() - loads config, routes to pipeline factory
+│
+├── src/worker/pipelines/             # Analysis pipeline implementations
+│   ├── base.py                       # AnalysisPipeline ABC + typed config support
+│   ├── standard_two_step.py          # Standard two-step vision + synthesis
+│   ├── linkedin_extraction.py        # LinkedIn short-form extraction
+│   └── __init__.py                   # Pipeline factory + registry
+│
+├── src/schemas/                      # Pydantic configuration schemas
+│   └── config.py                     # JobConfig, AnalysisParams, nested configs
 │
 ├── vram_manager.py                 # GPU-aware job scheduler (EXTERNAL, DO NOT MODIFY)
 │   ├── VRAMManager class with priority queue, multi-GPU scheduling
@@ -222,7 +230,7 @@ These files are part of external packages or utilities. Treat as read-only:
 
 ### Docker
 
-1. **HF_HOME**: Whisper models cache to `/root/.cache/huggingface` (default), NOT under volume mount. Pre-downloaded in Docker build.
+1. **HF_HOME**: Whisper models cache to `/root/.cache/huggingface` via host volume mount `./hf_cache:/root/.cache/huggingface`. Entrypoint script downloads models on first run if host cache is empty.
 2. **Port 10000** everywhere - Dockerfile EXPOSE, HEALTHCHECK, CMD, docker-compose, app.py.
 3. **Volume mounts**: `uploads`, `jobs`, `cache`, `config`, `output` - persist across restarts.
 4. **GPU access**: `deploy.resources.reservations.devices` with `driver: nvidia`, `capabilities: [gpu]`.
@@ -403,9 +411,9 @@ Key: 1-based sequential frame number, Value: video timestamp in seconds.
 ### Configuration Flow
 1. User selects Phase 2 provider/model in UI (or "Same as Phase 1")
 2. Config passed via `params.phase2_provider_type`, `params.phase2_model`, etc.
-3. Two possible implementations:
-   - **worker.py `synthesize_frame()`**: Direct HTTP call to Ollama/OpenRouter API
-   - **worker.py via video_analyzer library**: Uses VideoAnalyzer with phase2 client config
+3. Implementation:
+   - **`StandardTwoStepPipeline._synthesize_frame()`**: Direct HTTP call to Ollama/OpenRouter API
+   - **Pipeline via video_analyzer library**: Uses VideoAnalyzer with phase2 client config
 
 ### Synthesis Prompt
 ```
@@ -443,12 +451,8 @@ Create a comprehensive analysis... [5 focus areas]
 7. **`host.docker.internal`** is used for Docker-to-host communication (Ollama, OpenWebUI)
 8. **`request` comes from `flask`, NOT `flask_socketio`** - Common import error in SocketIO handlers
 9. **Phase 2 Ollama URL** defaults to `http://192.168.1.237:11434` (not localhost) since text models are on that instance
-10. **`app.py` has duplicate `_sync_to_openwebui_kb` definitions** (lines 394 and 421) - second definition overwrites the first
-11. **`constants.py` has duplicate dedup constants** (lines 60-65 and 72-77)
-12. **index.html has duplicate `ollama-instances-modal`** (lines 600-630 and 633-663)
-13. **`style.css` has duplicate server-log and frame-thumbnail sections**
-14. **Legacy worker in `src/worker/main.py`** is a separate code path from the active `worker.py`; `src/worker/__init__.py` re-exports `run_analysis` for backward compatibility
-15. **Current two-step limitation**: Phase 2 synthesis runs sequentially within the frame loop, causing vision analysis to wait for synthesis completion before moving to next frame
+10. **`src/worker/main.py`** is legacy code (pre-v0.5.0). The active worker is `worker.py` at the root, which dispatches to `src/worker/pipelines`. `src/worker/__init__.py` exports pipeline classes.
+11. **Current two-step limitation**: Phase 2 synthesis runs sequentially within the frame loop, causing vision analysis to wait for synthesis completion before moving to next frame
 
 ---
 

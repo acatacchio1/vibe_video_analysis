@@ -37,7 +37,7 @@ video-analyzer-web/
 │   ├── VRAM manager + monitor callbacks
 │   └── _transcode_and_delete_with_cleanup(), _extract_frames(), _transcribe_video()
 │
-├── worker.py                       # Worker entry shim → src.worker.main
+├── worker.py                       # Worker dispatcher → src.worker.pipelines
 ├── vram_manager.py                 # GPU-aware job scheduler (external, DO NOT modify)
 ├── chat_queue.py                   # LLM chat queue manager (external, DO NOT modify)
 ├── monitor.py                      # System monitor (nvidia-smi, ollama ps)
@@ -111,19 +111,27 @@ video-analyzer-web/
 - **Worker spawning** - Subprocess management for job execution
 - **Log handler** - SocketLogHandler emits logs to UI
 
-### 2. Worker System (`worker.py`, `src/worker/main.py`)
-**Job stages:**
-1. Frame extraction and deduplication
-2. Transcript loading (via `src/utils/transcript.py`)
-3. Frame analysis with AI providers
-4. Video description generation
-5. Results compilation and storage
-6. OpenWebUI KB sync (if configured)
+### 2. Worker System (`worker.py` → `src/worker/pipelines/`)
+**Architecture:**
+- `worker.py` - Thin dispatcher (~85 lines). Loads config, routes to pipeline factory
+- `src/worker/pipelines/base.py` - Abstract `AnalysisPipeline` base class with typed config support
+- `src/worker/pipelines/standard_two_step.py` - Standard two-step vision + synthesis
+- `src/worker/pipelines/linkedin_extraction.py` - LinkedIn short-form extraction
+- `src/worker/pipelines/__init__.py` - Pipeline factory with auto-typed config building
+
+**Job stages (StandardTwoStepPipeline):**
+1. Audio extraction + transcription (faster-whisper)
+2. Frame preparation (pre-extracted or VideoProcessor)
+3. Frame analysis with AI providers (Phase 1: vision)
+4. Phase 2 synthesis (vision + transcript via secondary LLM)
+5. Video description generation
+6. Results compilation, auto-LLM queue, OpenWebUI KB sync
 
 **Key functions:**
-- `safe_get_transcript_text()` - Robust transcript access (v3.5.0+)
-- `safe_get_transcript_segments()` - Safe segment access
-- `run_analysis()` - Main worker entry point
+- `_safe_get_transcript_text()` - Robust transcript access
+- `_safe_get_transcript_segments()` - Safe segment access
+- `_synthesize_frame()` - Phase 2 synthesis via direct HTTP
+- `run()` - Main pipeline entry point
 
 ### 3. API Layer (`src/api/*.py`)
 - **Blueprints** - Modular route definitions

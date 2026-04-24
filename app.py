@@ -204,6 +204,8 @@ def monitor_job(job_id: str, job_dir: Path, proc: subprocess.Popen):
     last_status = {}
     last_frame_count = 0
     last_synthesis_count = 0
+    last_transcript = None
+    last_description = None
 
     while proc.poll() is None:
         try:
@@ -222,17 +224,17 @@ def monitor_job(job_id: str, job_dir: Path, proc: subprocess.Popen):
                         "job_status", {"job_id": job_id, **status}, room=f"job_{job_id}"
                     )
 
-                    if status.get("stage") in (
-                        "reconstructing",
-                        "complete",
-                    ) and status.get("transcript"):
+                    # Emit transcript whenever it appears or changes, not just at final stages
+                    if status.get("transcript") and status.get("transcript") != last_transcript:
+                        last_transcript = status["transcript"]
                         socketio.emit(
                             "job_transcript",
                             {"job_id": job_id, "transcript": status["transcript"]},
                             room=f"job_{job_id}",
                         )
 
-                    if status.get("video_description"):
+                    if status.get("video_description") and status.get("video_description") != last_description:
+                        last_description = status["video_description"]
                         socketio.emit(
                             "job_description",
                             {"job_id": job_id, "description": status["video_description"]},
@@ -386,33 +388,6 @@ def monitor_job(job_id: str, job_dir: Path, proc: subprocess.Popen):
             {"job_id": job_id, "success": success, **final_status},
             room=f"job_{job_id}",
         )
-
-    if success:
-        socketio.start_background_task(_sync_to_openwebui_kb, job_id)
-
-
-def _sync_to_openwebui_kb(job_id: str):
-    """Background task: sync job results to OpenWebUI KB if enabled"""
-    try:
-        from src.api.knowledge import _get_owui_config, sync_job_to_kb
-        cfg = _get_owui_config()
-        if cfg.get("enabled") and cfg.get("auto_sync"):
-            logger.info(f"Auto-syncing job {job_id} to OpenWebUI KB...")
-            result = sync_job_to_kb(job_id)
-            if result.get("success"):
-                logger.info(f"Job {job_id} synced to OpenWebUI KB successfully")
-                socketio.emit(
-                    "kb_sync_complete",
-                    {"job_id": job_id, "kb_id": result.get("kb_id")},
-                )
-            else:
-                logger.warning(f"Job {job_id} KB sync failed: {result.get('error')}")
-                socketio.emit(
-                    "kb_sync_error",
-                    {"job_id": job_id, "error": result.get("error")},
-                )
-    except Exception as e:
-        logger.error(f"Error in KB sync for job {job_id}: {e}")
 
     if success:
         socketio.start_background_task(_sync_to_openwebui_kb, job_id)
@@ -1067,6 +1042,17 @@ def _renumber_frames(frames_dir: Path, thumbs_dir: Path, fps: float):
     actual_count = len(kept_frames)
     frames_index = {}
     
+    # Try to load an existing frames_index.json for accurate timestamp mapping.
+    # This is created during initial extraction and preserves true video timestamps.
+    existing_index_path = frames_dir.parent / "frames_index.json"
+    existing_frames_index = {}
+    if existing_index_path.exists():
+        try:
+            existing_frames_index = json.loads(existing_index_path.read_text())
+            logger.info(f"Loaded existing frames_index with {len(existing_frames_index)} entries for accurate timestamp mapping")
+        except Exception as e:
+            logger.warning(f"Failed to load existing frames_index: {e}")
+
     # Detect if we need to adjust FPS for timestamp calculation
     # If fps is 1.0 (analysis FPS) but frame numbers suggest original video FPS,
     # we need to estimate the correct FPS for timestamp calculation
@@ -1100,7 +1086,11 @@ def _renumber_frames(frames_dir: Path, thumbs_dir: Path, fps: float):
     
     for new_idx, old_frame in enumerate(kept_frames, start=1):
         old_num = int(old_frame.stem.split("_")[1])
-        timestamp_s = (old_num - 1) / adjusted_fps
+        # Prefer exact timestamp from existing index; fall back to FPS calculation
+        if existing_frames_index and str(old_num) in existing_frames_index:
+            timestamp_s = existing_frames_index[str(old_num)]
+        else:
+            timestamp_s = (old_num - 1) / adjusted_fps
         frames_index[new_idx] = round(timestamp_s, 3)
         if new_idx != old_num:
             new_name = f"frame_{new_idx:06d}.jpg"
@@ -1272,7 +1262,13 @@ def _extract_frames_direct(video_path: str, original_video_path: str = None):
             index_file = video_dir / "frames_index.json"
             with open(index_file, "w") as f:
                 json.dump(frames_index, f, indent=2)
-            
+
+            # Write frames_meta.json so downstream dedup and pipelines have correct FPS
+            meta = {"frame_count": actual_count, "fps": fps, "duration": duration_s}
+            meta_path = video_dir / "frames_meta.json"
+            meta_path.write_text(json.dumps(meta))
+            logger.info(f"Wrote frames_meta.json: {meta}")
+
             # Create thumbnail from first frame
             if extracted_frames:
                 try:
@@ -1853,6 +1849,8 @@ init_providers()
 
 
 if __name__ == "__main__":
+    import os
+    port = int(os.environ.get("PORT", "10000"))
     socketio.run(
-        app, host="0.0.0.0", port=10000, debug=False, allow_unsafe_werkzeug=True
+        app, host="0.0.0.0", port=port, debug=False, allow_unsafe_werkzeug=True
     )

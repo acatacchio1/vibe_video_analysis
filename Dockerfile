@@ -8,8 +8,9 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PATH="/usr/local/bin:${PATH}"
 
-# Hugging Face cache defaults to /root/.cache/huggingface (NOT under volume mount)
-# This ensures pre-downloaded Whisper models survive container startup
+# Hugging Face cache is mounted from host via docker-compose volume.
+# The entrypoint script downloads models on first run if the host cache is empty.
+ENV HF_HOME=/root/.cache/huggingface
 
 # ctranslate2/faster-whisper need the nvidia pip package lib dirs on the
 # dynamic linker path in addition to the default nvidia driver paths.
@@ -59,15 +60,6 @@ RUN pip3 install --quiet nvidia-cublas-cu12 && \
         echo "WARNING: nvidia-cublas-cu12 not found after install"; exit 1; \
     fi
 
-# Pre-download Whisper models to avoid runtime downloads
-# This ensures models are baked into the image for offline/air-gapped operation
-RUN python3 -c "from faster_whisper import WhisperModel; \
-    print('Downloading Whisper base model...'); \
-    WhisperModel('base', device='cpu', compute_type='int8'); \
-    print('Downloading Whisper large model...'); \
-    WhisperModel('large', device='cpu', compute_type='int8'); \
-    print('All models downloaded successfully')"
-
 # Verify gunicorn is installed
 RUN which gunicorn && gunicorn --version
 
@@ -84,5 +76,5 @@ EXPOSE 10000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:10000/api/vram || exit 1
 
-# Start command using gunicorn with eventlet for WebSocket support
-CMD ["python3", "-m", "gunicorn", "-k", "eventlet", "-w", "1", "--bind", "0.0.0.0:10000", "--timeout", "300", "--keep-alive", "5", "app:app"]
+# Entrypoint handles conditional Whisper model download then starts app
+ENTRYPOINT ["/app/docker-entrypoint.sh"]

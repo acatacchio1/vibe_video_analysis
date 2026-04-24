@@ -92,7 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Save settings on change
-    document.querySelectorAll('#temperature-input, #whisper-select, #language-input, #device-select')
+    document.querySelectorAll('#temperature-input')
         .forEach(el => el.addEventListener('change', saveSettings));
 
     // Clear server log
@@ -131,9 +131,7 @@ async function submitAnalysis() {
         temperature: parseFloat(document.getElementById('temperature-input')?.value || '0.0'),
         start_frame: fb.startFrame > 1 ? fb.startFrame : 0,
         end_frame: fb.endFrame < fb.totalFrames ? fb.endFrame : undefined,
-        whisper_model: document.getElementById('whisper-select')?.value || 'large',
-        language: document.getElementById('language-input')?.value || 'en',
-        device: document.getElementById('device-select')?.value || 'gpu',
+
         user_prompt: document.getElementById('prompt-input')?.value || '',
         pipeline_type: document.getElementById('pipeline-select')?.value || 'standard_two_step',
     };

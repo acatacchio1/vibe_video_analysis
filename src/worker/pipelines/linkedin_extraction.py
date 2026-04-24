@@ -26,23 +26,39 @@ class LinkedInExtractionPipeline(AnalysisPipeline):
     
     def __init__(self, job_dir: Path, config: Dict[str, Any]):
         super().__init__(job_dir, config)
-        self.linkedin_config = LinkedInConfig(
-            config.get("params", {}).get("linkedin_config", {})
-        )
-    
+        # Prefer typed config linkedin settings; fall back to raw dict
+        if self.typed_config and self.typed_config.params.linkedin:
+            self.linkedin_config = LinkedInConfig(
+                self.typed_config.params.linkedin.model_dump()
+            )
+        else:
+            self.linkedin_config = LinkedInConfig(
+                config.get("params", {}).get("linkedin_config", {})
+            )
+
     def run(self) -> Dict[str, Any]:
         """Execute LinkedIn extraction pipeline."""
         logger.info("=== LINKEDIN EXTRACTION PIPELINE START ===")
         logger.info(f"LinkedIn config: {json.dumps(self.linkedin_config.to_dict(), indent=2)}")
-        
-        # Extract parameters from config
-        video_path = Path(self.config["video_path"])
-        provider_type = self.config["provider_type"]
-        provider_config = self.config["provider_config"]
-        model = self.config["model"]
-        params = self.config.get("params", {})
-        job_id = self.config["job_id"]
-        video_frames_dir = self.config.get("video_frames_dir", "")
+
+        # Use typed config when available
+        cfg = self.typed_config
+        if cfg is None:
+            video_path = Path(self.config["video_path"])
+            provider_type = self.config["provider_type"]
+            provider_config = self.config["provider_config"]
+            model = self.config["model"]
+            params = self.config.get("params", {})
+            job_id = self.config["job_id"]
+            video_frames_dir = self.config.get("video_frames_dir", "")
+        else:
+            video_path = cfg.video_path_obj
+            provider_type = cfg.provider_type
+            provider_config = cfg.provider_config.model_dump()
+            model = cfg.model
+            params = cfg.params.model_dump()
+            job_id = cfg.job_id
+            video_frames_dir = cfg.video_frames_dir
         
         # Update status
         self.update_status({
@@ -67,8 +83,12 @@ class LinkedInExtractionPipeline(AnalysisPipeline):
             # Stage 2: Load transcript and fuse with frame analyses
             logger.info("=== STAGE 2: Transcript & Frame Fusion ===")
             self.update_status({"stage": "segment_fusion", "progress": 40})
-            
+
             transcript = self.load_transcript()
+            transcript_text = safe_get_transcript_text(transcript)
+            if transcript_text:
+                self.update_status({"transcript": transcript_text})
+
             fused_segments = self._fuse_segments(frame_analyses, transcript)
             
             # Stage 3: RAG extraction and ranking
@@ -82,12 +102,28 @@ class LinkedInExtractionPipeline(AnalysisPipeline):
             self.update_status({"stage": "clip_generation", "progress": 90})
             
             results = self._generate_results(job_id, ranked_segments, video_path, params)
-            
+
+            # Build a human-readable summary for live display
+            summary = results.get("summary", {})
+            desc_parts = [
+                f"LinkedIn Extraction Complete",
+                f"Total segments: {summary.get('total_segments', 0)}",
+                f"Selected for clips: {summary.get('selected_for_clips', 0)}",
+            ]
+            if summary.get("top_segments"):
+                desc_parts.append("Top segments:")
+                for seg in summary["top_segments"][:3]:
+                    desc_parts.append(
+                        f"  - {seg.get('segment_id', 'unknown')}: score {seg.get('total_score', 0)}, hook {seg.get('hook_strength', 'unknown')}"
+                    )
+            video_description = "\n".join(desc_parts)
+
             self.update_status({
                 "status": "completed",
                 "stage": "complete",
                 "progress": 100,
                 "results_file": str(self.output_dir / "linkedin_results.json"),
+                "video_description": video_description,
             })
             
             logger.info("=== LINKEDIN EXTRACTION PIPELINE COMPLETE ===")
@@ -214,12 +250,34 @@ class LinkedInExtractionPipeline(AnalysisPipeline):
             })
             
             frame_analyses.append(frame_analysis)
-            
-            # Write to frames log
+
+            # Write to LinkedIn-specific frames log
             frames_file = self.job_dir / "linkedin_frames.jsonl"
             with open(frames_file, "a") as f:
                 f.write(json.dumps(frame_analysis) + "\n")
-            
+
+            # Also write to standard frames.jsonl so monitor_job emits live frame_analysis events
+            transcript_ctx = ""
+            if recent_context:
+                transcript_ctx += f"RECENT: {recent_context}"
+            if prior_context:
+                transcript_ctx += f"\nPRIOR: {prior_context}" if transcript_ctx else f"PRIOR: {prior_context}"
+
+            standard_frame_entry = {
+                "frame_number": i + 1,
+                "original_frame": frame.get("original_number", i + 1),
+                "timestamp": frame["timestamp"],
+                "video_ts": frame["timestamp"],
+                "corrected_ts": frame["timestamp"],
+                "original_ts": frame["timestamp"],
+                "analysis": self._format_linkedin_analysis_markdown(frame_analysis),
+                "response": self._format_linkedin_analysis_markdown(frame_analysis),
+                "transcript_context": transcript_ctx,
+            }
+            standard_frames_file = self.job_dir / "frames.jsonl"
+            with open(standard_frames_file, "a") as f:
+                f.write(json.dumps(standard_frame_entry) + "\n")
+
             logger.info(f"Frame {i+1} analysis complete")
         
         logger.info(f"LinkedIn frame analysis complete: {len(frame_analyses)} frames")
@@ -445,7 +503,61 @@ class LinkedInExtractionPipeline(AnalysisPipeline):
                 "timestamp": time.time(),
                 "analysis_failed": True
             })
-    
+
+    def _format_linkedin_analysis_markdown(self, analysis: Dict[str, Any]) -> str:
+        """Format LinkedIn frame analysis JSON as markdown for live display."""
+        parts = []
+
+        summary = analysis.get("summary", "")
+        if summary:
+            parts.append(f"**Summary:** {summary}")
+
+        hook = analysis.get("hook_potential", {})
+        if hook:
+            hp = hook.get("hook_potential", "unknown")
+            he = hook.get("hook_explanation", "")
+            parts.append(f"**Hook Potential:** {hp}")
+            if he:
+                parts.append(f"  - {he}")
+
+        vq = analysis.get("visual_quality", {})
+        if vq:
+            vq_parts = []
+            for k, v in vq.items():
+                vq_parts.append(f"{k.replace('_', ' ').title()}: {v}")
+            parts.append(f"**Visual Quality:** {', '.join(vq_parts)}")
+
+        sa = analysis.get("speaker_analysis", {})
+        if sa:
+            sa_parts = []
+            for k, v in sa.items():
+                sa_parts.append(f"{k.replace('_', ' ').title()}: {v}")
+            parts.append(f"**Speaker Analysis:** {', '.join(sa_parts)}")
+
+        osc = analysis.get("on_screen_content", {})
+        if osc:
+            has = osc.get("has_content", False)
+            desc = osc.get("content_description", "")
+            parts.append(f"**On-Screen Content:** {'Yes' if has else 'No'}")
+            if desc:
+                parts.append(f"  - {desc}")
+
+        sc = analysis.get("scene_context", {})
+        if sc:
+            sc_parts = []
+            for k, v in sc.items():
+                sc_parts.append(f"{k.replace('_', ' ').title()}: {v}")
+            parts.append(f"**Scene Context:** {', '.join(sc_parts)}")
+
+        tr = analysis.get("transcript_relationship", {})
+        if tr:
+            tr_parts = []
+            for k, v in tr.items():
+                tr_parts.append(f"{k.replace('_', ' ').title()}: {v}")
+            parts.append(f"**Transcript Relationship:** {', '.join(tr_parts)}")
+
+        return "\n\n".join(parts) if parts else "No analysis available"
+
     def _fuse_segments(self, frame_analyses: List[Dict[str, Any]], 
                       transcript: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Fuse transcript segments with frame analyses (Prompt 2)."""
@@ -494,12 +606,24 @@ class LinkedInExtractionPipeline(AnalysisPipeline):
             })
             
             fused_segments.append(fused_segment)
-            
+
             # Write to segments log
             segments_file = self.job_dir / "linkedin_segments_raw.jsonl"
             with open(segments_file, "a") as f:
                 f.write(json.dumps(fused_segment) + "\n")
-        
+
+            # Live status update for segment fusion
+            self.update_status({
+                "current_fused_segment": i + 1,
+                "total_fused_segments": len(segments),
+                "last_fused_segment": {
+                    "segment_id": fused_segment.get("segment_id"),
+                    "start_time": fused_segment.get("start_time"),
+                    "end_time": fused_segment.get("end_time"),
+                    "visual_summary": (fused_segment.get("visual_summary", "") or "")[:200],
+                },
+            })
+
         logger.info(f"Segment fusion complete: {len(fused_segments)} segments")
         return fused_segments
     
@@ -832,12 +956,23 @@ class LinkedInExtractionPipeline(AnalysisPipeline):
             }
             
             ranked_segments.append(ranked_segment)
-            
+
             # Write to ranking log
             ranking_file = self.job_dir / "linkedin_segments_ranked.jsonl"
             with open(ranking_file, "a") as f:
                 f.write(json.dumps(ranked_segment) + "\n")
-        
+
+            # Live status update for RAG ranking
+            self.update_status({
+                "current_ranked_segment": i + 1,
+                "total_ranked_segments": len(fused_segments),
+                "last_ranked_segment": {
+                    "segment_id": ranked_segment.get("segment_id"),
+                    "rank": ranked_segment.get("rank"),
+                    "overall_score": ranked_segment.get("overall_score"),
+                },
+            })
+
         # Sort by overall score
         ranked_segments.sort(key=lambda x: x.get("overall_score", 0), reverse=True)
         
