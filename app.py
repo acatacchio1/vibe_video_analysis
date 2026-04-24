@@ -1108,7 +1108,8 @@ def _extract_frames_direct(video_path: str, original_video_path: str = None):
     """
     Direct frame extraction from original video (no transcode step).
     Extracts all frames from video at original resolution/framerate.
-    If original_video_path is provided, it will be deleted after successful extraction.
+    Original video is preserved (not deleted) so it remains available
+    as a source video in the UI.
     """
     video = Path(video_path)
     original_video = Path(original_video_path) if original_video_path else None
@@ -1290,14 +1291,6 @@ def _extract_frames_direct(video_path: str, original_video_path: str = None):
             _emit("complete", 100, f"Extracted {actual_count} frames")
             logger.info(f"Direct frame extraction complete: {actual_count} frames from {src_name}")
             
-            # Delete original video if specified
-            if original_video and original_video.exists():
-                try:
-                    original_video.unlink()
-                    logger.info(f"Deleted original video: {original_video.name}")
-                except Exception as e:
-                    logger.warning(f"Failed to delete original video {original_video.name}: {e}")
-            
             return {
                 "frames_dir": str(frames_dir),
                 "frame_count": actual_count,
@@ -1326,7 +1319,7 @@ def _extract_frames_direct(video_path: str, original_video_path: str = None):
 def _process_video_direct(src_path: str, whisper_model: str = "base", language: str = "en"):
     """
     Process uploaded video directly: extract frames and transcribe audio in parallel.
-    Deletes original video after successful extraction.
+    The original source video is preserved in uploads/.
     """
     input_path = Path(src_path)
     src_name = input_path.name
@@ -1355,7 +1348,7 @@ def _process_video_direct(src_path: str, whisper_model: str = "base", language: 
     def extract_frames_task():
         try:
             _emit_progress("extracting_frames", 5, "Starting frame extraction", f"{src_name}_frames")
-            result = _extract_frames_direct(str(input_path), str(input_path))
+            result = _extract_frames_direct(str(input_path))
             if result:
                 results["frames"] = result
                 _emit_progress("extracting_frames", 100, "Frame extraction complete", f"{src_name}_frames")

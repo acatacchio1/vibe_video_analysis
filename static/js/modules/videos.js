@@ -2,20 +2,21 @@
 async function loadVideos() {
     try {
         const response = await fetch('/api/videos');
-        const videos = await response.json();
-        renderVideosList(videos);
-        updateVideoSelect(videos);
+        const data = await response.json();
+        renderProcessedVideosList(data.processed_videos || []);
+        renderSourceVideosList(data.source_videos || []);
+        updateVideoSelect(data.processed_videos || [], data.source_videos || []);
     } catch (error) {
         console.error('Failed to load videos:', error);
     }
 }
 
-function renderVideosList(videos) {
-    const container = document.getElementById('videos-list');
+function renderProcessedVideosList(videos) {
+    const container = document.getElementById('processed-videos-list');
     if (!container) return;
 
     if (videos.length === 0) {
-        container.innerHTML = '<div class="empty-state">No videos uploaded yet.</div>';
+        container.innerHTML = '<div class="empty-state">No processed videos yet. Run dedup on a source video.</div>';
         return;
     }
 
@@ -32,20 +33,61 @@ function renderVideosList(videos) {
                 </div>
             </div>
             <div class="video-actions">
-                <button onclick="openReprocessModal('${video.name}', '${video.path}')" title="Reprocess with new settings">🔄</button>
                 <button onclick="deleteVideo('${video.name}')" title="Delete video">🗑️</button>
             </div>
         </div>
     `).join('');
 }
 
-function updateVideoSelect(videos) {
+function renderSourceVideosList(videos) {
+    const container = document.getElementById('source-videos-list');
+    if (!container) return;
+
+    if (videos.length === 0) {
+        container.innerHTML = '<div class="empty-state">No source videos uploaded yet.</div>';
+        return;
+    }
+
+    container.innerHTML = videos.map(video => `
+        <div class="video-item" data-name="${video.name}" data-path="${video.path}">
+            <div class="video-thumbnail">
+                ${video.thumbnail ? `<img src="${video.thumbnail}" alt="">` : '<span class="placeholder">🎬</span>'}
+            </div>
+            <div class="video-info">
+                <div class="video-name" title="${video.name}">${video.name}</div>
+                <div class="video-meta">
+                    <span>${video.size_human}</span>
+                    <span>${video.duration_formatted}</span>
+                </div>
+            </div>
+            <div class="video-actions">
+                <button onclick="openReprocessModal('${video.name}', '${video.path}')" title="Re-dedup at new threshold">🔄</button>
+                <button onclick="deleteVideo('${video.name}')" title="Delete video">🗑️</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function updateVideoSelect(processedVideos, sourceVideos) {
     const select = document.getElementById('video-select');
     if (!select) return;
 
     const currentValue = select.value;
-    select.innerHTML = '<option value="">Select a video...</option>' +
-        videos.map(v => `<option value="${v.path}" data-name="${v.name}">${v.name} (${v.duration_formatted})</option>`).join('');
+    let html = '<option value="">Select a video...</option>';
+
+    if (processedVideos.length > 0) {
+        html += '<optgroup label="Processed Videos">' +
+            processedVideos.map(v => `<option value="${v.path}" data-name="${v.name}">${v.name} (${v.duration_formatted})</option>`).join('') +
+            '</optgroup>';
+    }
+
+    if (sourceVideos.length > 0) {
+        html += '<optgroup label="Source Videos">' +
+            sourceVideos.map(v => `<option value="${v.path}" data-name="${v.name}">${v.name} (${v.duration_formatted})</option>`).join('') +
+            '</optgroup>';
+    }
+
+    select.innerHTML = html;
 
     if (currentValue) {
         select.value = currentValue;
@@ -67,6 +109,38 @@ async function deleteVideo(name) {
         }
     } catch (error) {
         showToast('Delete failed: ' + error.message, 'error');
+    }
+}
+
+async function deleteAllSourceVideos() {
+    if (!confirm('Delete ALL source videos and their extracted data? This cannot be undone.')) return;
+    try {
+        const response = await fetch('/api/videos/source/all', { method: 'DELETE' });
+        const result = await response.json();
+        if (result.success) {
+            showToast(`Deleted ${result.deleted} source videos`);
+            loadVideos();
+        } else {
+            showToast(result.error?.message || 'Failed to delete source videos', 'error');
+        }
+    } catch (error) {
+        showToast('Delete all failed: ' + error.message, 'error');
+    }
+}
+
+async function deleteAllProcessedVideos() {
+    if (!confirm('Delete ALL processed videos and their associated data? This cannot be undone.')) return;
+    try {
+        const response = await fetch('/api/videos/processed/all', { method: 'DELETE' });
+        const result = await response.json();
+        if (result.success) {
+            showToast(`Deleted ${result.deleted} processed videos`);
+            loadVideos();
+        } else {
+            showToast(result.error?.message || 'Failed to delete processed videos', 'error');
+        }
+    } catch (error) {
+        showToast('Delete all failed: ' + error.message, 'error');
     }
 }
 
@@ -309,34 +383,29 @@ function openReprocessModal(name, path) {
     const modal = document.getElementById('reprocess-modal');
     document.getElementById('reprocess-video-name').textContent = name;
     document.getElementById('reprocess-video-path').value = path;
+    document.getElementById('reprocess-video-filename').value = name;
     modal.classList.remove('hidden');
 }
 
 async function submitReprocess() {
-    const path = document.getElementById('reprocess-video-path').value;
-    const whisper = document.getElementById('reprocess-whisper').value || 'base';
-    const language = document.getElementById('reprocess-language').value || 'en';
+    const filename = document.getElementById('reprocess-video-filename').value;
+    const threshold = parseInt(document.getElementById('reprocess-threshold').value || '10', 10);
 
     try {
-        const response = await fetch('/api/videos/reprocess', {
+        const response = await fetch(`/api/videos/${encodeURIComponent(filename)}/dedup`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                video_path: path,
-                whisper_model: whisper,
-                language: language,
-            }),
+            body: JSON.stringify({ threshold: threshold }),
         });
         const result = await response.json();
-        if (result.success) {
-            showToast(`Reprocessing started for ${path.split('/').pop()}`);
+        if (result.dedup_video) {
+            showToast(`Dedup complete: kept ${result.deduped_count} of ${result.original_count} frames`);
             closeModal();
+            loadVideos();
         } else {
-            showToast(result.error?.message || 'Reprocess failed', 'error');
+            showToast(result.error?.message || 'Dedup failed', 'error');
         }
     } catch (error) {
-        showToast('Reprocess failed: ' + error.message, 'error');
+        showToast('Dedup failed: ' + error.message, 'error');
     }
 }
-
-

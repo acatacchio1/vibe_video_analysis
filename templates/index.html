@@ -102,8 +102,21 @@
 
             <!-- Videos List -->
             <section class="videos-section">
-                <h2>Videos</h2>
-                <div id="videos-list" class="videos-list">
+                <div class="videos-section-header">
+                    <h2>Processed Videos</h2>
+                    <button onclick="deleteAllProcessedVideos()" class="btn danger small" title="Delete all processed videos">Delete All</button>
+                </div>
+                <div id="processed-videos-list" class="videos-list">
+                    <div class="loading">Loading videos...</div>
+                </div>
+            </section>
+
+            <section class="videos-section">
+                <div class="videos-section-header">
+                    <h2>Source Videos</h2>
+                    <button onclick="deleteAllSourceVideos()" class="btn danger small" title="Delete all source videos">Delete All</button>
+                </div>
+                <div id="source-videos-list" class="videos-list">
                     <div class="loading">Loading videos...</div>
                 </div>
             </section>
@@ -616,29 +629,21 @@
     <div id="reprocess-modal" class="modal hidden">
         <div class="modal-content">
             <header class="modal-header">
-                <h2>Reprocess Video</h2>
+                <h2>Re-dedup Video</h2>
                 <button class="close-btn" onclick="closeModal()">&times;</button>
             </header>
             <div class="modal-body">
-                <p>Reprocess <strong id="reprocess-video-name"></strong> with new whisper/language settings. This will re-extract frames and re-transcribe audio.</p>
+                <p>Re-run deduplication on <strong id="reprocess-video-name"></strong> using the existing extracted frames.</p>
                 <input type="hidden" id="reprocess-video-path">
-                
+                <input type="hidden" id="reprocess-video-filename">
+
                 <div class="form-group">
-                    <label for="reprocess-whisper">Whisper Model</label>
-                    <select id="reprocess-whisper">
-                        <option value="tiny">tiny (fastest)</option>
-                        <option value="base" selected>base</option>
-                        <option value="small">small</option>
-                        <option value="medium">medium</option>
-                        <option value="large">large (most accurate)</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="reprocess-language">Audio Language</label>
-                    <input type="text" id="reprocess-language" value="en" placeholder="e.g., en, es, fr">
+                    <label for="reprocess-threshold">Dedup Threshold (0–64)</label>
+                    <input type="number" id="reprocess-threshold" value="10" min="0" max="64" step="1">
+                    <div class="form-hint">Lower = more aggressive dedup (fewer frames). Higher = keep more frames.</div>
                 </div>
                 <div class="form-actions">
-                    <button class="btn primary" onclick="submitReprocess()">Reprocess</button>
+                    <button class="btn primary" onclick="submitReprocess()">Run Dedup</button>
                     <button class="btn secondary" onclick="closeModal()">Cancel</button>
                 </div>
             </div>
