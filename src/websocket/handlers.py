@@ -182,9 +182,10 @@ def register_socket_handlers(socketio):
             "language": data.get("language", "en"),
             "device": data.get("device", "gpu"),
             "user_prompt": data.get("user_prompt", ""),
+            "pipeline_type": data.get("pipeline_type", "standard_two_step"),
         }
         
-        # Merge any params from data.params (includes Phase 2 config)
+        # Merge any params from data.params (includes Phase 2 config and LinkedIn config)
         if "params" in data and isinstance(data["params"], dict):
             params.update(data["params"])
         

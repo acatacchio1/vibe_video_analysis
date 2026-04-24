@@ -1,37 +1,37 @@
 # Video Analyzer Web - Agent Development Guide
 
-> Version 0.5.0 | Last updated: 2026-04-23
+> Version 0.5.0 | Last updated: 2026-04-24
 
 This document provides essential context for AI agents working on this codebase.
-
-**Important Update (v0.5.0)**: Two-step video analysis system with concurrent Phase 1 (vision) and Phase 2 (vision+transcript synthesis) processing. Users can select separate providers/models for each phase, with real-time monitoring in dual tabs.
-
-**Previous Update (v0.4.0)**: Comprehensive documentation overhaul, parallel deduplication, scene detection, and enhanced transcript utilities. Live monitoring shows frame analysis + transcript separately with plans for combined view.
-
-**Previous Update (v0.3.4)**: Fixed transcription flow inconsistencies. See "Transcription Flow & Gotchas" section below.
 
 ---
 
 ## Architecture Overview
 
 ### Tech Stack
-- **Backend**: Flask + Flask-SocketIO (eventlet driver)
+- **Backend**: Flask + Flask-SocketIO (eventlet driver via gunicorn)
 - **Frontend**: Vanilla JS (modular, no framework/bundler), CSS custom properties
-- **AI Providers**: Ollama (local), OpenRouter (cloud)
-- **ML**: faster-whisper (transcription), imagehash (frame dedup)
+- **AI Providers**: Ollama (local/remote instances), OpenRouter (cloud)
+- **ML**: faster-whisper (transcription), imagehash (frame dedup), PySceneDetect (scene detection)
 - **Video**: ffmpeg/ffprobe for transcoding, frame extraction, audio extraction
 - **GPU**: NVIDIA CUDA, pynvml for VRAM monitoring
-- **Deployment**: Docker (nvidia/cuda base), docker-compose
+- **Deployment**: Docker (nvidia/cuda:12.1.0-base-ubuntu22.04), docker-compose
+- **External package**: `video-analyzer` (provides Config, VideoProcessor, VideoAnalyzer, AudioProcessor, PromptLoader, OllamaClient, GenericOpenAIAPIClient)
+
+### Port
+- **Port 10000** - All services run on port 10000 (non-privileged, Docker maps 10000:10000)
 
 ### Key Design Decisions
-- **Port 10000** - All services run on port 10000 (non-privileged, Docker maps 10000:10000)
-- **Source videos preserved** - Upload transcodes to 720p but keeps original
+- **Source videos preserved** - Original uploaded files are NOT deleted after transcode
 - **Whisper models baked into Docker image** - HF cache at `/root/.cache/huggingface` (NOT under volume mount)
-- **Compute type**: `float16` for CUDA, `int8` for CPU (in `app.py` transcribe)
-- **Job execution**: VRAM-aware scheduler → spawns worker subprocess per job
+- **Compute type**: `float16` for CUDA, `int8` for CPU (in `_transcribe_video` and `_process_video_direct`)
+- **Job execution**: VRAM-aware scheduler (`vram_manager`) → spawns worker subprocess per job
 - **Real-time updates**: SocketIO for job progress, frame analysis, system monitoring, server logs
-- **Frame renumbering**: After dedup, frames are renumbered sequentially (1,2,3...) with a `frames_index.json` mapping each frame to its actual video timestamp for accurate transcript sync
-- **OpenWebUI Knowledge Base sync**: After job completion, results are auto-synced to OpenWebUI KB via REST API (configurable in settings)
+- **Frame renumbering**: After dedup, frames are renamed sequentially (1,2,3...) with `frames_index.json` mapping each frame to its actual video timestamp
+- **OpenWebUI Knowledge Base sync**: After job completion, results are auto-synced to OpenWebUI KB via REST API
+- **Two-step analysis**: Phase 1 (vision) + Phase 2 (synthesis combining vision + transcript via secondary LLM)
+- **Parallel upload processing**: Frame extraction and audio transcription run concurrently on upload
+- **Parallel deduplication**: Uses `src.utils.parallel_file_ops` and `src.utils.dedup_scheduler` for GPU-accelerated dedup; falls back to sequential
 
 ---
 
@@ -39,90 +39,129 @@ This document provides essential context for AI agents working on this codebase.
 
 ```
 video-analyzer-web/
-├── app.py                          # Flask entry point (~700 lines)
-│   ├── Flask app + SocketIO setup
+├── app.py                          # Flask entry point (~1858 lines)
+│   ├── Flask app + SocketIO setup (with debug emit wrapper)
+│   ├── SocketLogHandler (thread-safe queue + background emitter)
 │   ├── Blueprint registration (src/api/*)
 │   ├── SocketIO handler registration (src/websocket/*)
-│   ├── SocketLogHandler - emits logs to UI via SocketIO
 │   ├── spawn_worker() / monitor_job() - worker lifecycle
-│   ├── VRAM manager + monitor callbacks
-│   └── _transcode_and_delete_with_cleanup(), _extract_frames(), _transcribe_video()
+│   ├── VRAM manager callbacks, monitor callbacks
+│   ├── _transcode_and_delete_with_cleanup() - deprecated transcode flow
+│   ├── _process_video_direct() - parallel frames + transcription upload flow
+│   ├── _extract_frames_direct() - direct frame extraction from original video
+│   ├── _extract_frames() / _transcribe_video() - legacy extraction/transcription
+│   ├── _run_dedup_sequential() / _run_dedup_parallel() / _run_dedup() - smart dispatcher
+│   ├── _renumber_frames() - sequential renumbering with timestamp index
+│   ├── recover_stale_jobs() - startup recovery
+│   └── init_providers() - Ollama + OpenRouter provider initialization
 │
-├── worker.py                       # Worker entry shim → src.worker.main
-├── vram_manager.py                 # GPU-aware job scheduler (external, DO NOT modify)
-├── chat_queue.py                   # LLM chat queue manager (external, DO NOT modify)
-├── monitor.py                      # System monitor (nvidia-smi, ollama ps)
-├── discovery.py                    # Ollama network discovery
-├── thumbnail.py                    # Thumbnail extraction
-├── gpu_transcode.py               # ffmpeg transcode command builder
+├── worker.py                       # Worker entry shim → src.worker.main.run_analysis
+│   ├── synthesize_frame() - Phase 2 synthesis (Ollama/OpenRouter via direct HTTP)
+│   └── run_analysis() - main analysis pipeline
 │
-├── providers/
-│   ├── base.py                     # Abstract provider interface
-│   ├── ollama.py                   # Ollama provider implementation
-│   └── openrouter.py               # OpenRouter provider implementation
+├── vram_manager.py                 # GPU-aware job scheduler (EXTERNAL, DO NOT MODIFY)
+│   ├── VRAMManager class with priority queue, multi-GPU scheduling
+│   ├── NVML integration for real-time VRAM tracking
+│   ├── Per-GPU job limits (MAX_JOBS_PER_GPU=2)
+│   ├── Context VRAM overhead (1GB) for already-loaded models
+│   └── Background thread (5s interval) for queue processing
 │
-├── config/
-│   ├── constants.py                # MAX_FILE_SIZE, VRAM_BUFFER, etc.
-│   ├── paths.py                    # UPLOAD_DIR, JOBS_DIR, THUMBS_DIR, etc.
-│   └── default_config.json
+├── chat_queue.py                   # LLM chat queue manager (EXTERNAL, DO NOT MODIFY)
+│   ├── ChatQueueManager for LLM chat requests
+│   ├── Rate limiting (MAX_JOBS_PER_MINUTE=30) + concurrent limits
+│   └── Background worker thread (1s interval)
 │
-├── src/                            # Refactored modules (v0.2.0+)
+├── monitor.py                      # System monitor (EXTERNAL, DO NOT MODIFY)
+│   ├── nvidia-smi polling (60s interval) with structured per-GPU stats
+│   └── ollama ps API polling (45s interval)
+│
+├── discovery.py                    # Ollama network discovery (EXTERNAL, DO NOT MODIFY)
+│   ├── Subnet scan (192.168.1.0/24) + common hosts
+│   └── Background refresh thread (30s interval)
+│
+├── thumbnail.py                    # Thumbnail extraction (EXTERNAL, DO NOT MODIFY)
+│   └── FFmpeg-based thumbnail at 10% of video duration
+│
+├── gpu_transcode.py                # FFmpeg transcode command builder (EXTERNAL, DO NOT MODIFY)
+│   ├── Forces CPU encoding (libx264) - TODO: restore GPU encoding
+│   └── Progress parser for standard FFmpeg output
+│
+├── providers/                      # Provider implementations (EXTERNAL, DO NOT MODIFY)
+│   ├── base.py                     # Abstract BaseProvider class
+│   ├── ollama.py                   # OllamaProvider - /api/chat REST endpoint, VRAM estimation
+│   └── openrouter.py               # OpenRouterProvider - pricing cache, cost estimation
+│
+├── config/                         # Configuration files
+│   ├── constants.py                # All tunable constants (VRAM, chat, video, dedup, etc.)
+│   ├── paths.py                    # Directory paths (uploads, jobs, cache, config, output)
+│   └── default_config.json         # Default analysis config, OpenWebUI settings, Ollama instances
+│
+├── src/                            # Refactored modules
 │   ├── api/                        # Flask blueprints (routes only)
-│   │   ├── videos.py               # /api/videos, upload, delete, frames, transcript, frames_index
-│   │   ├── providers.py            # /api/providers, discover, models, cost, balance
-│   │   ├── jobs.py                 # /api/jobs, cancel, priority, results
-│   │   ├── llm.py                  # /api/llm/chat, queue stats
-│   │   ├── results.py              # /api/results (stored results browser)
-│   │   ├── system.py               # /api/vram, /api/gpus
+│   │   ├── videos.py               # /api/videos - upload, delete, frames, transcript, dedup, scenes
+│   │   ├── providers.py            # /api/providers - discover, models, cost, balance, ollama-instances
+│   │   ├── jobs.py                 # /api/jobs - list, cancel, priority, results, frames_index
+│   │   ├── llm.py                  # /api/llm/chat - submit, status, cancel, queue stats
+│   │   ├── results.py              # /api/results - stored results browser
+│   │   ├── system.py               # /api/vram, /api/gpus, /api/debug
 │   │   ├── transcode.py            # /api/videos/transcode, /api/videos/reprocess
-│   │   └── knowledge.py            # /api/knowledge/sync, /api/knowledge/config, /api/knowledge/test
+│   │   └── knowledge.py            # /api/knowledge - sync, config, test, bases, send
 │   │
 │   ├── websocket/
-│   │   └── handlers.py             # SocketIO events (connect, subscribe_job, start_analysis)
+│   │   └── handlers.py             # SocketIO events: connect, disconnect, subscribe_job,
+│   │                                # unsubscribe_job, start_analysis
 │   │
 │   ├── worker/
-│   │   ├── __init__.py             # Re-exports run_analysis
-│   │   └── main.py                 # Worker: stages (frames → transcript → description → results)
+│   │   └── main.py                 # Legacy worker (pre-v0.5.0 code path in app.py)
 │   │
 │   ├── utils/
 │   │   ├── helpers.py              # format_bytes(), format_duration(), map_exit_code_to_status()
-│   │   ├── security.py             # secure_filename(), allowed_file(), verify_path()
+│   │   ├── security.py             # secure_filename(), allowed_file(), verify_path(), validate_upload_size()
 │   │   ├── video.py                # get_video_duration(), probe_video(), probe_all_videos()
-│   │   ├── file.py                 # Re-exports from security.py (backward compat)
-│   │   ├── transcode.py            # Re-exports from video.py (backward compat)
-│   │   └── transcript.py           # Transcript loading utilities (v0.3.4+)
+│   │   ├── transcript.py           # get_video_directory_from_path(), find_transcript_file(),
+│   │                                # load_transcript(), get_transcript_segments_with_end_times()
+│   │   └── scene_detection.py      # detect_scenes_from_frames(), save_scene_info(),
+│   │                                # get_scene_statistics(), integrate_scenes_with_dedup()
 │   │
-│   ├── services/
-│   │   └── openwebui_kb.py         # OpenWebUI Knowledge Base API client
-│   │
-│   ├── core/                       # (scaffolded, not yet active)
-│   ├── services/                   # (scaffolded, not yet active)
-│   └── queue/                      # (scaffolded, not yet active)
+│   └── services/
+│       └── openwebui_kb.py         # OpenWebUIClient - KB CRUD, file upload, results markdown
 │
 ├── static/
-│   ├── css/style.css               # All styles (merged from style-additions.css)
+│   ├── css/style.css               # All styles (~3339 lines, dark theme with CSS custom properties)
 │   └── js/
-│       ├── app.js                  # Module loader (was 2267-line monolith)
+│       ├── app.js                  # Module loader comment (deprecated)
 │       └── modules/
-│           ├── state.js            # Global state object, localStorage helpers
-│           ├── socket.js           # Socket.IO connection, event registrations
-│           ├── videos.js           # Upload, list, delete, reprocess, transcode progress, server log
-│           ├── providers.js        # Discovery, model loading, OpenRouter key/balance
-│           ├── jobs.js             # Job rendering, cancellation, details modal
-│           ├── llm.js              # LLM chat (live/modal/results contexts), polling
-│           ├── frame-browser.js    # Frame range sliders, thumbnails, transcript context (timestamp-aware)
+│           ├── state.js            # Global state object, saveStateToLocalStorage()
+│           ├── ui.js               # escapeHtml(), formatFrameAnalysis(), formatBytes(),
+│           │                        # showToast(), closeModal(), updateStartButton()
+│           ├── socket.js           # initSocket() - all SocketIO event registration
+│           ├── videos.js           # loadVideos(), upload, delete, reprocess, transcode progress,
+│           │                        # parallel video processing progress UI, server log
+│           ├── providers.js        # loadProviders(), provider/model selects, Phase 2 handling
+│           ├── jobs.js             # Job cards, live analysis, dedup multi-scan, tab switching
+│           ├── llm.js              # Chat across 3 contexts (live/modal/results), polling
+│           ├── frame-browser.js    # Dual-range sliders, thumbnails, transcript context,
+│           │                        # scene markers visualization, getFrameTimestamp()
+│           ├── scene-detection.js  # PySceneDetect integration, scene-aware dedup UI
 │           ├── system.js           # GPU status display, monitor tabs
-│           ├── results.js          # Stored results browser, detail view
-│           ├── settings.js         # Settings persistence, toggle handlers
-│           ├── knowledge.js        # OpenWebUI KB settings, test, sync
-│           ├── ui.js               # Toasts, modals, escapeHtml, formatFrameAnalysis
-│           └── init.js             # DOMContentLoaded bootstrap, event wiring
+│           ├── results.js          # Stored results browser, detail view, LLM chat in results
+│           ├── settings.js         # Settings persistence, debug toggle, advanced options
+│           ├── knowledge.js        # OpenWebUI KB settings, send-to-KB modal
+│           ├── ollama-settings.js  # Ollama instances management modal
+│           └── init.js             # DOMContentLoaded bootstrap, event wiring, submitAnalysis()
 │
-├── templates/index.html            # Single-page template (loads all JS modules)
-├── Dockerfile                      # nvidia/cuda:12.1.0-base-ubuntu22.04
-├── docker-compose.yml
+├── templates/index.html            # Single-page template (~725 lines, loads all JS modules)
+├── Dockerfile                      # nvidia/cuda:12.1.0-base-ubuntu22.04, gunicorn+eventlet
+├── docker-compose.yml              # Port 10000, GPU reservations, host.docker.internal
 ├── requirements.txt
-├── VERSION                         # Current: 0.2.1
+├── VERSION                         # 0.5.0
+├── README.md                       # Project overview, quick start
+├── CHANGELOG.md                    # Version history
+├── CONTRIBUTING.md                 # Development guidelines
+├── DEVELOPMENT.md                  # Architecture guide
+├── API.md                          # REST API + SocketIO documentation
+├── TROUBLESHOOTING.md              # Common issues
+├── SECURITY.md                     # Security considerations
 └── AGENTS.md                       # This file
 ```
 
@@ -130,19 +169,19 @@ video-analyzer-web/
 
 ## External Dependencies (DO NOT MODIFY)
 
-These files are part of the `video-analyzer` Python package or are external utilities. Treat as read-only:
+These files are part of external packages or utilities. Treat as read-only:
 
 | File | Purpose |
 |---|---|
 | `vram_manager.py` | GPU-aware job scheduler with priority queue, VRAM tracking, callbacks |
-| `chat_queue.py` | LLM chat queue with priority, status tracking, Ollama/OpenRouter execution |
-| `monitor.py` | Background threads for nvidia-smi (10s) and ollama ps (15s) polling |
+| `chat_queue.py` | LLM chat queue with rate limiting, priority, status tracking |
+| `monitor.py` | Background threads for nvidia-smi (60s) and ollama ps (45s) polling |
 | `discovery.py` | Subnet scan for Ollama instances on port 11434 |
-| `thumbnail.py` | ffmpeg-based thumbnail extraction |
-| `gpu_transcode.py` | Builds ffmpeg transcode commands with GPU encoder detection |
+| `thumbnail.py` | FFmpeg-based thumbnail extraction at 10% of video duration |
+| `gpu_transcode.py` | Builds ffmpeg transcode commands (forces CPU encoding currently) |
 | `providers/base.py` | Abstract `Provider` class |
-| `providers/ollama.py` | Ollama provider with model listing, frame analysis, VRAM estimation |
-| `providers/openrouter.py` | OpenRouter provider with cost estimation, balance check |
+| `providers/ollama.py` | Ollama provider with direct REST /api/chat, model listing, VRAM estimation |
+| `providers/openrouter.py` | OpenRouter provider with pricing cache, cost estimation, balance check |
 
 ---
 
@@ -150,89 +189,268 @@ These files are part of the `video-analyzer` Python package or are external util
 
 ### Backend
 
-1. **Blueprints** - All routes live in `src/api/*.py` as Flask blueprints. The main `app.py` only registers them.
+1. **Blueprints** - All routes live in `src/api/*.py` as Flask blueprints. Registered in `app.py` with `app.register_blueprint()`.
 2. **Error responses** - Use `api_error(message, code)` which returns `{"error": {"code": N, "message": "..."}}`.
-3. **SocketIO events** - Registered via `register_socket_handlers(socketio)` in `src/websocket/handlers.py`.
-4. **SocketIO handlers must accept `auth=None` parameter** - Flask-SocketIO passes an auth argument on connect/disconnect.
-5. **Socket log handler** - `SocketLogHandler` in `app.py` emits all log records to clients via `socketio.emit('log_message', ...)`. Must be instantiated AFTER `socketio` is created.
-6. **Two-step analysis architecture (v0.5.0+)**:
+3. **SocketIO events** - All handlers registered in `src/websocket/handlers.py:register_socket_handlers(socketio)`.
+4. **SocketIO handlers must accept `auth=None` parameter** - Flask-SocketIO passes auth on connect/disconnect.
+5. **Socket log handler** - `SocketLogHandler` in `app.py` uses a thread-safe queue + background emitter thread (`_log_emitter`). Instantiated AFTER `socketio` is created.
+6. **Two-step analysis** (v0.5.0+):
    - **Phase 1 (Vision)**: Frame-by-frame vision analysis using primary LLM provider
-   - **Phase 2 (Synthesis)**: Concurrent synthesis combining vision results with transcript using secondary LLM
-   - **Separate configuration**: Users can select different providers/models/temperature for each phase
-   - **Concurrent execution**: Phase 2 starts as soon as each frame's Phase 1 completes
-   - **Dual view interface**: "Vision Analysis" tab shows Phase 1 results, "Combined Analysis" tab shows synthesized results
-   - **Data flow**: `frames.jsonl` → Phase 1 results → `synthesis.jsonl` → Phase 2 results
-   - **SocketIO events**: `frame_analysis` (Phase 1), `frame_synthesis` (Phase 2)
-   - **Configuration**: Phase 2 settings passed via `params.phase2_*` in job config
+   - **Phase 2 (Synthesis)**: Each frame's vision result is combined with transcript context via a secondary LLM
+   - **Separate configuration**: phase2_provider_type, phase2_model, phase2_temperature in params
+   - **Real-time display**: `frame_analysis` SocketIO event (vision), `frame_synthesis` SocketIO event (combined)
+   - **Data flow**: `frames.jsonl` (vision results) → `synthesis.jsonl` (combined results)
 7. **Job lifecycle**:
    ```
-   Client emits "start_analysis" → VRAM manager queues job → 
-   on_vram_event("started") → spawn_worker() → monitor_job() → 
-   worker.py runs stages → results.json saved → emit job_complete
+   Client emits "start_analysis" → VRAM manager queues job →
+   on_vram_event("started") → spawn_worker() → monitor_job() →
+   worker.py runs stages → results.json saved → emit job_complete →
+   auto-sync to OpenWebUI KB (if enabled)
    ```
-7. **Worker stages**: Get frames → Analyze each frame (Ollama/OpenRouter) → Load transcript → Generate video description → **Concurrent Phase 2 synthesis** → Save results → Auto-LLM (if configured).
-8. **Transcode flow**: Upload → `_transcode_and_delete_with_cleanup()` → `_extract_frames()` → `_transcribe_video()` → emit `videos_updated`.
-9. **Frame renumbering**: After dedup, frames are renamed sequentially (frame_000001, frame_000002, ...) and `frames_index.json` maps each new frame number to its actual video timestamp. This ensures transcript context is always accurate.
+8. **Upload flow**: XHR POST `/api/videos/upload` → `_process_video_direct()` → parallel `_extract_frames_direct()` + `_transcribe_video()` → emit `videos_updated`.
+9. **Frame renumbering**: After dedup, frames are renamed sequentially (`frame_000001`, `frame_000002`, ...) and `frames_index.json` maps new frame number → video timestamp in seconds.
 
 ### Frontend
 
-1. **Module loading order matters** - `state.js` and `ui.js` load first (no dependencies), then others in dependency order, `init.js` last.
-2. **Global `state` object** - Single source of truth for app state, defined in `state.js`.
-3. **SocketIO** - Connection established in `socket.js`, all event handlers registered there.
+1. **Module loading order** (defined in `index.html`): state → ui → socket → videos → providers → jobs → llm → frame-browser → scene-detection → system → results → settings → ollama-settings → knowledge → init.
+2. **Global `state` object** in `state.js` - single source of truth. Properties: `debug`, `providers`, `currentJob`, `currentJobResults`, `settings`, `analysisVideoName`, `frameBrowser`, `currentVideo`, `socket`.
+3. **SocketIO** connection established in `socket.js:initSocket()`. All event handler functions registered there (calling functions in other modules).
 4. **No build step** - Plain script tags in `index.html`. No ES modules, no bundler.
 5. **CSS custom properties** - All colors, spacing, radii defined as `--var-*` in `:root`.
-6. **Frame browser uses `frames_index.json`** - `getFrameTimestamp(frameNum)` reads from the index for accurate transcript sync, falling back to `(frameNum-1)/fps` if unavailable.
+6. **Frame browser** uses `frames_index.json` - `getFrameTimestamp(frameNum)` reads from the index for accurate transcript sync, falling back to `(frameNum-1)/fps`.
+7. **Three chat contexts**: `live` (analysis results panel), `modal` (job detail modal), `results` (stored results view). Each has its own set of DOM selectors.
 
 ### Docker
 
-1. **HF_HOME removed** - Whisper models cache to `/root/.cache/huggingface` (default), NOT under volume mount.
+1. **HF_HOME**: Whisper models cache to `/root/.cache/huggingface` (default), NOT under volume mount. Pre-downloaded in Docker build.
 2. **Port 10000** everywhere - Dockerfile EXPOSE, HEALTHCHECK, CMD, docker-compose, app.py.
-3. **Volume mounts**: `uploads`, `jobs`, `cache`, `config`, `output` - these persist across restarts.
-4. **GPU access**: `deploy.resources.reservations.devices` with `driver: nvidia`.
+3. **Volume mounts**: `uploads`, `jobs`, `cache`, `config`, `output` - persist across restarts.
+4. **GPU access**: `deploy.resources.reservations.devices` with `driver: nvidia`, `capabilities: [gpu]`.
+5. **CUDA compatibility**: `nvidia-cublas-cu12` pip package symlinked into ctranslate2 libs dir for ABI compatibility.
+6. **Start command**: `gunicorn -k eventlet -w 1 --bind 0.0.0.0:10000 --timeout 300 app:app`.
 
 ---
 
-## Transcription Flow & Gotchas
+## Key SocketIO Events
 
-### Overview
-The transcription flow has been refactored in v0.3.3 to fix inconsistencies between upload processing and analysis phases:
+### Client → Server
+| Event | Data | Handler |
+|---|---|---|
+| `start_analysis` | `{video_path, provider_type, provider_name, model, priority, provider_config, params}` | `handle_start_analysis` |
+| `subscribe_job` | `{job_id}` | `handle_subscribe_job` |
+| `unsubscribe_job` | `{job_id}` | `handle_unsubscribe_job` |
 
-1. **Upload phase**: Video is transcribed during upload, transcript saved to `uploads/<video_name>/transcript.json`
-2. **Dedup phase**: When creating a deduped video, transcript is copied to `uploads/<video_name_dedup>/transcript.json`
-3. **Analysis phase**: Worker loads transcript using shared utility in `src/utils/transcript.py`
+### Server → Client
+| Event | Data | Purpose |
+|---|---|---|
+| `job_created` | `{job_id, status}` | Analysis job submitted |
+| `job_status` | `{job_id, stage, progress, current_frame, total_frames}` | Job progress updates |
+| `frame_analysis` | `{job_id, frame_number, analysis, timestamp, video_ts, transcript_context}` | Vision analysis per frame |
+| `frame_synthesis` | `{job_id, frame_number, combined_analysis, vision_analysis}` | Combined analysis per frame |
+| `job_transcript` | `{job_id, transcript}` | Full transcript text |
+| `job_description` | `{job_id, description}` | Final video description |
+| `job_complete` | `{job_id, success}` | Job finished |
+| `videos_updated` | `{}` | Video list changed |
+| `vram_event` | `{event, job}` | VRAM manager status change |
+| `system_status` | `{type, data}` | nvidia-smi / ollama ps output |
+| `log_message` | `{level, message, timestamp}` | Server log lines |
+| `transcode_progress` | `{source, stage, progress}` | Transcode progress (legacy) |
+| `video_processing_progress` | `{source, stage, progress, message}` | Upload processing (parallel) |
+| `frame_extraction_progress` | `{source, stage, progress}` | Frame extraction (legacy) |
+| `transcription_progress` | `{source, stage, progress}` | Transcription (legacy) |
+| `kb_sync_complete` | `{job_id, kb_id}` | OpenWebUI sync done |
+| `kb_sync_error` | `{job_id, error}` | OpenWebUI sync failed |
 
-### Key Changes (v0.3.4)
-- **Shared transcript utility**: `src/utils/transcript.py` provides consistent path resolution across all components
-- **Unified path resolution**: Frontend API and workers now use same logic to locate transcripts
-- **Robust transcript injection**: Worker checks for `{TRANSCRIPT_RECENT}`/`{TRANSCRIPT_PRIOR}` tokens in prompts, appends transcript if tokens not found
-- **Better validation**: Transcript segments validated for required fields and end times
+---
 
-### Transcript Path Resolution
-The `get_video_directory_from_path()` function handles naming conventions:
-- Removes `_720p` suffix (transcoded videos)
-- Keeps `_dedup` suffix (deduped videos have their own directory)
-- Tries multiple candidate directories in priority order
+## Key API Endpoints
 
-### Worker Transcript Injection
-The worker (`worker.py`) injects transcript context into frame analysis prompts:
-1. **Token-based injection**: If prompt contains `{TRANSCRIPT_RECENT}`/`{TRANSCRIPT_PRIOR}` tokens, replaces them with transcript context
-2. **Fallback injection**: If tokens not found, appends transcript context to the prompt
-3. **Timestamp-aware**: Uses `frames_index.json` to map frame numbers to video timestamps for accurate transcript segment selection
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/videos` | List uploaded videos |
+| POST | `/api/videos/upload` | Upload video (parallel frames + transcription) |
+| DELETE | `/api/videos/<filename>` | Delete video + thumbnails + job data |
+| GET | `/api/videos/<filename>/frames` | Frame metadata (count, fps, duration) |
+| GET | `/api/videos/<filename>/frames/<n>` | Get specific frame image |
+| GET | `/api/videos/<filename>/frames/<n>/thumb` | Get frame thumbnail |
+| GET | `/api/videos/<filename>/frames_index` | Get frame timestamp index |
+| GET | `/api/videos/<filename>/transcript` | Get transcript data |
+| POST | `/api/videos/<filename>/dedup` | Apply deduplication at threshold |
+| POST | `/api/videos/<filename>/dedup-multi` | Multi-threshold dedup scan |
+| GET/POST | `/api/videos/<filename>/scenes` | Scene detection |
+| POST | `/api/videos/<filename>/scene-aware-dedup` | Scene-aware dedup |
+| POST | `/api/videos/reprocess` | Re-extract + re-transcribe |
+| POST | `/api/videos/transcode` | Direct processing (legacy) |
+| GET | `/api/providers` | List all providers |
+| GET | `/api/providers/discover` | Scan network for Ollama |
+| GET | `/api/providers/ollama/models` | List Ollama models by URL |
+| GET | `/api/providers/openrouter/models` | List OpenRouter models |
+| GET | `/api/providers/ollama-instances` | Get saved Ollama URLs |
+| POST | `/api/providers/ollama-instances` | Save Ollama URLs |
+| GET | `/api/jobs` | List all jobs |
+| GET | `/api/jobs/<id>` | Get job details |
+| DELETE | `/api/jobs/<id>` | Cancel job |
+| GET | `/api/jobs/<id>/results` | Get job results |
+| GET | `/api/results` | List stored results |
+| POST | `/api/llm/chat` | Submit chat job |
+| GET | `/api/llm/chat/<id>` | Poll chat job status |
+| DELETE | `/api/llm/chat/<id>` | Cancel chat job |
+| GET | `/api/llm/queue/stats` | Chat queue statistics |
+| GET | `/api/vram` | VRAM status |
+| GET | `/api/gpus` | GPU list with details |
+| GET/POST | `/api/debug` | Toggle debug mode |
+| GET | `/api/knowledge/status` | OpenWebUI config status |
+| POST | `/api/knowledge/config` | Save OpenWebUI config |
+| POST | `/api/knowledge/test` | Test OpenWebUI connection |
+| POST | `/api/knowledge/sync/<id>` | Sync single job to KB |
+| POST | `/api/knowledge/sync-all` | Sync all jobs to KB |
+| GET | `/api/knowledge/bases` | List KBs from OpenWebUI |
+| POST | `/api/knowledge/send/<id>` | Send job to specific KB |
 
-### File Locations
-- **Original video**: `uploads/<video_name_720p.mp4>` → transcript at `uploads/<video_name>/transcript.json`
-- **Deduped video**: `uploads/<video_name_dedup_720p.mp4>` → transcript at `uploads/<video_name_dedup>/transcript.json` (copied from original)
-- **Frame metadata**: `frames_index.json` maps renumbered frame numbers to original video timestamps
+---
 
-### Common Issues Fixed
-1. **Path inconsistency**: Frontend and workers previously used different logic to find transcripts
-2. **Missing prompt tokens**: Default prompts might not contain transcript tokens, causing silent failures
-3. **Dedup integration**: Transcript copy race condition during dedup process
-4. **Missing end times**: Transcript segments without end times caused timestamp calculation issues
+## Worker Architecture (worker.py)
+
+The worker runs as a subprocess spawned by `app.py:spawn_worker()`. It communicates via files in the job directory.
+
+### Job Directory Structure
+```
+jobs/<job_id>/
+├── input.json           # Job configuration
+├── status.json          # Live status updates (written by worker, read by monitor)
+├── frames.jsonl         # Vision analysis results (one JSON line per frame)
+├── synthesis.jsonl      # Combined analysis results (one JSON line per frame, Phase 2)
+├── config.json          # Temp config for video_analyzer library
+├── pid                  # Worker process PID
+├── pgid                 # Process group ID
+├── gpu_assigned.txt     # GPU index assigned by VRAM manager
+├── worker.log           # Worker stdout/stderr
+└── output/
+    └── results.json     # Final results (frames, transcript, video_description)
+```
+
+### Worker Pipeline Stages (worker.py:run_analysis)
+1. **Initialization**: Load config, update status
+2. **Audio extraction + transcription**: Extract audio with ffmpeg, transcribe with faster-whisper, or load pre-existing transcript
+3. **Frame preparation**: Use pre-extracted frames from uploads/ or extract via VideoProcessor
+4. **Frame analysis (Phase 1)**: Analyze each frame via Ollama/OpenRouter, inject transcript context, write to `frames.jsonl`
+5. **Phase 2 synthesis**: For each frame, call secondary LLM combining vision + transcript, write to `synthesis.jsonl`
+6. **Video reconstruction**: Generate final video description from all analyses + transcript
+7. **Auto-LLM**: Submit results to chat queue if configured
+
+### Prompt Injection for Transcript
+The worker injects transcript context into frame analysis prompts via token replacement:
+- `{TRANSCRIPT_CONTEXT}` - Old format, replaced with recent + prior transcript blocks
+- `{TRANSCRIPT_RECENT}` - New format, replaced with transcript at current timestamp
+- `{TRANSCRIPT_PRIOR}` - New format, replaced with 2 prior transcript segments
+- If no tokens found, transcript is appended to the prompt as a fallback
+
+### Frame Metadata Sources
+- `frames_index.json`: Maps renumbered frame number → video timestamp (after dedup)
+- `dedup_results.json`: Maps original frame numbers ↔ deduped frame numbers
+- `frames_meta.json`: Contains frame_count, fps, duration
+
+---
+
+## Transcription Flow
+
+### Upload Phase
+1. `_process_video_direct()` starts parallel frame extraction and audio transcription
+2. Audio extracted via ffmpeg (pcm_s16le, 16kHz, mono)
+3. Transcribed via faster-whisper with GPU (CUDA float16) or CPU (int8) fallback
+4. Transcript saved to `uploads/<video_name>/transcript.json`
+5. Audio file (`audio.wav`) cleaned up in finally block
+
+### Analysis Phase
+1. Worker first tries to extract audio from video and transcribe directly
+2. If no audio stream (e.g., deduped video), loads pre-existing `transcript.json`
+3. Uses shared `src/utils/transcript.py:load_transcript()` for consistent path resolution
+4. Path resolution handles: `_720p` suffix removal, `_dedup` directory naming
+
+### Accepted Languages
+Full list of ISO 639-1 language codes (~100 languages, defined in both `_transcribe_video()` and `_process_video_direct()`). If a language is not in the list, `lang_param` is set to `None` (auto-detect).
+
+---
+
+## Dedup System
+
+### Three Methods
+1. **Sequential** (`_run_dedup_sequential` in app.py): Basic frame-by-frame phash comparison, no parallelization
+2. **Parallel** (`_run_dedup_parallel` in app.py): Uses `src.utils.parallel_hash.compute_hashes_parallel()` + `src.utils.parallel_file_ops.delete_frames_parallel()` for GPU-accelerated hashing
+3. **Smart dispatcher** (`_run_dedup` in app.py): Chooses parallel or sequential based on `src.utils.dedup_scheduler.get_dedup_strategy()`
+
+### Multi-threshold Scan
+- `POST /api/videos/<filename>/dedup-multi` runs `dedup_worker.py` as subprocess
+- Pre-computes hash results for multiple thresholds simultaneously
+- Results saved to `dedup_detailed_results.json` for instant application via UI
+
+### Scene-Aware Dedup
+- Uses `PySceneDetect` for content-based scene boundary detection
+- Dedup runs within scene boundaries (preserves scene-transition frames)
+- Accessible via `/api/videos/<filename>/scene-aware-dedup` endpoint
+
+### Frame Renumbering
+After dedup, `_renumber_frames()` creates `frames_index.json`:
+```json
+{"1": 0.0, "2": 1.2, "3": 2.5, ...}
+```
+Key: 1-based sequential frame number, Value: video timestamp in seconds.
+
+---
+
+## Phase 2 (Synthesis) Architecture
+
+### Configuration Flow
+1. User selects Phase 2 provider/model in UI (or "Same as Phase 1")
+2. Config passed via `params.phase2_provider_type`, `params.phase2_model`, etc.
+3. Two possible implementations:
+   - **worker.py `synthesize_frame()`**: Direct HTTP call to Ollama/OpenRouter API
+   - **worker.py via video_analyzer library**: Uses VideoAnalyzer with phase2 client config
+
+### Synthesis Prompt
+```
+Combine the visual analysis with transcript context to create an enhanced description.
+VISION ANALYSIS: <frame analysis text>
+TRANSCRIPT CONTEXT: <recent transcript text>
+TIMESTAMP: <time in seconds>
+Create a comprehensive analysis... [5 focus areas]
+```
+
+---
+
+## Ollama Instance Management
+
+### Discovery Methods
+1. **Static config**: URLs saved in `config/default_config.json` under `ollama_instances`
+2. **Manual addition**: via Ollama Instances modal in UI
+3. **Network scan**: `discovery.py` scans subnet `192.168.1.0/24` + common hosts (localhost, host.docker.internal)
+4. **Hardcoded fallback** in `app.py:init_providers()`: `192.168.1.237:11434`, `192.168.1.241:11434`
+
+### Monkey-patching
+- **worker.py**: Ollama client's `chat()` patched to add `think:false`, use `/api/chat` directly
+- **worker.py**: `VideoAnalyzer.analyze_frame()` patched for transcript injection + previous frame context limiting
 
 ---
 
 ## Gotchas
+
+1. **`providers` dict** is global in `app.py` - blueprints import it via `from app import providers`
+2. **`socketio` and `app`** are also globals imported by blueprints and handlers
+3. **Double-spawn guard**: `_spawned_jobs` set in `app.py` prevents worker from being spawned twice
+4. **`flask.request` vs `flask_socketio.request`**: Use `from flask import request` in SocketIO handlers
+5. **SocketLogHandler must be created after socketio** - Otherwise `socketio.emit()` silently fails
+6. **Port 10000** - Non-privileged port. Port 1000 requires root on Linux.
+7. **`host.docker.internal`** is used for Docker-to-host communication (Ollama, OpenWebUI)
+8. **`request` comes from `flask`, NOT `flask_socketio`** - Common import error in SocketIO handlers
+9. **Phase 2 Ollama URL** defaults to `http://192.168.1.237:11434` (not localhost) since text models are on that instance
+10. **`app.py` has duplicate `_sync_to_openwebui_kb` definitions** (lines 394 and 421) - second definition overwrites the first
+11. **`constants.py` has duplicate dedup constants** (lines 60-65 and 72-77)
+12. **index.html has duplicate `ollama-instances-modal`** (lines 600-630 and 633-663)
+13. **`style.css` has duplicate server-log and frame-thumbnail sections**
+14. **Legacy worker in `src/worker/main.py`** is a separate code path from the active `worker.py`; `src/worker/__init__.py` re-exports `run_analysis` for backward compatibility
+15. **Current two-step limitation**: Phase 2 synthesis runs sequentially within the frame loop, causing vision analysis to wait for synthesis completion before moving to next frame
+
+---
 
 ## Common Tasks
 
@@ -248,107 +466,12 @@ The worker (`worker.py`) injects transcript context into frame analysis prompts:
 4. Add handler function in appropriate module
 
 ### Change Whisper model behavior
-- **app.py transcription** (upload flow): Lines with `WhisperModel(whisper_model, device=device, compute_type=compute_type)`
-- **worker.py**: Uses `video_analyzer.audio_processor.AudioProcessor` from external package
-- **Dockerfile**: Pre-downloads `base` and `large` models during build
+- Upload transcription (`_process_video_direct`): Lines ~1412-1423 in `app.py`
+- Worker transcription: Lines 416-421 in `worker.py`
+- Legacy transcription (`_transcribe_video`): Lines 1712-1723 in `app.py`
+- Dockerfile pre-downloads: `base` and `large` models during build
 
 ### Modify UI spacing/styling
 - All CSS in `static/css/style.css`
 - Spacing variables in `:root` (`--spacing-xs` through `--spacing-xl`)
 - No inline styles in JS (toast creation uses `Object.assign` for dynamic values only)
-
----
-
-## Gotchas
-
-1. **`providers` dict** is global in `app.py` - blueprints import it via `from app import providers`
-2. **`socketio` and `app`** are also globals imported by blueprints and handlers
-3. **Double-spawn guard**: `_spawned_jobs` set in `app.py` prevents worker from being spawned twice
-4. **Ollama patch in worker**: Monkey-patches `ollama.chat` to add `think:false` - this is runtime, not a file change
-5. **Frame dedup**: Uses perceptual hashing (`imagehash.phash`) with configurable threshold. After dedup, frames are renumbered sequentially and `frames_index.json` is saved.
-6. **Audio cleanup**: `audio.wav` is always deleted after transcription (finally block)
-7. **Source video preserved**: The original uploaded file is NOT deleted after transcode (changed in v0.2.0)
-8. **SocketLogHandler must be created after socketio** - Otherwise `socketio.emit()` silently fails
-9. **Port 10000** - Non-privileged port. Port 1000 requires root on Linux.
-10. **`request` comes from `flask`, NOT `flask_socketio`** - Common import error in SocketIO handlers
-11. **Two-step analysis current limitation (v0.5.0)**: Phase 2 synthesis runs sequentially within the same loop as Phase 1, causing vision analysis to wait for synthesis completion. This prevents full parallel GPU utilization across Ollama instances. A proper synthesis queue is needed for true parallelism.
-
----
-
-## Testing
-
-No formal test suite exists yet. To manually test:
-
-```bash
-# Start the app
-python3 app.py
-
-# Or via Docker
-docker compose up --build
-
-# Test endpoints
-curl http://localhost:10000/api/vram
-curl http://localhost:10000/api/providers
-curl http://localhost:10000/api/jobs
-```
-
----
-
-## Future Work (Scaffolded but Not Active)
-
-These directories exist but are not yet wired into the application:
-
-| Directory | Intended Purpose |
-|---|---|
-| `src/core/` | Flask app factory pattern (currently app.py does this directly) |
-| `src/queue/` | Common base class for VRAMManager and ChatQueueManager |
-
-When ready to activate these, refactor `app.py` to use `src.core.app.create_app()` factory pattern.
-
----
-
-## Documentation
-
-### Current Documentation Structure
-Video Analyzer Web now has comprehensive documentation:
-
-| File | Purpose | Audience |
-|---|---|---|
-| `README.md` | Project overview, quick start, features | Users, developers |
-| `AGENTS.md` | Internal developer guide, architecture, gotchas | AI agents, developers |
-| `CHANGELOG.md` | Version history, breaking changes, upgrades | Users, developers |
-| `CONTRIBUTING.md` | Development guidelines, code style, workflow | Contributors |
-| `DEVELOPMENT.md` | Architecture guide, components, data flow | Developers |
-| `API.md` | REST API documentation, SocketIO events | API consumers, developers |
-| `TROUBLESHOOTING.md` | Common issues, solutions, debugging | Users, administrators |
-| `SECURITY.md` | Security considerations, best practices | Administrators, security |
-| `ARCHITECTURE_DECISIONS.md` | Architecture decision records, lessons learned | Developers, architects |
-
-### Archived Documentation
-The following files have been moved to `archive/docs/`:
-- `IMPROVEMENTS_SUMMARY.md` - Historical improvements (implemented)
-- `YOUTUBE_INTEGRATION.md` - Unused feature documentation  
-- `CODE_REVIEW_DOCUMENTATION.md` - 2080-line comprehensive review (superseded by new docs)
-
-### Dead Code Removed (v3.5.0+)
-The following unused code has been removed:
-- `yt_downloader/` - Unused YouTube downloader module
-- `youtube_dl/` - Empty directory
-- `src/utils/file.py` - Unused re-exports (use `src.utils.security` instead)
-- `src/utils/transcode.py` - Unused re-exports (use `src.utils.video` instead)
-- `src/core/` - Scaffolded Flask factory (unused)
-- `src/queue/` - Empty scaffolding
-- Root test scripts (`test_*.py`, `extract_*.py`) - Moved to `archive/development_scripts/`
-
-### Key Documentation Updates
-1. **Transcript bug fix** - Added to CHANGELOG.md with details
-2. **API documentation** - Complete REST API and SocketIO events in API.md
-3. **Security guidance** - Comprehensive security considerations in SECURITY.md
-4. **Troubleshooting** - Common issues and solutions in TROUBLESHOOTING.md
-5. **Development guide** - Architecture and patterns in DEVELOPMENT.md
-
-### Documentation Maintenance
-- Update `CHANGELOG.md` for all version changes
-- Update `AGENTS.md` for architectural changes
-- Update `API.md` for API endpoint changes
-- Run documentation consistency checks periodically

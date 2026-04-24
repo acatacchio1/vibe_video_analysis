@@ -48,6 +48,12 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('start-frame-slider')?.addEventListener('input', handleStartSliderChange);
     document.getElementById('end-frame-slider')?.addEventListener('input', handleEndSliderChange);
     document.getElementById('start-frame-input')?.addEventListener('change', handleStartInputChange);
+
+    // Pipeline select change -> show/hide LinkedIn config
+    document.getElementById('pipeline-select')?.addEventListener('change', handlePipelineChange);
+    
+    // Initialize pipeline state on page load
+    handlePipelineChange();
     document.getElementById('end-frame-input')?.addEventListener('change', handleEndInputChange);
     document.getElementById('start-dec-btn')?.addEventListener('click', () => handleFrameStep('start', -1));
     document.getElementById('start-inc-btn')?.addEventListener('click', () => handleFrameStep('start', 1));
@@ -129,6 +135,7 @@ async function submitAnalysis() {
         language: document.getElementById('language-input')?.value || 'en',
         device: document.getElementById('device-select')?.value || 'gpu',
         user_prompt: document.getElementById('prompt-input')?.value || '',
+        pipeline_type: document.getElementById('pipeline-select')?.value || 'standard_two_step',
     };
 
     // OpenRouter API key is handled server-side from environment variable
@@ -137,6 +144,47 @@ async function submitAnalysis() {
         if (ollamaUrl) {
             data.provider_config = { url: ollamaUrl };
         }
+    }
+
+    // Add LinkedIn configuration if LinkedIn pipeline is selected
+    const pipelineType = data.pipeline_type;
+    if (pipelineType === 'linkedin_extraction') {
+        // Initialize params object if it doesn't exist
+        if (!data.params) {
+            data.params = {};
+        }
+        
+        // Add LinkedIn config
+        data.params.linkedin_config = {
+            scoring_weights: {
+                hook_strength: parseInt(document.getElementById('linkedin-hook-weight')?.value || '25'),
+                self_contained_value: 20,
+                clarity_and_focus: 15,
+                speaker_energy: 15,
+                visual_quality: 10,
+                cta_potential: 10,
+                duration_fit: 5,
+            },
+            targets: {
+                ideal_duration_min: parseInt(document.getElementById('linkedin-duration-min')?.value || '30'),
+                ideal_duration_max: parseInt(document.getElementById('linkedin-duration-max')?.value || '60'),
+                max_duration: 90,
+                min_duration: 15,
+                hook_strength_threshold: 18,
+                total_score_threshold: 70,
+            },
+            edit_preferences: {
+                prefer_vertical: true,
+                allow_square: true,
+                auto_add_captions: document.getElementById('linkedin-add-captions')?.checked || true,
+                detect_series: true,
+                series_min_clips: 3,
+                series_max_gap: 60,
+            },
+            generate_clips: document.getElementById('linkedin-generate-clips')?.checked || false,
+        };
+        
+        console.log('LinkedIn config added:', data.params.linkedin_config);
     }
 
     // Add Phase 2 (synthesis) configuration
@@ -207,4 +255,42 @@ async function submitAnalysis() {
     document.getElementById('frames-log').innerHTML = '';
 
     showToast(`Analysis started (job will appear shortly)`);
+}
+
+// Handle pipeline selection change
+function handlePipelineChange() {
+    const pipelineSelect = document.getElementById('pipeline-select');
+    const linkedinConfigSection = document.getElementById('linkedin-config-section');
+    const phase2Section = document.querySelector('.form-section-separator')?.parentElement;
+    
+    if (!pipelineSelect || !linkedinConfigSection) return;
+    
+    const isLinkedIn = pipelineSelect.value === 'linkedin_extraction';
+    
+    // Show/hide LinkedIn config section
+    if (isLinkedIn) {
+        linkedinConfigSection.classList.remove('hidden');
+        // Also update slider value display
+        const hookWeightSlider = document.getElementById('linkedin-hook-weight');
+        const hookWeightValue = document.getElementById('linkedin-hook-value');
+        if (hookWeightSlider && hookWeightValue) {
+            hookWeightValue.textContent = hookWeightSlider.value;
+            hookWeightSlider.addEventListener('input', (e) => {
+                hookWeightValue.textContent = e.target.value;
+            });
+        }
+    } else {
+        linkedinConfigSection.classList.add('hidden');
+    }
+    
+    // Show/hide Phase 2 section (not needed for LinkedIn)
+    if (phase2Section) {
+        if (isLinkedIn) {
+            phase2Section.classList.add('hidden');
+        } else {
+            phase2Section.classList.remove('hidden');
+        }
+    }
+    
+    console.log(`Pipeline changed to: ${pipelineSelect.value}, LinkedIn: ${isLinkedIn}`);
 }

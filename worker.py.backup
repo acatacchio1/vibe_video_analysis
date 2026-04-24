@@ -160,55 +160,11 @@ def run_analysis(job_dir: Path):
     config = json.loads(input_file.read_text())
     logger.info(f"Config keys: {list(config.keys())}")
 
-    # Check for pipeline type
-    params = config.get("params", {})
-    pipeline_type = params.get("pipeline_type", "standard_two_step")
-    
-    # If LinkedIn pipeline is requested,iltrate to new pipeline framework
-    if pipeline_type == "linkedin_extraction":
-        logger.info(f"Using LinkedIn extraction pipeline")
-        try:
-            from src.worker.pipelines import create_pipeline
-            pipeline = create_pipeline(pipeline_type, job_dir, config)
-            
-            # Update status with pipeline info
-            update_status(
-                job_dir,
-                {
-                    "status": "running",
-                    "stage": "initializing",
-                    "progress": 0,
-                    "current_frame": 0,
-                    "total_frames": 0,
-                    "pipeline": pipeline_type,
-                },
-            )
-            
-            results = pipeline.run()
-            logger.info(f"=== JOB COMPLETE === Pipeline: {pipeline_type}")
-            return results
-            
-        except ImportError as e:
-            logger.error(f"Failed to import pipeline modules: {e}")
-            logger.error("LinkedIn pipeline not available, falling back to standard analysis")
-            # Continue with standard analysis
-        except Exception as e:
-            logger.error(f"LinkedIn pipeline failed: {e}", exc_info=True)
-            update_status(
-                job_dir,
-                {
-                    "status": "failed",
-                    "stage": "error",
-                    "error": f"LinkedIn pipeline error: {str(e)}",
-                },
-            )
-            raise
-
-    # Standard two-step analysis (original implementation)
     video_path = config["video_path"]
     provider_type = config["provider_type"]
     provider_config = config["provider_config"]
     model = config["model"]
+    params = config.get("params", {})
     job_id = config["job_id"]
     video_frames_dir = config.get("video_frames_dir", "")
     
@@ -238,7 +194,6 @@ def run_analysis(job_dir: Path):
             "progress": 0,
             "current_frame": 0,
             "total_frames": 0,
-            "pipeline": "standard_two_step",
         },
     )
 

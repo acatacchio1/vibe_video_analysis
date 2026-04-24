@@ -167,6 +167,15 @@
                                 </select>
                             </div>
 
+                            <div class="form-group">
+                                <label for="pipeline-select">Analysis Pipeline</label>
+                                <select id="pipeline-select" required>
+                                    <option value="standard_two_step" selected>Standard Two-Step Analysis</option>
+                                    <option value="linkedin_extraction">LinkedIn Short-Form Extraction</option>
+                                </select>
+                                <div class="form-hint">Standard: Frame analysis + synthesis. LinkedIn: Optimized for short-form content.</div>
+                            </div>
+
                             <div id="dedup-results" class="dedup-results">
                                 <div class="dedup-summary">
                                     <span id="dedup-original-count">--</span> original frames
@@ -355,6 +364,50 @@
                             <div class="form-group">
                                 <label for="prompt-input">User Question / Prompt</label>
                                 <textarea id="prompt-input" rows="3" placeholder="Ask a specific question about the video..."></textarea>
+                            </div>
+                        </div>
+
+                        <div id="linkedin-config-section" class="form-section hidden">
+                            <h3>LinkedIn Pipeline Configuration</h3>
+                            <p class="form-help">Optimize for LinkedIn short-form content (15-60 seconds, strong hooks, silent-first)</p>
+                            
+                            <div class="form-group">
+                                <label for="linkedin-hook-weight">Hook Strength Weight</label>
+                                <div class="slider-container">
+                                    <input type="range" id="linkedin-hook-weight" min="0" max="25" value="25" class="slider">
+                                    <span id="linkedin-hook-value" class="slider-value">25</span>
+                                </div>
+                                <div class="form-hint">Higher = prioritize attention-grabbing openings (0-25 points)</div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="linkedin-duration-min">Ideal Duration Range</label>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="linkedin-duration-min">Min (seconds)</label>
+                                        <input type="number" id="linkedin-duration-min" value="30" min="15" max="60">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="linkedin-duration-max">Max (seconds)</label>
+                                        <input type="number" id="linkedin-duration-max" value="60" min="30" max="90">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="linkedin-generate-clips">Generate Video Clips</label>
+                                <div class="checkbox-container">
+                                    <input type="checkbox" id="linkedin-generate-clips" checked>
+                                    <label for="linkedin-generate-clips">Auto-generate trimmed video clips with ffmpeg</label>
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="linkedin-add-captions">Auto-Suggest Captions</label>
+                                <div class="checkbox-container">
+                                    <input type="checkbox" id="linkedin-add-captions" checked>
+                                    <label for="linkedin-add-captions">Generate LinkedIn post captions for each clip</label>
+                                </div>
                             </div>
                         </div>
 
