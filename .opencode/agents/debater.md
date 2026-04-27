@@ -1,7 +1,7 @@
 ---
 description: Reviews the planner's proposal and decides if a meaningfully better plan exists
 mode: subagent
-model: openrouter/deepseek/deepseek-v4-pro
+model: ollama-gpu1/qwen3.6:27b-q8_0
 temperature: 0.5
 max_steps: 10
 permission:

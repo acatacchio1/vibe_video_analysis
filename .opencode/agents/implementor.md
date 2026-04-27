@@ -1,7 +1,7 @@
 ---
 description: Implements the approved plan with minimal, targeted code changes
 mode: subagent
-model: openrouter/deepseek/deepseek-v4-flash
+model: ollama-gpu0/qwen3.6:27b-q8_0
 temperature: 0.1
 max_steps: 40
 permission:

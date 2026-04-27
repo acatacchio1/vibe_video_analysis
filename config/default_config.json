@@ -71,5 +71,12 @@
     "knowledge_base_name": "Video Analyzer",
     "auto_sync": true
   },
-  "ollama_instances": []
+  "ollama_instances": [
+    "http://192.168.1.237:11434",
+    "http://192.168.1.241:11434"
+  ],
+  "remote_ollama_models": {
+    "http://192.168.1.237:11434": "qwen3.6:27b-q4_K_M",
+    "http://192.168.1.241:11434": "qwen3.6:27b-q4_K_M"
+  }
 }

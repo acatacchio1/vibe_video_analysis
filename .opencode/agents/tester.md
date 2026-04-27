@@ -1,7 +1,7 @@
 ---
 description: Runs the relevant test suite and records results
 mode: subagent
-model: openrouter/deepseek/deepseek-v4-flash
+model: ollama-241/qwen3.6:27b-q4_K_M
 temperature: 0.1
 max_steps: 10
 permission:

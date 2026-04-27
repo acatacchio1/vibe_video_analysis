@@ -1,7 +1,7 @@
 ---
 description: Reads the final diff and workflow state and prints a conventional commit message
 mode: subagent
-model: openrouter/deepseek/deepseek-v4-flash
+model: ollama-241/qwen3.6:27b-q4_K_M
 temperature: 0.2
 max_steps: 5
 permission:

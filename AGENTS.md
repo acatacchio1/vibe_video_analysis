@@ -1,22 +1,54 @@
 # Video Analyzer Web - Agent Development Guide
 
-> Version 0.5.0 | Last updated: 2026-04-24
+> Version 0.5.0 | Last updated: 2026-04-26
 
 This document provides essential context for AI agents working on this codebase.
 
 ---
 
-## Architecture Overview
+## Multi-Agent Workflow
 
-### Tech Stack
-- **Backend**: Flask + Flask-SocketIO (eventlet driver via gunicorn)
-- **Frontend**: Vanilla JS (modular, no framework/bundler), CSS custom properties
-- **AI Providers**: Ollama (local/remote instances), OpenRouter (cloud)
-- **ML**: faster-whisper (transcription), imagehash (frame dedup), PySceneDetect (scene detection)
-- **Video**: ffmpeg/ffprobe for transcoding, frame extraction, audio extraction
-- **GPU**: NVIDIA CUDA, pynvml for VRAM monitoring
-- **Deployment**: Docker (nvidia/cuda:12.1.0-base-ubuntu22.04), docker-compose
-- **External package**: `video-analyzer` (provides Config, VideoProcessor, VideoAnalyzer, AudioProcessor, PromptLoader, OllamaClient, GenericOpenAIAPIClient)
+### Shared Rules
+- All agents must read `WORKFLOW_STATE.md` at the start of their task.
+- Each agent updates only the section of `WORKFLOW_STATE.md` relevant to its role.
+- Prefer minimal, targeted changes.
+- Workflow order: planner → debater → implementor → reviewer → tester → linter → commit-message.
+- Agents must not skip steps or merge responsibilities.
+
+### Ollama Instance Map
+
+| Instance | Provider | IP / Host | Model | Context | Role Assignment |
+|---|---|---|---|---|---|
+| GPU 0 | `ollama-gpu0` | 172.16.17.3:11434 | qwen3.6:27b-q8_0 | Full | Planner, Implementor |
+| GPU 1 | `ollama-gpu1` | 172.16.17.3:11435 | qwen3.6:27b-q8_0 | Full | Debater |
+| Node 237 | `ollama-237` | 192.168.1.237:11434 | qwen3.6:27b-q4_K_M | 32k | Reviewer, Linter |
+| Node 241 | `ollama-241` | 192.168.1.241:11434 | qwen3.6:27b-q4_K_M | 32k | Tester, Commit-message |
+
+### Context-Aware Routing Strategy
+
+**q8 instances (gpu0/gpu1 — full context, heavy reasoning tasks):**
+- **Planner** → `ollama-gpu0/qwen3.6:27b-q8_0` — Reads AGENTS.md + WORKFLOW_STATE.md + potentially reference files. Heaviest context.
+- **Debater** → `ollama-gpu1/qwen3.6:27b-q8_0` — Reads plan + AGENTS.md. Focused scope but needs reasoning quality.
+- **Implementor** → `ollama-gpu0/qwen3.6:27b-q8_0` — Reads full changed files, plan, generates code. Maximum context needed.
+
+**q4 instances (237/241 — 32k context, light/focused tasks):**
+- **Reviewer** → `ollama-237/qwen3.6:27b-q4_K_M` — Reviews changed files + plan. Scoped to specific diffs.
+- **Tester** → `ollama-241/qwen3.6:27b-q4_K_M` — Runs commands, records output. Minimal context.
+- **Linter** → `ollama-237/qwen3.6:27b-q4_K_M` — Runs commands, records output. Minimal context.
+- **Commit-message** → `ollama-241/qwen3.6:27b-q4_K_M` — Reads diff + workflow state. Small scope.
+
+### How to Kick Off the Workflow
+
+From `video-analyzer-web/`:
+
+```bash
+opencode task --agent planner "your feature request or bug description here"
+```
+
+The planner will read `WORKFLOW_STATE.md`, ask clarifying questions, write the plan, then chain through:
+debater → implementor → reviewer → tester → linter → commit-message.
+
+Each agent only edits its own section of `WORKFLOW_STATE.md` as it passes the baton.
 
 ### Port
 - **Port 10000** - All services run on port 10000 (non-privileged, Docker maps 10000:10000)

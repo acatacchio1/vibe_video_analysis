@@ -1,7 +1,7 @@
 ---
 description: Runs the project lint and type-check script and records findings
 mode: subagent
-model: openrouter/deepseek/deepseek-v4-flash
+model: ollama-237/qwen3.6:27b-q4_K_M
 temperature: 0.1
 max_steps: 10
 permission:
