@@ -7,6 +7,7 @@ This document provides technical architecture and development guidelines for Vid
 ### Tech Stack
 - **Backend**: Flask + Flask-SocketIO (eventlet driver)
 - **Frontend**: Vanilla JS (modular, no framework/bundler), CSS custom properties
+- **CLI**: Python argparse-based with `click`-style groups, SocketIO client, tabular output
 - **AI Providers**: Ollama (local), OpenRouter (cloud)
 - **ML**: faster-whisper (transcription), imagehash (frame dedup)
 - **Video**: ffmpeg/ffprobe for transcoding, frame extraction, audio extraction
@@ -17,308 +18,342 @@ This document provides technical architecture and development guidelines for Vid
 
 1. **Port 10000** - All services run on port 10000 (non-privileged, Docker maps 10000:10000)
 2. **Source videos preserved** - Upload transcodes to 720p but keeps original
-3. **Whisper models baked into Docker image** - HF cache at `/root/.cache/huggingface` (NOT under volume mount)
-4. **Compute type**: `float16` for CUDA, `int8` for CPU (in `app.py` transcribe)
+3. **Whisper models cached on host volume** - HF cache at `./hf_cache` mounted to `/root/.cache/huggingface`
+4. **Compute type**: `float16` for CUDA, `int8` for CPU (in `_transcribe_video` and `_process_video_direct`)
 5. **Job execution**: VRAM-aware scheduler → spawns worker subprocess per job
 6. **Real-time updates**: SocketIO for job progress, frame analysis, system monitoring, server logs
 7. **Frame renumbering**: After dedup, frames are renumbered sequentially with `frames_index.json` mapping to video timestamps
 8. **OpenWebUI Knowledge Base sync**: Results auto-synced to OpenWebUI KB via REST API
+9. **Two-step analysis**: Phase 1 (vision) + Phase 2 (synthesis combining vision + transcript via secondary LLM)
+10. **Parallel upload processing**: Frame extraction and audio transcription run concurrently on upload
 
 ## Directory Structure
 
 ```
 video-analyzer-web/
-├── app.py                          # Flask entry point (~700 lines)
-│   ├── Flask app + SocketIO setup
-│   ├── Blueprint registration (src/api/*)
-│   ├── SocketIO handler registration (src/websocket/*)
-│   ├── SocketLogHandler - emits logs to UI via SocketIO
-│   ├── spawn_worker() / monitor_job() - worker lifecycle
-│   ├── VRAM manager + monitor callbacks
-│   └── _transcode_and_delete_with_cleanup(), _extract_frames(), _transcribe_video()
+├── app.py                          # Flask entry point (~1858 lines, blueprints + callbacks + upload/extract logic)
+├── worker.py                       # Pure dispatcher (~85 lines) → src/worker/pipelines/*
+├── vram_manager.py                 # GPU-aware job scheduler (EXTERNAL, DO NOT MODIFY)
+├── chat_queue.py                   # LLM chat queue manager (EXTERNAL, DO NOT MODIFY)
+├── monitor.py                      # System monitor (nvidia-smi, ollama ps polling)
+├── discovery.py                    # Ollama network discovery (EXTERNAL, DO NOT MODIFY)
+├── thumbnail.py                    # Thumbnail extraction (EXTERNAL, DO NOT MODIFY)
+├── gpu_transcode.py               # FFmpeg transcode command builder (EXTERNAL, DO NOT MODIFY)
+├── setup.py                        # Package definition with CLI entry point (`va`)
+├── VERSION                         # Current version (0.6.0)
 │
-├── worker.py                       # Worker dispatcher → src.worker.pipelines
-├── vram_manager.py                 # GPU-aware job scheduler (external, DO NOT modify)
-├── chat_queue.py                   # LLM chat queue manager (external, DO NOT modify)
-├── monitor.py                      # System monitor (nvidia-smi, ollama ps)
-├── discovery.py                    # Ollama network discovery
-├── thumbnail.py                    # Thumbnail extraction
-├── gpu_transcode.py               # ffmpeg transcode command builder
+├── providers/                      # Provider implementations (EXTERNAL, DO NOT MODIFY)
+│   ├── base.py                     # Abstract Provider class
+│   ├── ollama.py                   # OllamaProvider — /api/chat REST, VRAM estimation
+│   └── openrouter.py               # OpenRouterProvider — pricing cache, cost estimation
 │
-├── providers/
-│   ├── base.py                     # Abstract provider interface
-│   ├── ollama.py                   # Ollama provider implementation
-│   └── openrouter.py               # OpenRouter provider implementation
-│
-├── config/
-│   ├── constants.py                # MAX_FILE_SIZE, VRAM_BUFFER, etc.
-│   ├── paths.py                    # UPLOAD_DIR, JOBS_DIR, THUMBS_DIR, etc.
-│   └── default_config.json
-│
-├── src/                            # Refactored modules (v0.2.0+)
+├── src/
 │   ├── api/                        # Flask blueprints (routes only)
-│   │   ├── videos.py               # /api/videos, upload, delete, frames, transcript, frames_index
-│   │   ├── providers.py            # /api/providers, discover, models, cost, balance
-│   │   ├── jobs.py                 # /api/jobs, cancel, priority, results
-│   │   ├── llm.py                  # /api/llm/chat, queue stats
-│   │   ├── results.py              # /api/results (stored results browser)
-│   │   ├── system.py               # /api/vram, /api/gpus
+│   │   ├── videos.py               # /api/videos — upload, delete, frames, transcript, dedup, scenes
+│   │   ├── providers.py            # /api/providers — discover, models, cost, balance, ollama-instances
+│   │   ├── jobs.py                 # /api/jobs — list, cancel, priority, results, frames_index
+│   │   ├── llm.py                  # /api/llm/chat — submit, status, cancel, queue stats
+│   │   ├── results.py              # /api/results — stored results browser
+│   │   ├── system.py               # /api/vram, /api/gpus, /api/debug
 │   │   ├── transcode.py            # /api/videos/transcode, /api/videos/reprocess
-│   │   └── knowledge.py            # /api/knowledge/sync, /api/knowledge/config, /api/knowledge/test
+│   │   └── knowledge.py            # /api/knowledge — sync, config, test, bases, send
 │   │
 │   ├── websocket/
-│   │   └── handlers.py             # SocketIO events (connect, subscribe_job, start_analysis)
+│   │   └── handlers.py             # SocketIO events: connect, subscribe_job, start_analysis, etc.
 │   │
 │   ├── worker/
-│   │   ├── __init__.py             # Re-exports run_analysis
-│   │   └── main.py                 # Worker: stages (frames → transcript → description → results)
+│   │   ├── __init__.py             # Pipeline class exports
+│   │   ├── main.py                 # Legacy worker (pre-v0.5.0 code path in app.py)
+│   │   └── pipelines/
+│   │       ├── base.py             # AnalysisPipeline ABC + typed config support
+│   │       ├── standard_two_step.py # Standard two-step vision + synthesis
+│   │       └── linkedin_extraction.py # LinkedIn short-form extraction
+│   │
+│   ├── schemas/
+│   │   └── config.py               # Pydantic v2: JobConfig, AnalysisParams, nested configs
 │   │
 │   ├── utils/
 │   │   ├── helpers.py              # format_bytes(), format_duration(), map_exit_code_to_status()
-│   │   ├── security.py             # secure_filename(), allowed_file(), verify_path()
+│   │   ├── security.py             # secure_filename(), allowed_file(), verify_path(), validate_upload_size()
 │   │   ├── video.py                # get_video_duration(), probe_video(), probe_all_videos()
-│   │   └── transcript.py           # Transcript loading utilities (v0.3.4+)
+│   │   ├── transcript.py           # load_transcript(), get_transcript_segments_with_end_times()
+│   │   ├── scene_detection.py      # detect_scenes_from_frames(), save_scene_info()
+│   │   ├── parallel_file_ops.py    # Parallel file deletion for dedup
+│   │   ├── parallel_hash.py        # Parallel perceptual hashing for dedup
+│   │   └── dedup_scheduler.py      # GPU-accelerated dedup strategy selection
 │   │
 │   ├── services/
-│   │   └── openwebui_kb.py         # OpenWebUI Knowledge Base API client
+│   │   └── openwebui_kb.py         # OpenWebUIClient — KB CRUD, file upload, results markdown
 │   │
-└── static/
-    ├── css/style.css               # All styles (merged from style-additions.css)
-    └── js/
-        ├── app.js                  # Module loader (was 2267-line monolith)
-        └── modules/
-            ├── state.js            # Global state object, localStorage helpers
-            ├── socket.js           # Socket.IO connection, event registrations
-            ├── videos.js           # Upload, list, delete, reprocess, transcode progress, server log
-            ├── providers.js        # Discovery, model loading, OpenRouter key/balance
-            ├── jobs.js             # Job rendering, cancellation, details modal
-            ├── llm.js              # LLM chat (live/modal/results contexts), polling
-            ├── frame-browser.js    # Frame range sliders, thumbnails, transcript context (timestamp-aware)
-            ├── system.js           # GPU status display, monitor tabs
-            ├── results.js          # Stored results browser, detail view
-            ├── settings.js         # Settings persistence, toggle handlers
-            ├── knowledge.js        # OpenWebUI KB settings, test, sync
-            ├── ui.js               # Toasts, modals, escapeHtml, formatFrameAnalysis
-            └── init.js             # DOMContentLoaded bootstrap, event wiring
+│   └── cli/                        # CLI command-line interface
+│       ├── __init__.py             # Package init
+│       ├── main.py                 # CLI group registration, argument parsing
+│       ├── config.py               # Persistent config (~/.video-analyzer-cli.json)
+│       ├── api_client.py           # HTTP client (requests) with auth, error handling
+│       ├── socketio_client.py      # SocketIO client for real-time CLI updates
+│       ├── output.py               # Tabular output (Table class), key-value printers
+│       └── commands/
+│           ├── __init__.py
+│           ├── videos.py           # va videos (list, upload, delete, frames, transcript, dedup, scenes)
+│           ├── jobs.py             # va jobs (list, show, cancel, priority, frames, results)
+│           ├── providers.py        # va providers (list, discover, ollama-instances)
+│           ├── results.py          # va results (list, show)
+│           ├── system.py           # va system (vram, gpus, debug)
+│           ├── llm.py              # va llm (chat, queue-stats, cancel)
+│           ├── knowledge.py        # va knowledge (config, test, sync, bases, send)
+│           └── models.py           # va models (ollama, openrouter)
+│
+├── config/
+│   ├── constants.py                # MAX_FILE_SIZE, VRAM_BUFFER, DEDUP defaults
+│   ├── paths.py                    # UPLOAD_DIR, JOBS_DIR, THUMBS_DIR, CACHE_DIR, CONFIG_DIR, OUTPUT_DIR
+│   └── default_config.json         # Default analysis config, OpenWebUI settings, Ollama instances
+│
+├── static/
+│   ├── css/style.css               # All styles (~3339 lines, dark theme with CSS custom properties)
+│   └── js/
+│       └── modules/                # 15 JS modules (no build step)
+│           ├── state.js            # Global state, localStorage persistence
+│           ├── ui.js               # escapeHtml(), showToast(), formatBytes(), formatFrameAnalysis()
+│           ├── socket.js           # Socket.IO connection, event registration
+│           ├── videos.js           # Upload, video lists, processing progress, server log
+│           ├── providers.js        # Provider/model selects, Phase 2 handling
+│           ├── jobs.js             # Job cards, live analysis, dedup multi-scan, tab switching
+│           ├── llm.js              # Chat across 3 contexts (live/modal/results), polling
+│           ├── frame-browser.js    # Dual-range sliders, thumbnails, transcript context, scene markers
+│           ├── scene-detection.js  # PySceneDetect integration, scene-aware dedup UI
+│           ├── system.js           # GPU status display, monitor tabs
+│           ├── results.js          # Stored results browser, detail view, LLM chat
+│           ├── settings.js         # Settings persistence, debug toggle
+│           ├── ollama-settings.js  # Ollama instances management
+│           ├── knowledge.js        # OpenWebUI KB settings, send-to-KB modal
+│           └── init.js             # DOMContentLoaded bootstrap, event wiring
+│
+├── templates/index.html            # Single-page template (~669 lines, loads all JS modules)
+├── Dockerfile                      # nvidia/cuda:12.1.0-base-ubuntu22.04, gunicorn+eventlet
+├── docker-compose.yml              # Port 10000, GPU reservations, host.docker.internal
+├── requirements.txt
+└── tests/                          # Three-tier test suite (see TEST_AUTOMATION.md)
 ```
 
 ## Core Components
 
 ### 1. Application Entry Point (`app.py`)
-- **Monolithic Flask app** - Needs refactoring into factory pattern
-- **SocketIO setup** - Real-time communication with clients
-- **VRAM manager integration** - GPU-aware job scheduling
-- **Worker spawning** - Subprocess management for job execution
-- **Log handler** - SocketLogHandler emits logs to UI
+- **~1858 lines** — Flask app + SocketIO setup with debug emit wrapper
+- **SocketLogHandler** — Thread-safe queue + background emitter (`_log_emitter`)
+- **Blueprint registration** — All `src/api/*.py` blueprints registered here
+- **SocketIO handler registration** — `src/websocket/handlers.py:register_socket_handlers(socketio)`
+- **Worker lifecycle** — `spawn_worker()` / `monitor_job()`
+- **VRAM manager callbacks** — `on_vram_event()` → job dispatch
+- **Upload flow** — `_process_video_direct()` → parallel `_extract_frames_direct()` + `_transcribe_video()`
+- **Dedup dispatcher** — `_run_dedup()` → smart selection (parallel or sequential via `dedup_scheduler`)
+- **Frame renumbering** — `_renumber_frames()` → creates `frames_index.json`
 
 ### 2. Worker System (`worker.py` → `src/worker/pipelines/`)
 **Architecture:**
-- `worker.py` - Thin dispatcher (~85 lines). Loads config, routes to pipeline factory
-- `src/worker/pipelines/base.py` - Abstract `AnalysisPipeline` base class with typed config support
-- `src/worker/pipelines/standard_two_step.py` - Standard two-step vision + synthesis
-- `src/worker/pipelines/linkedin_extraction.py` - LinkedIn short-form extraction
-- `src/worker/pipelines/__init__.py` - Pipeline factory with auto-typed config building
+- `worker.py` — Thin dispatcher (~85 lines). Loads config via input.json, routes to pipeline factory
+- `src/worker/pipelines/__init__.py` — `create_pipeline()` factory with auto-typed `JobConfig` building
+- `src/worker/pipelines/base.py` — Abstract `AnalysisPipeline` base class with typed config support
+- `src/worker/pipelines/standard_two_step.py` — Standard two-step vision + synthesis
+- `src/worker/pipelines/linkedin_extraction.py` — LinkedIn short-form content extraction
 
-**Job stages (StandardTwoStepPipeline):**
-1. Audio extraction + transcription (faster-whisper)
+**Job Stages (StandardTwoStepPipeline):**
+1. Audio extraction + faster-whisper transcription
 2. Frame preparation (pre-extracted or VideoProcessor)
-3. Frame analysis with AI providers (Phase 1: vision)
-4. Phase 2 synthesis (vision + transcript via secondary LLM)
+3. Frame analysis (Phase 1: vision with transcript context injection)
+4. Phase 2 synthesis (combine vision + transcript via secondary LLM)
 5. Video description generation
-6. Results compilation, auto-LLM queue, OpenWebUI KB sync
+6. Results compilation (`output/results.json`), auto-LLM queue, OpenWebUI KB sync
 
-**Key functions:**
-- `_safe_get_transcript_text()` - Robust transcript access
-- `_safe_get_transcript_segments()` - Safe segment access
-- `_synthesize_frame()` - Phase 2 synthesis via direct HTTP
-- `run()` - Main pipeline entry point
+**Prompt Injection for Transcript:**
+- Tokens `{TRANSCRIPT_CONTEXT}`, `{TRANSCRIPT_RECENT}`, `{TRANSCRIPT_PRIOR}` replaced in prompts
+- If no tokens found, transcript appended as fallback
 
-### 3. API Layer (`src/api/*.py`)
-- **Blueprints** - Modular route definitions
-- **Error handling** - Consistent `api_error()` responses
-- **File validation** - Security checks for uploads
-- **Pagination** - Offset/limit for large datasets
+### 3. CLI System (`src/cli/`)
 
-### 4. SocketIO Layer (`src/websocket/handlers.py`)
-- **Real-time events** - Job progress, system monitoring
-- **Connection management** - Client subscriptions
-- **Event handlers** - Must accept `auth=None` parameter
+The `va` CLI provides full access to all functionality from the terminal.
 
-### 5. Frontend Architecture (`static/js/modules/`)
-- **Module loading** - `app.js` loads modules in dependency order
-- **Global state** - `state.js` maintains application state
-- **Event-driven** - SocketIO events update UI components
-- **No build step** - Plain JavaScript loaded via script tags
+**Architecture:**
+- `main.py` — CLI group registration with global `--url` and `--json` flags
+- `config.py` — Persistent config at `~/.video-analyzer-cli.json` with `set`/`show` commands
+- `api_client.py` — HTTP client wrapping `requests` with error formatting, pagination support
+- `socketio_client.py` — SocketIO client for real-time CLI updates (job progress, etc.)
+- `output.py` — `Table` class for tabular output, `print_key_value()` for config/status display
+
+**Command Groups (in `src/cli/commands/`):**
+- `videos.py` — 16 subcommands (list, upload, delete, frames, transcript, dedup, scenes, etc.)
+- `jobs.py` — 9 subcommands (list, show, cancel, priority, frames, results, etc.)
+- `providers.py` — 4 subcommands (list, discover, ollama-instances, cost)
+- `results.py` — 3 subcommands (list, show, delete)
+- `system.py` — 4 subcommands (vram, gpus, debug, logs)
+- `llm.py` — 4 subcommands (chat, status, cancel, queue-stats)
+- `knowledge.py` — 6 subcommands (status, config, test, sync, bases, send)
+- `models.py` — 2 subcommands (ollama, openrouter)
+
+### 4. API Layer (`src/api/*.py`)
+- **Blueprints** — Modular route definitions, one file per domain
+- **Error handling** — Consistent `api_error(message, code)` responses
+- **File validation** — Security checks via `src.utils.security`
+- **Pagination** — Offset/limit for large datasets (videos, frames, results)
+
+### 5. SocketIO Layer (`src/websocket/handlers.py`)
+- **Real-time events** — Job progress, frame analysis, system monitoring
+- **Connection management** — Client subscriptions/unsubscribes
+- **Handler convention** — Must accept `auth=None` parameter
+
+### 6. Frontend Architecture (`static/js/modules/`)
+- **Module loading** — Strict order via `<script>` tags in `index.html`
+- **Global state** — `state` object in `state.js` maintains application state
+- **Event-driven** — SocketIO events update UI components
+- **No build step** — Plain JavaScript loaded via script tags
+- **CSS custom properties** — All colors, spacing in `:root` of `style.css`
 
 ## Data Flow
 
-### Video Upload & Processing
+### Video Upload → Processing
 ```
-1. Client upload → /api/videos/upload
-2. Server saves file → uploads/<video>_720p.mp4
-3. Background task → _transcode_and_delete_with_cleanup()
-4. Frame extraction → _extract_frames() → frames/<video>/
-5. Transcription → _transcribe_video() → transcript.json
-6. SocketIO emit → videos_updated event
-```
-
-### Job Analysis
-```
-1. Client → "start_analysis" event
-2. VRAM manager → queues job based on GPU availability
-3. Worker spawned → subprocess with job parameters
-4. Worker stages → frames → transcript → AI analysis → results
-5. Real-time updates → SocketIO events for progress
-6. Completion → results.json saved, KB sync (if configured)
+1. Client XHR POST /api/videos/upload → saves to uploads/
+2._process_video_direct() starts parallel tasks:
+   ├─ _extract_frames_direct() → ffmpeg → uploads/<name>/frames/
+   └─ _transcribe_video() → ffmpeg (audio) → faster-whisper → transcript.json
+3. SocketIO emit video_processing_progress (two parallel bars)
+4. Emit videos_updated on completion
 ```
 
-### Frame Deduplication & Renumbering
+### Job Analysis (Two-Step)
 ```
-1. Original frames → frames/<video>/
-2. Perceptual hashing → imagehash.phash()
-3. Duplicate removal → threshold-based comparison
-4. Renumbering → frame_000001, frame_000002, ...
-5. Index creation → frames_index.json maps to original timestamps
+1. Client emits "start_analysis" with provider config + params
+2. VRAM manager queues job → assigns GPU with most free VRAM
+3. spawn_worker() → subprocess worker.py with PID tracking
+4. Worker loads pipeline via create_pipeline()
+5. Pipeline.run() stages:
+   ├─ Audio extraction + transcription
+   ├─ Frame preparation
+   ├─ Phase 1: frame-by-frame vision analysis → frames.jsonl
+   ├─ Phase 2: vision + transcript synthesis → synthesis.jsonl
+   ├─ Video description generation
+   └─ Results compilation → output/results.json
+6. Real-time updates via SocketIO (job_status, frame_analysis, frame_synthesis)
+7. Auto-sync to OpenWebUI KB (if enabled)
+```
+
+### Frame Dedup → Renumbering
+```
+1. _run_dedup() → dedup_scheduler.get_dedup_strategy()
+2. Parallel: compute_hashes_parallel() + compare + delete_frames_parallel()
+3. _renumber_frames() → sequential frame_000001, frame_000002, ...
+4. Creates frames_index.json: {"1": 0.0, "2": 1.2, "3": 2.5, ...}
 ```
 
 ## Configuration
 
 ### Environment Variables
-- `APP_ROOT` - Custom installation directory (default: project root)
-- `OPENROUTER_API_KEY` - OpenRouter API key for cloud inference
-- `OPENWEBUI_URL` - OpenWebUI instance URL for KB sync
-- `OPENWEBUI_API_KEY` - OpenWebUI API key
+- `APP_ROOT` — Custom installation directory (default: project root)
+- `OPENROUTER_API_KEY` — OpenRouter API key for cloud inference
+- `OPENWEBUI_URL` — OpenWebUI instance URL for KB sync
+- `OPENWEBUI_API_KEY` — OpenWebUI API key
+- `OLLAMA_HOST` — Default Ollama host (default: `http://host.docker.internal:11434`)
 
 ### Path Configuration (`config/paths.py`)
-```python
-UPLOAD_DIR = os.path.join(APP_ROOT, "uploads")
-JOBS_DIR = os.path.join(APP_ROOT, "jobs")
-THUMBS_DIR = os.path.join(APP_ROOT, "thumbs")
-CACHE_DIR = os.path.join(APP_ROOT, "cache")
-CONFIG_DIR = os.path.join(APP_ROOT, "config")
-OUTPUT_DIR = os.path.join(APP_ROOT, "output")
-```
+- `UPLOAD_DIR` — Upload files (videos, frames, transcripts, thumbs)
+- `JOBS_DIR` — Job working directories (input.json, status.json, frames.jsonl)
+- `CACHE_DIR` — Cached data (OpenRouter pricing cache)
+- `CONFIG_DIR` — Configuration files
+- `OUTPUT_DIR` — Analysis results storage
 
 ### Constants (`config/constants.py`)
-```python
-MAX_FILE_SIZE = 1024 * 1024 * 1024  # 1GB
-VRAM_BUFFER = 1024 * 1024 * 1024    # 1GB buffer
-MAX_CONCURRENT_JOBS = 3             # Chat queue limit
-MAX_FRAMES_PER_JOB = 1000           # Processing limit
-```
-
-## External Dependencies
-
-### Critical Files (DO NOT MODIFY)
-These files are part of external packages or core infrastructure:
-
-| File | Purpose | Note |
-|------|---------|------|
-| `vram_manager.py` | GPU-aware job scheduler | External package |
-| `chat_queue.py` | LLM chat queue manager | External package |
-| `monitor.py` | System monitoring (nvidia-smi, ollama ps) | External utility |
-| `discovery.py` | Ollama network discovery | External utility |
-| `thumbnail.py` | Thumbnail extraction | External utility |
-| `gpu_transcode.py` | GPU/CPU transcoding | External utility |
-| `providers/` | AI provider implementations | External package |
-
-### Python Dependencies
-- **Flask ecosystem**: Flask, Flask-SocketIO, eventlet
-- **AI/ML**: faster-whisper, transformers, torch
-- **Video processing**: opencv-python, imagehash, PySceneDetect
-- **Utilities**: psutil, pynvml, requests
+- `MAX_FILE_SIZE` — 1GB upload limit
+- `VRAM_BUFFER` — 1GB VRAM overhead buffer
+- `MAX_JOBS_PER_GPU` — 2 concurrent jobs per GPU
 
 ## Development Patterns
 
 ### Backend Patterns
-1. **Blueprint registration** - All routes in `src/api/*.py`
-2. **Error responses** - Use `api_error(message, code)` helper
-3. **SocketIO handlers** - Must accept `auth=None` parameter
-4. **Worker spawning** - Use `spawn_worker()` from `app.py`
-5. **Transcript access** - Use `src/utils/transcript.py` utilities
+1. **Blueprints** — All routes in `src/api/*.py`, registered in `app.py`
+2. **Error responses** — Use `api_error(message, code)` helper
+3. **SocketIO handlers** — Must accept `auth=None` parameter
+4. **Worker spawning** — Use `spawn_worker()` with `_spawned_jobs` guard
+5. **Transcript access** — Use `src.utils.transcript` utilities for consistency
 
 ### Frontend Patterns
-1. **Module loading order** - `state.js` and `ui.js` first, `init.js` last
-2. **SocketIO events** - Register in `socket.js`, handle in feature modules
-3. **State management** - Use `state` object for global state
-4. **UI updates** - Event-driven via SocketIO callbacks
-5. **Frame browser** - Use `frames_index.json` for timestamp mapping
+1. **Module loading order** — `state.js` and `ui.js` first, `init.js` last
+2. **SocketIO events** — Register in `socket.js`, handle in feature modules
+3. **State management** — Use `state` object for global state
+4. **UI updates** — Event-driven via SocketIO callbacks
+5. **Frame browser** — Use `frames_index.json` for timestamp mapping
+
+### CLI Patterns
+1. **Global flags** — `--url` and `--json` available at all command levels
+2. **Config persistence** — `~/.video-analyzer-cli.json` stores server URL and API keys
+3. **Output** — `Table` class for tabular data, `print_key_value()` for status
+4. **Error handling** — `api_client.py` wraps errors with descriptive messages
 
 ### Security Patterns
-1. **File validation** - `allowed_file()`, `secure_filename()`
-2. **Path verification** - `verify_path()` prevents traversal
-3. **Size limits** - `MAX_FILE_SIZE` enforcement
-4. **Input sanitization** - Escape user input in templates
+1. **File validation** — `allowed_file()`, `secure_filename()`
+2. **Path verification** — `verify_path()` prevents directory traversal
+3. **Size limits** — `MAX_FILE_SIZE` enforcement (1GB)
+4. **Input sanitization** — Escape all user input before HTML rendering
 
 ## Common Gotchas
 
-1. **`providers` dict** is global in `app.py` - blueprints import it
+1. **`providers` dict** is global in `app.py` — blueprints import via `from app import providers`
 2. **`socketio` and `app`** are also globals imported by blueprints
-3. **Double-spawn guard**: `_spawned_jobs` set prevents duplicate workers
-4. **Ollama patch in worker**: Monkey-patches `ollama.chat` with `think:false`
-5. **Frame dedup**: Uses perceptual hashing with configurable threshold
-6. **Audio cleanup**: `audio.wav` deleted after transcription
-7. **Source video preserved**: Original not deleted after transcode
-8. **SocketLogHandler created after socketio** - Otherwise `socketio.emit()` fails
-9. **Port 10000** - Non-privileged port (1000 requires root)
-10. **`request` comes from `flask`** - Not `flask_socketio` in SocketIO handlers
+3. **Double-spawn guard**: `_spawned_jobs` set prevents worker from being spawned twice
+4. **`flask.request` vs `flask_socketio.request`**: Use `from flask import request` in SocketIO handlers
+5. **SocketLogHandler must be created after socketio** — Otherwise `socketio.emit()` silently fails
+6. **`host.docker.internal`** is used for Docker-to-host communication (Ollama, OpenWebUI)
+7. **Phase 2 Ollama URL** defaults to `http://192.168.1.237:11434` (not localhost)
+8. **`src/worker/main.py`** is legacy (pre-v0.5.0). Active worker is `worker.py` which dispatches to pipelines.
+9. **Current two-step limitation**: Phase 2 synthesis runs sequentially within the frame loop
+10. **Ollama monkey-patch**: Worker patches `ollama.chat` with `think:false` for reasoning models
 
 ## Testing & Debugging
 
 ### Running Tests
+See [TEST_AUTOMATION.md](TEST_AUTOMATION.md) for full test suite documentation.
+
 ```bash
-# Unit tests
-python -m pytest tests/unit/
+# Quick dev run
+python -m pytest tests/unit/ -v
 
-# Integration tests  
-python -m pytest tests/integration/
-
-# With coverage
-python -m pytest --cov=src tests/
+# Full suite with coverage
+python -m pytest tests/ --cov=src --cov-report=term-missing
 ```
 
 ### Debugging Tips
-1. **Check worker logs** - `jobs/<job_id>/worker.log`
-2. **Monitor SocketIO events** - Browser dev tools Network → WS
-3. **System monitoring** - `/api/system` endpoints
-4. **GPU status** - `/api/vram` and `/api/gpus`
-5. **Server logs** - Emitted to UI via SocketLogHandler
+1. **Worker logs** — Check `jobs/<job_id>/worker.log`
+2. **SocketIO events** — Browser dev tools Network → WS tab
+3. **Server logs** — Emitted to UI via SocketLogHandler, or `docker compose logs -f`
+4. **GPU status** — Check `/api/vram` or System Status sidebar
+5. **Debug mode** — Toggle via 🐛 button or `POST /api/debug`
 
 ### Common Issues
-- **Transcript errors**: Check `frames_index.json` exists and `transcript.json` valid
+- **Transcript errors**: Ensure `frames_index.json` exists and `transcript.json` is valid
 - **GPU memory**: Monitor VRAM with `nvidia-smi` or `/api/vram`
-- **Ollama connection**: Verify Ollama running and accessible
-- **File permissions**: Check volume mounts in Docker
-- **Port conflicts**: Ensure port 10000 available
+- **Ollama connection**: Verify Ollama is running and accessible from Docker
+- **File permissions**: Check volume mounts in `docker-compose.yml`
+- **Port conflicts**: Ensure port 10000 is available
 
-## Future Architecture Improvements
+## External Dependencies (DO NOT MODIFY)
 
-### High Priority
-1. **Split `app.py`** - Use Flask factory pattern (`src/core/app.py` exists but unused)
-2. **Add authentication** - Basic API key or OAuth
-3. **Improve error handling** - Consistent across all routes
-4. **Add configuration validation** - Validate on startup
-5. **Docker security** - Run as non-root user
-
-### Medium Priority
-1. **Database integration** - Replace file-based job storage
-2. **Queue abstraction** - Common base for VRAMManager and ChatQueueManager
-3. **Plugin system** - Extensible providers and processors
-4. **Configuration UI** - Web-based configuration management
-5. **Advanced monitoring** - Prometheus metrics, health checks
-
-### Low Priority
-1. **Multi-user support** - User accounts and isolation
-2. **Batch processing** - Process multiple videos as a batch
-3. **Advanced analytics** - Video analytics dashboard
-4. **Export formats** - Additional result export options
-5. **API versioning** - Versioned API endpoints
+| File | Purpose |
+|------|---------|
+| `vram_manager.py` | GPU-aware job scheduler with priority queue, VRAM tracking |
+| `chat_queue.py` | LLM chat queue with rate limiting, concurrent limits |
+| `monitor.py` | nvidia-smi (60s) and ollama ps (45s) polling |
+| `discovery.py` | Subnet scan (192.168.1.0/24) + common hosts |
+| `thumbnail.py` | FFmpeg-based thumbnail at 10% of video duration |
+| `gpu_transcode.py` | FFmpeg transcode command builder (CPU encoding) |
+| `providers/` | Provider implementations (base, ollama, openrouter) |
 
 ## References
 
-- **AGENTS.md** - Detailed internal developer guide
-- **CONTRIBUTING.md** - Contribution guidelines
-- **CHANGELOG.md** - Version history and breaking changes
-- **API.md** - REST API documentation
-- **TROUBLESHOOTING.md** - Common issues and solutions
-- **SECURITY.md** - Security considerations and best practices
+- [README.md](README.md) — Project overview, quick start
+- [CLI.md](CLI.md) — CLI command reference (v0.6.0)
+- [GUI.md](GUI.md) — Web interface documentation
+- [API.md](API.md) — REST API + SocketIO endpoint reference
+- [TEST_AUTOMATION.md](TEST_AUTOMATION.md) — Test suite structure and execution
+- [CHANGELOG.md](CHANGELOG.md) — Version history and migration notes
+- [AGENTS.md](AGENTS.md) — Multi-agent development workflow
+- [SECURITY.md](SECURITY.md) — Security considerations
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) — Common issues and solutions
+- [CONTRIBUTING.md](CONTRIBUTING.md) — Contribution guidelines

@@ -1,20 +1,15 @@
 # API Documentation
 
-This document provides comprehensive documentation for the Video Analyzer Web REST API.
+This document provides comprehensive documentation for the Video Analyzer Web REST API and SocketIO events.
 
-**Base URL**: `http://localhost:10000"># API Documentation
-
-Video Analyzer Web provides a REST API for video upload, analysis, and management. All endpoints are prefixed with `/api/`.
-
-## Base URL
-```
-http://localhost:10000/api/
-```
+**Base URL**: `http://localhost:10000/api/`
 
 ## Authentication
+
 Currently no authentication is required. All endpoints are publicly accessible.
 
 ## Error Response Format
+
 ```json
 {
   "error": {
@@ -24,576 +19,189 @@ Currently no authentication is required. All endpoints are publicly accessible.
 }
 ```
 
-## Endpoints
+All errors use the `api_error(message, code)` helper returning this format.
+
+---
+
+## REST API Endpoints
 
 ### Videos API
 
-#### GET `/api/videos`
-List all uploaded videos.
+| Method | Path | Description | CLI Equivalent |
+|--------|------|-------------|----------------|
+| GET | `/api/videos` | List uploaded videos with metadata | `va videos list` |
+| POST | `/api/videos/upload` | Upload video file (parallel frames + transcription) | `va videos upload <file>` |
+| DELETE | `/api/videos/<filename>` | Delete video + thumbnails + job data | `va videos delete <name>` |
+| GET | `/api/videos/<filename>/frames` | Frame metadata (count, fps, duration) | `va videos frames <name>` |
+| GET | `/api/videos/<filename>/frames/<n>` | Get specific frame image | — |
+| GET | `/api/videos/<filename>/frames/<n>/thumb` | Get frame thumbnail | — |
+| GET | `/api/videos/<filename>/frames_index` | Get frame timestamp index | `va videos frames-index <name>` |
+| GET | `/api/videos/<filename>/transcript` | Get transcript data | `va videos transcript <name>` |
+| POST | `/api/videos/<filename>/dedup` | Apply deduplication at threshold | `va videos dedup <name> --threshold <n>` |
+| POST | `/api/videos/<filename>/dedup-multi` | Multi-threshold dedup scan | `va videos dedup-multi <name> --thresholds "5,10,15"` |
+| GET/POST | `/api/videos/<filename>/scenes` | Scene detection | `va videos scenes <name>` |
+| POST | `/api/videos/<filename>/scene-aware-dedup` | Scene-aware dedup | `va videos scene-dedup <name>` |
+| POST | `/api/videos/reprocess` | Re-extract + re-transcribe | `va videos reprocess <name>` |
 
-**Response:**
+#### GET `/api/videos`
+
+List all videos (both processed and source).
+
 ```json
 [
   {
     "filename": "video.mp4",
     "size": 10485760,
     "duration": 120.5,
-    "frames_count": 3600,
-    "transcoded": true,
-    "uploaded_at": "2026-04-22T12:00:00Z"
+    "fps": 1.0,
+    "frame_count": 120,
+    "type": "processed",
+    "has_frames": true,
+    "has_transcript": true,
+    "has_dedup": false
   }
 ]
 ```
 
 #### POST `/api/videos/upload`
-Upload a video file.
+
+Upload a video file. Starts parallel frame extraction and audio transcription.
 
 **Request:** `multipart/form-data`
-- `file`: Video file (MP4, AVI, MOV, MKV, WebM)
-- `fps`: Optional, frames per second for extraction (default: 1.0)
-- `whisper_model`: Optional, transcription model (base, large, etc.)
-- `language`: Optional, transcription language (en, es, fr, etc.)
+- `file`: Video file (required)
+- `fps`: Frames per second for extraction (default: 1.0)
+- `whisper_model`: Whisper model — `tiny`, `base`, `small`, `medium`, `large` (default: `base`)
+- `language`: ISO 639-1 language code (default: auto-detect)
 
 **Response:**
 ```json
 {
   "success": true,
-  "filename": "video_720p.mp4",
+  "filename": "video.mp4",
   "size": 10485760,
   "duration": 120.5
 }
 ```
 
-#### DELETE `/api/videos/<filename>`
-Delete a video and all associated files.
-
-**Response:**
-```json
-{
-  "success": true,
-  "message": "Video deleted"
-}
-```
-
-#### GET `/api/videos/<filename>/frames`
-Get frames for a video.
-
-**Query Parameters:**
-- `limit`: Maximum frames to return (default: 100)
-- `offset`: Starting offset (default: 0)
-
-**Response:**
-```json
-[
-  {
-    "frame_num": 1,
-    "timestamp": 0.0,
-    "path": "frames/video/frame_000001.jpg",
-    "hash": "abc123..."
-  }
-]
-```
-
-#### GET `/api/videos/<filename>/frames_index`
-Get frame index mapping.
-
-**Response:**
-```json
-{
-  "1": 0.0,
-  "2": 1.0,
-  "3": 2.0,
-  ...
-}
-```
-
-#### GET `/api/videos/<filename>/transcript`
-Get video transcript.
-
-**Response:**
-```json
-[
-  {
-    "start": 0.0,
-    "end": 5.0,
-    "text": "Hello, welcome to this video."
-  }
-]
-```
-
-#### GET `/api/videos/<filename>/scenes`
-Get scene detection results.
-
-**Response:**
-```json
-{
-  "scenes": [
-    {
-      "scene_num": 1,
-      "start_frame": 1,
-      "end_frame": 150,
-      "start_time": 0.0,
-      "end_time": 5.0
-    }
-  ],
-  "statistics": {
-    "total_scenes": 10,
-    "avg_duration": 12.5
-  }
-}
-```
-
-#### POST `/api/videos/<filename>/dedup`
-Create deduplicated version of video.
-
-**Request Body:**
-```json
-{
-  "threshold": 10,
-  "fps": 1.0
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "dedup_filename": "video_dedup_720p.mp4",
-  "original_frames": 3600,
-  "dedup_frames": 1200,
-  "reduction_percent": 66.7
-}
-```
-
-#### POST `/api/videos/<filename>/scene-aware-dedup`
-Create scene-aware deduplicated version.
-
-**Request Body:**
-```json
-{
-  "threshold": 10,
-  "fps": 1.0,
-  "min_scene_frames": 30,
-  "max_scene_frames": 300
-}
-```
-
-#### POST `/api/videos/<filename>/dedup-multi`
-Create multiple dedup versions with different thresholds.
-
-**Request Body:**
-```json
-{
-  "thresholds": [5, 10, 15],
-  "fps": 1.0
-}
-```
-
-#### POST `/api/videos/transcode`
-Transcode a video file (background task).
-
-**Request Body:**
-```json
-{
-  "input_path": "/path/to/video.mp4",
-  "output_path": "/path/to/output.mp4"
-}
-```
-
-#### POST `/api/videos/reprocess`
-Reprocess a video (extract frames, transcribe).
-
-**Request Body:**
-```json
-{
-  "filename": "video.mp4",
-  "fps": 1.0,
-  "whisper_model": "base",
-  "language": "en"
-}
-```
-
-### Jobs API
-
-#### GET `/api/jobs`
-List all jobs.
-
-**Response:**
-```json
-[
-  {
-    "job_id": "abc123",
-    "video_filename": "video.mp4",
-    "status": "running",
-    "progress": 45,
-    "created_at": "2026-04-22T12:00:00Z",
-    "updated_at": "2026-04-22T12:01:00Z"
-  }
-]
-```
-
-#### GET `/api/jobs/running`
-Get running jobs.
-
-#### GET `/api/jobs/queued`
-Get queued jobs.
-
-#### GET `/api/jobs/<job_id>`
-Get job details.
-
-**Response:**
-```json
-{
-  "job_id": "abc123",
-  "video_filename": "video.mp4",
-  "status": "running",
-  "progress": 45,
-  "frames_analyzed": 450,
-  "total_frames": 1000,
-  "created_at": "2026-04-22T12:00:00Z",
-  "started_at": "2026-04-22T12:00:05Z",
-  "updated_at": "2026-04-22T12:01:00Z",
-  "settings": {
-    "fps": 1.0,
-    "provider": "Ollama-Local",
-    "model": "llama3.2:3b"
-  }
-}
-```
-
-#### GET `/api/jobs/<job_id>/frames`
-Get frames analyzed by job.
-
-**Query Parameters:**
-- `limit`: Maximum frames to return (default: 100)
-- `offset`: Starting offset (default: 0)
-
-**Response:**
-```json
-[
-  {
-    "frame_num": 1,
-    "timestamp": 0.0,
-    "analysis": "A person is speaking...",
-    "provider": "Ollama-Local",
-    "model": "llama3.2:3b"
-  }
-]
-```
-
-#### GET `/api/jobs/<job_id>/results`
-Get job results.
-
-**Response:**
-```json
-{
-  "job_id": "abc123",
-  "video_filename": "video.mp4",
-  "status": "completed",
-  "video_description": "This video shows...",
-  "frame_analyses": [
-    {
-      "frame_num": 1,
-      "timestamp": 0.0,
-      "analysis": "A person is speaking..."
-    }
-  ],
-  "statistics": {
-    "total_frames": 1000,
-    "frames_analyzed": 1000,
-    "processing_time": 125.5,
-    "frames_per_second": 8.0
-  },
-  "created_at": "2026-04-22T12:00:00Z",
-  "completed_at": "2026-04-22T12:02:05Z"
-}
-```
-
-#### DELETE `/api/jobs/<job_id>`
-Cancel a job.
-
-**Response:**
-```json
-{
-  "success": true,
-  "message": "Job cancelled"
-}
-```
-
-#### POST `/api/jobs/<job_id>/priority`
-Update job priority.
-
-**Request Body:**
-```json
-{
-  "priority": "high"
-}
-```
-
-**Priority values:** `low`, `normal`, `high`
+> **Note**: Source videos are preserved. Processed frames go to `uploads/<video_name>/frames/`.
 
 ### Providers API
 
-#### GET `/api/providers`
-List available AI providers.
+| Method | Path | Description | CLI Equivalent |
+|--------|------|-------------|----------------|
+| GET | `/api/providers` | List all providers | `va providers list` |
+| GET | `/api/providers/discover` | Scan network for Ollama instances | `va providers discover` |
+| GET | `/api/providers/ollama/models` | List Ollama models by URL | `va models ollama --url <url>` |
+| GET | `/api/providers/ollama-instances` | Get saved Ollama URLs | `va providers ollama-instances` |
+| POST | `/api/providers/ollama-instances` | Save Ollama URLs | — |
+| GET | `/api/providers/openrouter/models` | List OpenRouter models | `va models openrouter` |
+| GET | `/api/providers/openrouter/cost` | Estimate cost | `va providers cost --model <m> --frames <n>` |
+| GET | `/api/providers/openrouter/balance` | Check balance | `va providers balance` |
 
-**Response:**
+#### GET `/api/providers`
+
 ```json
 [
   {
-    "name": "Ollama-Local",
+    "name": "Ollama-192.168.1.237",
     "type": "ollama",
-    "url": "http://host.docker.internal:11434",
-    "status": "online"
+    "url": "http://192.168.1.237:11434",
+    "status": "online",
+    "models": ["qwen3.5:9b-q8-128k", "gemma4-180k"]
   },
   {
     "name": "OpenRouter",
     "type": "openrouter",
-    "url": "https://openrouter.ai/api/v1",
     "status": "online"
   }
 ]
 ```
 
-#### POST `/api/providers/discover`
-Discover Ollama instances on network.
+### Jobs API
 
-**Response:**
-```json
-{
-  "discovered": [
-    "http://192.168.1.100:11434",
-    "http://192.168.1.101:11434"
-  ]
-}
-```
+| Method | Path | Description | CLI Equivalent |
+|--------|------|-------------|----------------|
+| GET | `/api/jobs` | List all jobs | `va jobs list` |
+| GET | `/api/jobs/<id>` | Get job details | `va jobs show <id>` |
+| DELETE | `/api/jobs/<id>` | Cancel job (kills process group) | `va jobs cancel <id>` |
+| POST | `/api/jobs/<id>/priority` | Update job priority | `va jobs priority <id> <n>` |
+| GET | `/api/jobs/<id>/results` | Get job results | `va jobs results <id>` |
 
-#### GET `/api/providers/ollama-instances`
-Get known Ollama instances.
+#### GET `/api/jobs`
 
-#### POST `/api/providers/ollama-instances`
-Add Ollama instance.
-
-**Request Body:**
-```json
-{
-  "url": "http://192.168.1.100:11434"
-}
-```
-
-#### GET `/api/providers/ollama/models`
-Get available Ollama models.
-
-**Response:**
 ```json
 [
   {
-    "name": "llama3.2:3b",
-    "size": "3.2B",
-    "modified": "2026-04-20T10:00:00Z",
-    "vram_required": 4096
+    "job_id": "abc-123-def",
+    "video_path": "uploads/video.mp4",
+    "video_name": "video.mp4",
+    "status": "running",
+    "stage": "frame_analysis",
+    "progress": 45,
+    "current_frame": 54,
+    "total_frames": 120,
+    "priority": 0,
+    "gpu_assigned": 0,
+    "pid": 12345,
+    "created_at": "2026-04-27T10:00:00",
+    "started_at": "2026-04-27T10:00:05"
   }
 ]
-```
-
-#### GET `/api/providers/openrouter/models`
-Get available OpenRouter models.
-
-#### GET `/api/providers/openrouter/cost`
-Estimate cost for OpenRouter model.
-
-**Query Parameters:**
-- `model`: Model name
-- `prompt_tokens`: Number of prompt tokens
-- `completion_tokens`: Number of completion tokens
-
-**Response:**
-```json
-{
-  "model": "anthropic/claude-3.5-sonnet",
-  "prompt_cost": 0.003,
-  "completion_cost": 0.015,
-  "total_cost": 0.018,
-  "currency": "USD"
-}
-```
-
-#### GET `/api/providers/openrouter/balance`
-Check OpenRouter balance.
-
-**Response:**
-```json
-{
-  "balance": 10.5,
-  "currency": "USD",
-  "last_updated": "2026-04-22T12:00:00Z"
-}
 ```
 
 ### LLM Chat API
 
+| Method | Path | Description | CLI Equivalent |
+|--------|------|-------------|----------------|
+| POST | `/api/llm/chat` | Submit chat job | `va llm chat <message> --context live` |
+| GET | `/api/llm/chat/<id>` | Poll chat job status | `va llm status <id>` |
+| DELETE | `/api/llm/chat/<id>` | Cancel chat job | `va llm cancel <id>` |
+| GET | `/api/llm/queue/stats` | Chat queue statistics | `va llm queue-stats` |
+
 #### POST `/api/llm/chat`
-Send chat message.
 
-**Request Body:**
 ```json
 {
-  "message": "What is in this video?",
-  "context": "job",
-  "job_id": "abc123",
-  "provider": "Ollama-Local",
-  "model": "llama3.2:3b",
-  "stream": false
-}
-```
-
-**Context values:** `job`, `live`, `modal`
-
-**Response (non-streaming):**
-```json
-{
-  "response": "The video shows...",
-  "provider": "Ollama-Local",
-  "model": "llama3.2:3b",
-  "tokens": 150,
-  "time": 2.5
-}
-```
-
-#### GET `/api/llm/chat/<job_id>`
-Get chat history for job.
-
-**Response:**
-```json
-[
-  {
-    "role": "user",
-    "content": "What is in this video?",
-    "timestamp": "2026-04-22T12:00:00Z"
-  },
-  {
-    "role": "assistant",
-    "content": "The video shows...",
-    "timestamp": "2026-04-22T12:00:02Z"
-  }
-]
-```
-
-#### DELETE `/api/llm/chat/<job_id>`
-Clear chat history for job.
-
-#### GET `/api/llm/queue/stats`
-Get chat queue statistics.
-
-**Response:**
-```json
-{
-  "queue_length": 2,
-  "running_jobs": 1,
-  "max_concurrent_jobs": 3,
-  "jobs_per_minute": 5
+  "message": "Summarize the video",
+  "context": "live",
+  "job_id": "abc-123-def",
+  "provider_type": "ollama",
+  "provider_name": "Ollama-192.168.1.237",
+  "model": "qwen3.5:9b-q8-128k",
+  "temperature": 0.0
 }
 ```
 
 ### Results API
 
+| Method | Path | Description | CLI Equivalent |
+|--------|------|-------------|----------------|
+| GET | `/api/results` | List stored results | `va results list` |
+
 #### GET `/api/results`
-Get stored analysis results.
 
-**Query Parameters:**
-- `limit`: Maximum results to return (default: 50)
-- `offset`: Starting offset (default: 0)
-
-**Response:**
 ```json
 [
   {
-    "job_id": "abc123",
-    "video_filename": "video.mp4",
-    "video_description": "This video shows...",
-    "created_at": "2026-04-22T12:00:00Z",
-    "duration": 120.5,
-    "frames_analyzed": 1000
+    "job_id": "abc-123-def",
+    "video_name": "video.mp4",
+    "video_description": "A person giving a presentation...",
+    "frame_count": 120,
+    "created_at": "2026-04-27T10:00:00"
   }
 ]
 ```
 
-### Knowledge Base API
-
-#### GET `/api/knowledge/status`
-Get OpenWebUI Knowledge Base status.
-
-**Response:**
-```json
-{
-  "enabled": true,
-  "url": "http://localhost:3000",
-  "connected": true,
-  "bases": ["video-analysis", "transcripts"]
-}
-```
-
-#### POST `/api/knowledge/config`
-Configure OpenWebUI Knowledge Base.
-
-**Request Body:**
-```json
-{
-  "enabled": true,
-  "url": "http://localhost:3000",
-  "api_key": "sk-...",
-  "base_name": "video-analysis",
-  "auto_sync": true
-}
-```
-
-#### POST `/api/knowledge/test`
-Test OpenWebUI Knowledge Base connection.
-
-**Response:**
-```json
-{
-  "success": true,
-  "message": "Connected successfully"
-}
-```
-
-#### GET `/api/knowledge/bases`
-Get available knowledge bases.
-
-#### POST `/api/knowledge/sync/<job_id>`
-Sync job results to knowledge base.
-
-**Response:**
-```json
-{
-  "success": true,
-  "message": "Synced to knowledge base",
-  "documents_added": 2
-}
-```
-
-#### POST `/api/knowledge/sync-all`
-Sync all completed jobs to knowledge base.
-
-#### POST `/api/knowledge/send/<job_id>`
-Send job context to LLM via knowledge base.
-
-**Request Body:**
-```json
-{
-  "message": "Summarize this video",
-  "provider": "Ollama-Local",
-  "model": "llama3.2:3b"
-}
-```
-
 ### System API
 
-#### GET `/api/vram`
-Get GPU VRAM information.
+| Method | Path | Description | CLI Equivalent |
+|--------|------|-------------|----------------|
+| GET | `/api/vram` | VRAM status | `va system vram` |
+| GET | `/api/gpus` | GPU list with details | `va system gpus` |
+| GET/POST | `/api/debug` | Toggle debug mode | `va system debug` |
 
-**Response:**
+#### GET `/api/vram`
+
 ```json
 {
   "gpus": [
@@ -616,192 +224,94 @@ Get GPU VRAM information.
 }
 ```
 
-#### GET `/api/gpus`
-Get GPU information.
+### Knowledge Base API
 
-#### GET `/api/debug`
-Debug endpoint (development only).
+| Method | Path | Description | CLI Equivalent |
+|--------|------|-------------|----------------|
+| GET | `/api/knowledge/status` | OpenWebUI config status | `va knowledge status` |
+| POST | `/api/knowledge/config` | Save OpenWebUI config | `va knowledge config --url <url> --key <key>` |
+| POST | `/api/knowledge/test` | Test OpenWebUI connection | `va knowledge test` |
+| GET | `/api/knowledge/bases` | List KBs from OpenWebUI | `va knowledge bases` |
+| POST | `/api/knowledge/sync/<id>` | Sync single job to KB | `va knowledge sync <id>` |
+| POST | `/api/knowledge/sync-all` | Sync all jobs to KB | `va knowledge sync-all` |
+| POST | `/api/knowledge/send/<id>` | Send job to specific KB | `va knowledge send <id> --kb <name>` |
 
-### Thumbnail API
-
-#### GET `/api/thumbnail/<filename>`
-Get video thumbnail.
-
-**Query Parameters:**
-- `time`: Timestamp in seconds (default: 0)
-- `width`: Width in pixels (default: 320)
-- `height`: Height in pixels (default: 180)
-
-**Response:** JPEG image
+---
 
 ## SocketIO Events
 
-### Client → Server Events
+### Client → Server
 
-#### `connect`
-Client connects to SocketIO.
+| Event | Data | Purpose |
+|-------|------|---------|
+| `start_analysis` | `{video_path, provider_type, provider_name, model, priority, provider_config, params}` | Start analysis job |
+| `subscribe_job` | `{job_id}` | Subscribe to job updates |
+| `unsubscribe_job` | `{job_id}` | Unsubscribe from job updates |
 
-#### `disconnect`
-Client disconnects.
+### Server → Client
 
-#### `subscribe_job`
-Subscribe to job updates.
+| Event | Data | Purpose |
+|-------|------|---------|
+| `job_created` | `{job_id, status}` | Analysis job submitted |
+| `job_status` | `{job_id, stage, progress, current_frame, total_frames}` | Job progress |
+| `frame_analysis` | `{job_id, frame_number, analysis, timestamp, video_ts, transcript_context}` | Vision analysis per frame |
+| `frame_synthesis` | `{job_id, frame_number, combined_analysis, vision_analysis}` | Combined analysis per frame |
+| `job_transcript` | `{job_id, transcript}` | Full transcript text |
+| `job_description` | `{job_id, description}` | Final video description |
+| `job_complete` | `{job_id, success}` | Job finished |
+| `videos_updated` | `{}` | Video list changed |
+| `vram_event` | `{event, job}` | VRAM manager status change |
+| `system_status` | `{type, data}` | nvidia-smi / ollama ps output |
+| `log_message` | `{level, message, timestamp}` | Server log lines |
+| `video_processing_progress` | `{source, stage, progress, message}` | Upload processing (parallel) |
+| `kb_sync_complete` | `{job_id, kb_id}` | OpenWebUI sync done |
+| `kb_sync_error` | `{job_id, error}` | OpenWebUI sync failed |
 
-**Data:**
-```json
-{
-  "job_id": "abc123"
-}
+---
+
+## CLI Usage
+
+The `va` CLI provides equivalent access to all API endpoints from the terminal.
+
+### Configuration
+
+```bash
+# Set server URL
+va config set url http://127.0.0.1:10001
+
+# Set OpenRouter API key
+va config set openrouter_api_key sk-or-...
+
+# View all settings
+va config show
 ```
 
-#### `unsubscribe_job`
-Unsubscribe from job updates.
+Config stored at `~/.video-analyzer-cli.json`.
 
-**Data:**
-```json
-{
-  "job_id": "abc123"
-}
+### Quick Examples
+
+```bash
+# List videos
+va videos list
+
+# Upload and process video
+va videos upload myvideo.mp4 --whisper-model large
+
+# Start analysis
+va jobs start --video myvideo.mp4 --provider ollama --model qwen3.5:9b-q8-128k
+
+# View system status
+va system vram
+
+# Chat with LLM about a job
+va llm chat "Summarize this video" --context live --job-id abc-123
 ```
 
-#### `start_analysis`
-Start video analysis job.
+For full CLI reference, see [CLI.md](CLI.md).
 
-**Data:**
-```json
-{
-  "video_filename": "video.mp4",
-  "fps": 1.0,
-  "provider": "Ollama-Local",
-  "model": "llama3.2:3b",
-  "prompt": "Describe what you see in this frame.",
-  "priority": "normal"
-}
-```
+---
 
-#### `cancel_job`
-Cancel a running job.
-
-**Data:**
-```json
-{
-  "job_id": "abc123"
-}
-```
-
-### Server → Client Events
-
-#### `job_progress`
-Job progress update.
-
-**Data:**
-```json
-{
-  "job_id": "abc123",
-  "progress": 45,
-  "status": "running",
-  "current_frame": 450,
-  "total_frames": 1000,
-  "message": "Analyzing frame 450/1000"
-}
-```
-
-#### `job_complete`
-Job completed.
-
-**Data:**
-```json
-{
-  "job_id": "abc123",
-  "status": "completed",
-  "results_path": "jobs/abc123/results.json",
-  "video_description": "This video shows...",
-  "processing_time": 125.5
-}
-```
-
-#### `job_error`
-Job error.
-
-**Data:**
-```json
-{
-  "job_id": "abc123",
-  "status": "failed",
-  "error": "Error description",
-  "traceback": "..."
-}
-```
-
-#### `frame_analysis`
-Frame analysis result.
-
-**Data:**
-```json
-{
-  "job_id": "abc123",
-  "frame_num": 1,
-  "timestamp": 0.0,
-  "analysis": "A person is speaking...",
-  "progress": 0.1
-}
-```
-
-#### `videos_updated`
-Video list updated.
-
-**Data:**
-```json
-{
-  "action": "upload",
-  "filename": "video.mp4"
-}
-```
-
-#### `system_monitor`
-System monitoring data.
-
-**Data:**
-```json
-{
-  "timestamp": "2026-04-22T12:00:00Z",
-  "gpu_usage": 33,
-  "vram_used": 8192,
-  "vram_total": 24576,
-  "cpu_percent": 45,
-  "memory_percent": 60,
-  "ollama_instances": 2,
-  "chat_queue_length": 1
-}
-```
-
-#### `log_message`
-Server log message.
-
-**Data:**
-```json
-{
-  "level": "INFO",
-  "message": "Video uploaded: video.mp4",
-  "timestamp": "2026-04-22T12:00:00Z"
-}
-```
-
-## Rate Limits
-
-- **Uploads**: 1GB max file size
-- **Chat requests**: 3 concurrent jobs max
-- **Job queue**: Priority-based scheduling
-- **API requests**: No explicit rate limiting
-
-## CORS
-
-CORS is enabled for all origins:
-```
-Access-Control-Allow-Origin: *
-```
-
-## WebSocket
+## WebSocket Configuration
 
 - **Path**: `/socket.io/`
 - **Transports**: `websocket`, `polling`
@@ -809,35 +319,45 @@ Access-Control-Allow-Origin: *
 - **Ping timeout**: 60 seconds
 - **Max buffer size**: 100MB
 
+## CORS
+
+Permissive CORS: `Access-Control-Allow-Origin: *`
+
+## Rate Limits
+
+- **Uploads**: 1GB max file size (`MAX_FILE_SIZE`)
+- **Chat requests**: 5 concurrent jobs, 30 per minute (rate-limited via `chat_queue.py`)
+- **Job queue**: Priority-based scheduling, max 2 concurrent per GPU
+- **API requests**: No explicit rate limiting
+
 ## Examples
 
-### Upload Video
+### List Videos (curl)
+```bash
+curl http://localhost:10000/api/videos
+```
+
+### Upload Video (curl)
 ```bash
 curl -X POST http://localhost:10000/api/videos/upload \
   -F "file=@video.mp4" \
-  -F "fps=1.0" \
-  -F "whisper_model=base"
+  -F "whisper_model=large"
 ```
 
-### Start Analysis
-```bash
-curl -X POST http://localhost:10000/api/llm/chat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "message": "What is in this video?",
-    "context": "job",
-    "job_id": "abc123",
-    "provider": "Ollama-Local",
-    "model": "llama3.2:3b"
-  }'
-```
-
-### Get Job Results
-```bash
-curl http://localhost:10000/api/jobs/abc123/results
-```
-
-### Monitor GPU
+### Get VRAM Status (curl)
 ```bash
 curl http://localhost:10000/api/vram
+```
+
+### List Videos (CLI)
+```bash
+va videos list
+```
+
+### Start Analysis (CLI)
+```bash
+va --url http://127.0.0.1:10001 jobs start \
+  --video video.mp4 \
+  --provider ollama \
+  --model qwen3.5:9b-q8-128k
 ```
