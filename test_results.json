@@ -1,0 +1,55 @@
+============================================================
+TEST SUITE - Video Analyzer Web
+============================================================
+Date: 2026-04-24 21:05:50
+
+Found 19 test files
+
+[1/19] Running: tests/e2e/test_full_workflow.py
+  ✓ 0 passed, 0 failed
+[2/19] Running: tests/integration/dedup/test_api_dedup.py
+  ✓ 0 passed, 0 failed
+[3/19] Running: tests/integration/test_job_execution.py
+  ✓ 0 passed, 0 failed
+[4/19] Running: tests/integration/test_upload_pipeline.py
+  ✓ 0 passed, 0 failed
+[5/19] Running: tests/test_pipelines.py
+  ✓ 0 passed, 0 failed
+[6/19] Running: tests/unit/api/test_jobs.py
+  ✓ 0 passed, 0 failed
+[7/19] Running: tests/unit/api/test_llm.py
+  ✓ 0 passed, 0 failed
+[8/19] Running: tests/unit/api/test_providers.py
+  ✓ 0 passed, 0 failed
+[9/19] Running: tests/unit/api/test_videos.py
+  ✓ 0 passed, 0 failed
+[10/19] Running: tests/unit/services/test_openwebui_kb.py
+  ✓ 0 passed, 0 failed
+[11/19] Running: tests/unit/test_chat_queue.py
+  ✓ 0 passed, 0 failed
+[12/19] Running: tests/unit/test_chat_utils.py
+  ✓ 0 passed, 0 failed
+[13/19] Running: tests/unit/test_file_utils.py
+  ✓ 0 passed, 0 failed
+[14/19] Running: tests/unit/test_gpu_transcode.py
+  ✓ 0 passed, 0 failed
+[15/19] Running: tests/unit/test_transcode_utils.py
+  ✓ 0 passed, 0 failed
+[16/19] Running: tests/unit/test_vram_manager.py
+  ✓ 0 passed, 0 failed
+[17/19] Running: tests/unit/utils/test_helpers.py
+  ✓ 0 passed, 0 failed
+[18/19] Running: tests/unit/utils/test_transcript.py
+  ✓ 0 passed, 0 failed
+[19/19] Running: tests/unit/websocket/test_handlers.py
+  ✓ 0 passed, 0 failed
+
+============================================================
+SUMMARY
+============================================================
+Total: 0
+Passed: 0
+Failed: 0
+Success Rate: 0.0%
+
+Report saved to: /tmp/test_report_20260424_210555.json
