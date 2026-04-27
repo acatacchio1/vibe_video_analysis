@@ -20,6 +20,7 @@ output/
 
 # Cache and temporary data
 cache/
+hf_cache/
 tmp/
 temp/
 *.tmp
