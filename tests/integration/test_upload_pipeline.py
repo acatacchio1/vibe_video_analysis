@@ -32,7 +32,7 @@ class TestUploadPipelineIntegration:
 
     def test_upload_saves_to_correct_location(self, temp_upload_dir):
         """Test file is saved to uploads directory"""
-        from app import secure_filename
+        from src.utils.security import secure_filename
 
         original_filename = "my video.mp4"
         filename = secure_filename(original_filename)

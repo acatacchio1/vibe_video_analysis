@@ -233,18 +233,16 @@ class TestValidateFileExists:
 
 
 class TestValidateUploadSizeEdgeCases:
-    """Edge case tests for validate_upload_size"""
-
     def test_exactly_max_size(self):
         """Test file at exact max size is valid"""
-        from src.utils.file import MAX_FILE_SIZE
+        from src.utils.security import MAX_FILE_SIZE
 
         is_valid, msg = validate_upload_size(MAX_FILE_SIZE)
         assert is_valid is True
 
     def test_one_byte_over_max(self):
         """Test file 1 byte over max is invalid"""
-        from src.utils.file import MAX_FILE_SIZE
+        from src.utils.security import MAX_FILE_SIZE
 
         is_valid, msg = validate_upload_size(MAX_FILE_SIZE + 1)
         assert is_valid is False

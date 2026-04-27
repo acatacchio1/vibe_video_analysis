@@ -15,3 +15,5 @@ scenedetect[opencv]==0.6.7.1
 opencv-python-headless==4.9.0.80
 video-analyzer
 pydantic>=2.0
+click>=8.0
+rich>=10.0

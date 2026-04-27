@@ -75,6 +75,14 @@ def validate_file_exists(file_path: str) -> tuple[bool, str]:
         return False, f"Cannot access file: {e}"
 
 
+def format_bytes(size: int) -> str:
+    for unit in ["B", "KB", "MB", "GB", "TB"]:
+        if size < 1024:
+            return f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} PB"
+
+
 def create_directory_safe(dir_path: str, permissions: int = 0o755) -> bool:
     """Create directory safely with proper permissions."""
     try:

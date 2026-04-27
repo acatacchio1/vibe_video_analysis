@@ -22,7 +22,7 @@ from src.utils.video import (
 class TestGetVideoDuration:
     """Tests for get_video_duration function"""
 
-    @patch("src.utils.transcode.subprocess.run")
+    @patch("src.utils.video.subprocess.run")
     def test_valid_video_duration(self, mock_run):
         """Test valid video duration is returned"""
         mock_process = MagicMock()
@@ -36,7 +36,7 @@ class TestGetVideoDuration:
         assert duration == 120.5
         mock_run.assert_called_once()
 
-    @patch("src.utils.transcode.subprocess.run")
+    @patch("src.utils.video.subprocess.run")
     def test_failed_probe_returns_zero(self, mock_run):
         """Test failed ffprobe returns 0"""
         mock_process = MagicMock()
@@ -49,7 +49,7 @@ class TestGetVideoDuration:
 
         assert duration == 0.0
 
-    @patch("src.utils.transcode.subprocess.run")
+    @patch("src.utils.video.subprocess.run")
     def test_timeout_returns_zero(self, mock_run):
         """Test timeout exception returns 0"""
         import subprocess
@@ -60,7 +60,7 @@ class TestGetVideoDuration:
 
         assert duration == 0.0
 
-    @patch("src.utils.transcode.subprocess.run")
+    @patch("src.utils.video.subprocess.run")
     def test_empty_output_returns_zero(self, mock_run):
         """Test empty ffprobe output returns 0"""
         mock_process = MagicMock()
@@ -144,7 +144,7 @@ class TestFormatBytes:
 class TestProbeVideo:
     """Tests for probe_video function"""
 
-    @patch("src.utils.transcode.get_video_duration")
+    @patch("src.utils.video.get_video_duration")
     def test_probe_video_success(self, mock_duration):
         """Test successful video probing"""
         mock_duration.return_value = 120.5
@@ -158,7 +158,7 @@ class TestProbeVideo:
         assert result["duration"] == 120.5
         assert "duration_formatted" in result
 
-    @patch("src.utils.transcode.get_video_duration")
+    @patch("src.utils.video.get_video_duration")
     def test_probe_video_no_size(self, mock_duration):
         """Test probing when size cannot be determined"""
         mock_duration.return_value = 120.5
@@ -201,7 +201,7 @@ class TestProbeAllVideos:
 
         assert len(results) == 3
 
-    @patch("src.utils.transcode.subprocess.run")
+    @patch("src.utils.video.subprocess.run")
     def test_probe_all_videos_different_durations(self, mock_run):
         """Test different durations are captured"""
         mock_run.side_effect = [

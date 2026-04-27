@@ -38,6 +38,7 @@ class ChatJob:
     temperature: float = 0.0
     api_key: str = ""
     ollama_url: str = "http://localhost:11434"
+    created_at: Optional[float] = None
     started_at: Optional[float] = None
     completed_at: Optional[float] = None
     status: ChatJobStatus = ChatJobStatus.PENDING
@@ -245,6 +246,7 @@ class ChatQueueManager:
                 temperature=temperature,
                 api_key=api_key,
                 ollama_url=ollama_url,
+                created_at=time.time(),
                 priority=priority,
             )
 
