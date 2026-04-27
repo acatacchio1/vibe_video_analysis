@@ -5,23 +5,37 @@ All notable changes to Video Analyzer Web will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6.0] - 2026-04-27
 
 ### Added
+- **CLI (`va`)**: Full-featured command-line interface with 8 command groups (videos, jobs, providers, models, system, llm, knowledge, config)
+- **CLI Framework**: `src/cli/` with `api_client.py`, `socketio_client.py`, `output.py` (tables, key-value pairs), command groups in `src/cli/commands/`
 - **Pipeline architecture**: All analysis logic moved to `src/worker/pipelines/` with factory pattern
 - **Pydantic v2 schemas**: Typed configuration (`JobConfig`, `AnalysisParams`, `AudioConfig`, `FrameConfig`, `Phase2Config`) in `src/schemas/`
 - **Auto-typed config building**: Pipeline factory automatically constructs `JobConfig` from raw dict with legacy field mapping
 - **Pure dispatcher worker**: `worker.py` reduced from ~1242 lines to ~85 lines
+- **Comprehensive test suite**: Unit, integration, and e2e tests with shared fixtures (~30 fixtures in `tests/fixtures/conftest.py`)
+- **GitHub Actions CI**: Automated test workflow on push/PR with unit, integration, and e2e stages
+- **Agent multi-GPU workflow**: `AGENTS.md` with context-aware routing across 4 Ollama instances for AI-assisted development
 
 ### Changed
+- **README.md**: Complete rebuild — fixed version numbering, updated directory structure, added CLI/GUI documentation links
+- **CHANGELOG.md**: Consolidated history, added v0.6.0 entry
 - **StandardTwoStepPipeline**: Filled skeleton with full two-step analysis implementation
 - **Typed config access**: Pipeline code uses dot-notation (`params.audio.whisper_model`) instead of dict access
 - **Worker dispatch**: Both `standard_two_step` and `linkedin_extraction` route through `create_pipeline()`
-- **Documentation**: Updated `AGENTS.md` and `DEVELOPMENT.md` with pipeline architecture details
 
 ### Removed
 - **Inline standard analysis**: Removed ~1150 lines of duplicated inline code from `worker.py`
 - **Legacy worker re-export**: `src/worker/__init__.py` now exports pipeline classes instead of `run_analysis`
+
+### Documentation
+- **CLI.md**: CLI command reference with examples for all 8 command groups
+- **GUI.md**: Web interface guide covering all 11 UI panels
+- **TEST_AUTOMATION.md**: Updated with new test structure and CI integration
+- **DEVELOPMENT.md**: Updated with CLI architecture and pipeline patterns
+- **API.md**: Updated with current endpoints and CLI command mapping
+- **AGENTS.md**: Multi-agent workflow with context-aware Ollama routing
 
 ## [0.5.0] - 2026-04-23
 
