@@ -193,29 +193,25 @@ def spawn_worker(job_id: str, job_dir: Path, gpu_assigned: Optional[int] = None)
     import threading as _t_spawn
 
     def _fork_worker():
-        try:
-            pid = os.fork()
-            if pid == 0:
-                # Child: reset signals, set session, exec worker
-                os.setsid()
-                import signal as _sig
-                _sig.signal(_sig.SIGCHLD, _sig.SIG_DFL)
-                log_file_fd = log_file.fileno()
-                os.dup2(log_file_fd, 1)
-                os.dup2(log_file_fd, 2)
-                if log_file_fd > 2:
-                    os.close(log_file_fd)
-                for k, v in env.items():
-                    os.environ[k] = v
-                os.execv(python_path, [python_path, "worker.py", str(job_dir)])
-            else:
-                # Parent
-                pgid = os.getpgid(pid)
-                pid_file.write_text(str(pid))
-                (job_dir / "pgid").write_text(str(pgid))
-                logger.info(f"Spawned worker for job {job_id} (PID: {pid}, PGID: {pgid})")
-        finally:
+        pid = os.fork()
+        if pid == 0:
+            os.setsid()
+            import signal as _sig
+            _sig.signal(_sig.SIGCHLD, _sig.SIG_DFL)
+            log_file_fd = log_file.fileno()
+            os.dup2(log_file_fd, 1)
+            os.dup2(log_file_fd, 2)
+            if log_file_fd > 2:
+                os.close(log_file_fd)
+            for k, v in env.items():
+                os.environ[k] = v
+            os.execv(python_path, [python_path, "worker.py", str(job_dir)])
+        else:
+            pgid = os.getpgid(pid)
+            pid_file.write_text(str(pid))
+            (job_dir / "pgid").write_text(str(pgid))
             log_file.close()
+            logger.info(f"Spawned worker for job {job_id} (PID: {pid}, PGID: {pgid})")
 
     # Spawn in a real thread (not eventlet green thread) to avoid preemption
     _t_spawn.Thread(target=_fork_worker, daemon=True).start()
