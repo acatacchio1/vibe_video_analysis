@@ -40,10 +40,11 @@ def list_all_results():
                 "video_path": inp.get("video_path", ""),
                 "model": inp.get("model", ""),
                 "provider": inp.get("provider_type", ""),
+                "pipeline_type": res.get("pipeline_type") or inp.get("pipeline_type") or "standard_two_step",
                 "created_at": inp.get("created_at", job_dir.stat().st_mtime),
                 "mtime": job_dir.stat().st_mtime,
                 "has_transcript": bool(res.get("transcript") and res["transcript"].get("text")),
-                "frame_count": len(res.get("frame_analyses", [])),
+                "frame_count": len(res.get("frame_analyses", res.get("events", []))),
                 "desc_preview": desc_preview,
             })
         except Exception:

@@ -1,4 +1,6 @@
 // Job management: creation, rendering, cancellation, results
+let currentPipelineType = null;
+
 async function loadJobs() {
     try {
         const response = await fetch('/api/jobs');
@@ -62,6 +64,7 @@ function renderJobsList(jobs) {
 function handleJobCreated(data) {
     if (state.debug) console.log('[DEBUG:JOBS] handleJobCreated', data);
     state.currentJob = data.job_id;
+    currentPipelineType = data.pipeline_type || null;
     subscribeToJob(data.job_id);
     loadJobs();
 }
@@ -73,6 +76,10 @@ function handleJobUpdate(data) {
 
 function handleJobStatus(data) {
     if (state.debug) console.log('[DEBUG:JOBS] handleJobStatus stage=' + data.stage + ' progress=' + data.progress);
+    // Track pipeline type from job_status (app.py emits "pipeline" field)
+    if (data.pipeline) {
+        currentPipelineType = data.pipeline;
+    }
     updateJobCard(data);
     // Keep analysisVideoName in sync so thumbnail URLs are correct on reconnect/replay
     if (data.video_path && !state.analysisVideoName) {
@@ -84,12 +91,19 @@ function handleJobStatus(data) {
 }
 
 function handleFrameAnalysis(data) {
+    if (currentPipelineType === 'native_video') return;
     const liveSection = document.getElementById('live-analysis');
     if (liveSection) liveSection.classList.remove('hidden');
     appendFrameLog(data);
 }
 
 function handleFrameSynthesis(data) {
+    if (currentPipelineType === 'native_video') {
+        const liveSection = document.getElementById('live-analysis');
+        if (liveSection) liveSection.classList.remove('hidden');
+        appendEventLog(data);
+        return;
+    }
     const combinedSection = document.getElementById('combined-analysis');
     if (combinedSection) combinedSection.classList.remove('hidden');
     appendCombinedLog(data);
@@ -281,6 +295,35 @@ function appendCombinedLog(data) {
             ${visionHtml}
             ${combinedHtml}
         </div>
+    `;
+    log.appendChild(entry);
+    log.scrollTop = log.scrollHeight;
+}
+
+function appendEventLog(data) {
+    const log = document.getElementById('frames-log');
+    if (!log) {
+        if (state.debug) console.log('[DEBUG:JOBS] appendEventLog: no frames-log element');
+        return;
+    }
+
+    const ts = formatVideoTimestamp(data.timestamp);
+    const description = data.description || '';
+    const combined = data.combined_analysis || '';
+
+    const tsHtml = ts !== null ? `<span class="event-timestamp">[${ts}]</span>` : '';
+
+    const combinedHtml = combined
+        ? `<details class="event-combined"><summary>Combined Analysis</summary><div class="combined-text">${escapeHtml(combined)}</div></details>`
+        : '';
+
+    const entry = document.createElement('div');
+    entry.className = 'analysis-entry event-entry';
+    entry.innerHTML = `
+        <div class="event-header">${tsHtml}</div>
+        <div class="event-description">${escapeHtml(description)}</div>
+        ${combinedHtml}
+        <hr/>
     `;
     log.appendChild(entry);
     log.scrollTop = log.scrollHeight;

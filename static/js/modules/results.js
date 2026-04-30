@@ -23,7 +23,8 @@ function renderResultsList(results) {
             <div class="result-title">Job: ${r.job_id}</div>
             <div class="result-meta">
                 <span>${r.model}</span>
-                <span>${r.frame_count} frames</span>
+                <span>${r.frame_count} ${r.pipeline_type === 'native_video' ? 'events' : 'frames'}</span>
+                <span class="pipeline-badge">${r.pipeline_type === 'native_video' ? 'NV' : r.pipeline_type === 'linkedin_extraction' ? 'LI' : 'ST'}</span>
             </div>
             <div class="result-preview">${r.desc_preview || 'No description'}</div>
         </div>
@@ -50,10 +51,21 @@ async function showResultDetail(jobId) {
                 <h3>Transcript</h3>
                 <pre>${escapeHtml(results.transcript?.text || 'No transcript')}</pre>
 
-                <h3>Frame Analyses (${results.frame_analyses?.length || 0})</h3>
-                ${results.frame_analyses?.map((f, i) => `
-                    <pre><strong>Frame ${f.frame}:</strong> ${escapeHtml(f.response || '')}</pre>
-                `).join('') || '<pre>No frame analyses</pre>'}
+                ${results.pipeline_type === 'native_video' ? `
+                    <h3>Video Analysis Events (${Array.isArray(results.events) ? results.events.length : 0})</h3>
+                    ${(results.events || []).slice(0, 20).map((e, i) => `
+                        <div style="padding:8px;margin:4px 0;background:var(--bg-tertiary);border-radius:4px;border-left:3px solid var(--accent-secondary)">
+                            <strong>[${formatDuration(e.timestamp)}]</strong> ${escapeHtml(e.description || '')}
+                            ${e.combined_analysis ? `<div style="margin-top:4px;color:var(--text-secondary);font-size:0.9em">${escapeHtml(e.combined_analysis).substring(0, 150)}...</div>` : ''}
+                        </div>
+                    `).join('') || '<pre>No events</pre>'}
+                    ${(results.events || []).length > 20 ? `<div style="color:var(--text-muted);padding:8px">... and ${results.events.length - 20} more events (see Combined Analysis for full list)</div>` : ''}
+                ` : `
+                    <h3>Frame Analyses (${results.frame_analyses?.length || 0})</h3>
+                    ${results.frame_analyses?.map((f, i) => `
+                        <pre><strong>Frame ${f.frame}:</strong> ${escapeHtml(f.response || '')}</pre>
+                    `).join('') || '<pre>No frame analyses</pre>'}
+                `}
 
                 <div class="results-actions">
                     <button class="btn secondary" onclick="openSendKbModal('${jobId}')">Send to Knowledge Base</button>
@@ -239,4 +251,12 @@ function formatResultsAsMarkdown(results, jobId) {
     }
 
     return lines.join('\n');
+}
+
+function formatDuration(seconds) {
+    if (!seconds && seconds !== 0) return '0:00';
+    const s = Math.floor(seconds);
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${m}:${String(sec).padStart(2, '0')}`;
 }
