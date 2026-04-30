@@ -120,7 +120,7 @@ class AnalysisParams(BaseModel):
 
     temperature: float = Field(default=0.0, ge=0, le=2)
     user_prompt: str = ""
-    pipeline_type: Literal["standard_two_step", "linkedin_extraction"] = "standard_two_step"
+    pipeline_type: Literal["standard_two_step", "linkedin_extraction", "native_video"] = "standard_two_step"
 
     # Nested configs
     audio: AudioConfig = Field(default_factory=AudioConfig)

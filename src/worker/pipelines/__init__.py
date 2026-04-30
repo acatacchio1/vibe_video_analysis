@@ -8,10 +8,12 @@ from typing import Dict, Any, Type, Union
 from .base import AnalysisPipeline
 from .standard_two_step import StandardTwoStepPipeline
 from .linkedin_extraction import LinkedInExtractionPipeline
+from .native_video import NativeVideoPipeline
 
 # Registry of available pipelines
 PIPELINE_REGISTRY = {
     "linkedin_extraction": LinkedInExtractionPipeline,
+    "native_video": NativeVideoPipeline,
     "standard_two_step": StandardTwoStepPipeline,
 }
 
@@ -62,6 +64,7 @@ def get_available_pipelines() -> Dict[str, str]:
     """Get available pipeline types and their descriptions."""
     return {
         "linkedin_extraction": "LinkedIn Short-Form Video Extraction",
+        "native_video": "Native Video (qwen3-vl) for Temporal Analysis",
         "standard_two_step": "Standard Two-Step Vision + Synthesis Analysis",
     }
 
@@ -70,6 +73,7 @@ __all__ = [
     "AnalysisPipeline",
     "StandardTwoStepPipeline",
     "LinkedInExtractionPipeline",
+    "NativeVideoPipeline",
     "create_pipeline",
     "get_available_pipelines",
 ]
