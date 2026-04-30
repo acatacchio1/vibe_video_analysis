@@ -1,0 +1,1 @@
+{"status": "failed", "stage": "error", "progress": 15, "current_frame": 0, "total_frames": 0, "pipeline": "standard_two_step", "last_update": 1777500179.920598, "error": "VideoProcessor.extract_keyframes() got an unexpected keyword argument 'similarity_threshold'"}

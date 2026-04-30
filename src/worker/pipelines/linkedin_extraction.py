@@ -7,7 +7,6 @@ import json
 import logging
 import subprocess
 import time
-import types
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 
@@ -398,54 +397,16 @@ class LinkedInExtractionPipeline(AnalysisPipeline):
     def _initialize_client(self, provider_type: str, provider_config: Dict[str, Any],
                           model: str, params: Dict[str, Any]):
         """Initialize LLM client."""
-        if provider_type == "ollama":
-            from video_analyzer.clients.ollama import OllamaClient
-            
-            ollama_url = provider_config.get("url", "http://localhost:11434")
-            client = OllamaClient(ollama_url)
-            
-            # Patch to use think:false (same as worker.py)
-            import functools
-            
-            _chat_url = f"{ollama_url.rstrip('/')}/api/chat"
-            
-            @functools.wraps(client.generate)
-            def _patched_generate(self_inner, prompt, image_path=None, stream=False, 
-                                 model=model, temperature=None, num_predict=2048):
-                import requests as _req
-                
-                msg = {"role": "user", "content": prompt}
-                if image_path:
-                    msg["images"] = [self_inner.encode_image(image_path)]
-                
-                data = {
-                    "model": model,
-                    "messages": [msg],
-                    "stream": False,
-                    "think": False,
-                    "options": {
-                        "temperature": params.get("temperature", 0.0),
-                        "num_predict": max(num_predict, 2048),
-                    },
-                }
-                
-                resp = _req.post(_chat_url, json=data, timeout=300)
-                resp.raise_for_status()
-                d = resp.json()
-                
-                return {
-                    "response": d.get("message", {}).get("content", ""),
-                    "done": d.get("done", True),
-                    "eval_count": d.get("eval_count", 0),
-                    "prompt_eval_count": d.get("prompt_eval_count", 0),
-                }
-            
-            client.generate = types.MethodType(_patched_generate, client)
+        from video_analyzer.clients.generic_openai_api import GenericOpenAIAPIClient
+
+        if provider_type == "litellm":
+            litellm_url = provider_config.get("url", "http://172.16.17.3:4000/v1")
+            if "host.docker.internal" in litellm_url:
+                litellm_url = litellm_url.replace("host.docker.internal", "localhost")
+            client = GenericOpenAIAPIClient("", litellm_url)
             return client
-            
+
         else:  # openrouter
-            from video_analyzer.clients.generic_openai_api import GenericOpenAIAPIClient
-            
             api_key = provider_config.get("api_key", "")
             client = GenericOpenAIAPIClient(api_key, "https://openrouter.ai/api/v1")
             return client
@@ -477,17 +438,16 @@ class LinkedInExtractionPipeline(AnalysisPipeline):
                            prompt: str, image_path: Path, params: Dict[str, Any]) -> str:
         """Call LLM for frame analysis."""
         try:
-            if provider_type == "ollama":
+            if provider_type == "litellm":
                 result = client.generate(
                     prompt=prompt,
                     image_path=str(image_path),
                     model=model,
                     temperature=params.get("temperature", 0.0),
-                    num_predict=4096,
+                    max_tokens=4096,
                 )
                 return result.get("response", "")
             else:  # openrouter
-                # OpenRouter client uses different API
                 result = client.generate(
                     prompt=prompt,
                     image_path=str(image_path),
@@ -790,33 +750,33 @@ class LinkedInExtractionPipeline(AnalysisPipeline):
         try:
             # Try to use the provider's LLM for text-only fusion
             # For simplicity, we'll use the same provider config as the main analysis
-            provider_type = self.config.get("provider_type", "ollama")
+            provider_type = self.config.get("provider_type", "litellm")
             provider_config = self.config.get("provider_config", {})
             model = self.config.get("model", "")
             params = self.config.get("params", {})
-            
-            if provider_type == "ollama":
+
+            if provider_type == "litellm":
                 import requests
-                
-                ollama_url = provider_config.get("url", "http://localhost:11434")
-                
+
+                litellm_url = provider_config.get("url", "http://172.16.17.3:4000/v1")
+
                 response = requests.post(
-                    f"{ollama_url.rstrip('/')}/api/chat",
+                    f"{litellm_url.rstrip('/')}/chat/completions",
+                    headers={
+                        "Authorization": "Bearer ",
+                        "Content-Type": "application/json",
+                    },
                     json={
                         "model": model,
                         "messages": [{"role": "user", "content": prompt}],
-                        "stream": False,
-                        "think": False,
-                        "options": {
-                            "temperature": params.get("temperature", 0.0),
-                            "num_predict": 4096,
-                        },
+                        "temperature": params.get("temperature", 0.0),
+                        "max_tokens": 4096,
                     },
                     timeout=300,
                 )
                 response.raise_for_status()
-                result = response.json().get("message", {}).get("content", "")
-                
+                result = response.json()["choices"][0]["message"]["content"]
+
                 logger.info(f"Segment fusion LLM call successful")
                 return result
                 

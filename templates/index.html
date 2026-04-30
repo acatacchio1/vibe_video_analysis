@@ -12,7 +12,6 @@
         <h1>Video Analyzer Web <span class="app-version">v{{ version }}</span></h1>
         <div class="header-actions">
             <button id="kb-settings-btn" class="icon-btn" title="OpenWebUI Knowledge Base">📚</button>
-            <button id="ollama-instances-btn" class="icon-btn" title="Ollama Instances">🌐</button>
             <button id="debug-btn" class="icon-btn" title="Toggle Debug Mode">🐛</button>
             <button id="notifications-btn" class="icon-btn" title="Enable Notifications">🔔</button>
         </div>
@@ -132,16 +131,14 @@
                     <div class="monitor-output">
                         <div class="monitor-tabs">
                             <button class="tab-btn active" data-tab="nvidia">nvidia-smi</button>
-                            <button class="tab-btn" data-tab="ollama">ollama ps</button>
                         </div>
                         <div class="monitor-content">
                             <pre id="nvidia-output" class="monitor-pre active">Waiting for data...</pre>
-                            <pre id="ollama-output" class="monitor-pre">Waiting for data...</pre>
                         </div>
                     </div>
                     
                     <div class="refresh-info">
-                        <small>nvidia-smi: every 10s | ollama ps: every 15s</small>
+                        <small>nvidia-smi: every 10s</small>
                     </div>
                 </div>
             </section>
@@ -581,38 +578,6 @@
         </div>
     </div>
 
-    <!-- Ollama Instances Settings Modal -->
-    <div id="ollama-instances-modal" class="modal hidden">
-        <div class="modal-content modal-wide">
-            <header class="modal-header">
-                <h2>Ollama Instances</h2>
-                <button class="close-btn" onclick="closeOllamaInstancesModal()">&times;</button>
-            </header>
-            <div class="modal-body">
-                <div class="form-group">
-                    <label for="ollama-instances-textarea">Known Ollama URLs (one per line)</label>
-                    <textarea id="ollama-instances-textarea" rows="6" placeholder="http://192.168.1.237:11434&#10;http://172.16.17.3:11434&#10;http://192.168.1.241:11434"></textarea>
-                    <div class="popover-hint">These URLs are checked on startup (fast). The network scan is only triggered by a manual force scan below.</div>
-                </div>
-
-                <div class="ollama-instances-actions">
-                    <button type="button" id="ollama-save-btn" class="btn primary">Save</button>
-                    <button type="button" id="ollama-force-scan-btn" class="btn secondary">Force Network Scan</button>
-                </div>
-
-                <div id="ollama-instances-status" class="kb-status hidden"></div>
-
-                <div class="kb-divider"></div>
-
-                <div class="form-group">
-                    <label>Discovered Instances</label>
-                    <div id="ollama-discovered-list" class="ollama-discovered-list">
-                        <small>Click "Force Network Scan" to discover new instances on your network.</small>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
 
     <!-- Job Detail Modal -->
     <div id="job-modal" class="modal hidden">
@@ -662,7 +627,6 @@
     <script src="{{ url_for('static', filename='js/modules/system.js') }}"></script>
     <script src="{{ url_for('static', filename='js/modules/results.js') }}"></script>
     <script src="{{ url_for('static', filename='js/modules/settings.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/modules/ollama-settings.js') }}"></script>
     <script src="{{ url_for('static', filename='js/modules/knowledge.js') }}"></script>
     <script src="{{ url_for('static', filename='js/modules/init.js') }}"></script>
 </body>

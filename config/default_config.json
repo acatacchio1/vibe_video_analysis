@@ -1,10 +1,14 @@
 {
   "clients": {
-    "default": "ollama",
+    "default": "litellm",
     "temperature": 0.0,
-    "ollama": {
-      "url": "http://host.docker.internal:11434",
-      "model": "gemma4-180k"
+    "litellm": {
+      "api_url": "http://172.16.17.3:4000/v1",
+      "models": [
+        "qwen3-27b-q8",
+        "qwen3-27b-best",
+        "vision-best"
+      ]
     },
     "openai_api": {
       "api_key": "",
@@ -15,8 +19,8 @@
   "analysis_pipeline": {
     "two_step_enabled": true,
     "phase2_defaults": {
-      "provider_type": "ollama",
-      "model": "llama3.1:8b",
+      "provider_type": "litellm",
+      "model": "qwen3-27b-best",
       "temperature": 0.0
     },
     "max_concurrent_synthesis": 3,
@@ -70,13 +74,5 @@
     "api_key": "",
     "knowledge_base_name": "Video Analyzer",
     "auto_sync": true
-  },
-  "ollama_instances": [
-    "http://192.168.1.237:11434",
-    "http://192.168.1.241:11434"
-  ],
-  "remote_ollama_models": {
-    "http://192.168.1.237:11434": "qwen3.6:27b-q4_K_M",
-    "http://192.168.1.241:11434": "qwen3.6:27b-q4_K_M"
   }
 }

@@ -10,10 +10,18 @@ the appropriate pipeline via the factory.
 
 import json
 import logging
+import os
 import sys
 import time
 from pathlib import Path
 from typing import Dict, Any
+
+# Ensure video_analyzer pip package is available, even when spawned from
+# a process whose sys.executable is NOT the venv Python (e.g. gunicorn).
+_VENV_SITE_PACKAGES = "/home/anthony/venvs/video-analyzer/lib/python3.13/site-packages"
+if os.path.isdir(_VENV_SITE_PACKAGES) and _VENV_SITE_PACKAGES not in sys.path:
+    # Need to prepend dist-info/egg-info metadata too so pkg_resources works
+    sys.path.insert(0, _VENV_SITE_PACKAGES)
 
 # Setup logging to file
 logging.basicConfig(

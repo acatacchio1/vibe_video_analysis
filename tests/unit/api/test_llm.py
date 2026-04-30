@@ -25,11 +25,10 @@ class TestLLMAPI:
         response = client.post(
             "/api/llm/chat",
             json={
-                "provider_type": "ollama",
-                "model": "llama3:8b",
+                "provider_type": "litellm",
+                "model": "qwen3-27b-q8",
                 "prompt": "Test prompt",
                 "temperature": 0.1,
-                "ollama_url": "http://localhost:11434",
             },
         )
         assert response.status_code == 200
@@ -43,7 +42,7 @@ class TestLLMAPI:
         response = client.post(
             "/api/llm/chat",
             json={
-                "provider_type": "ollama",
+                "provider_type": "litellm",
                 "prompt": "Test prompt",
             },
         )
@@ -57,8 +56,8 @@ class TestLLMAPI:
         response = client.post(
             "/api/llm/chat",
             json={
-                "provider_type": "ollama",
-                "model": "llama3:8b",
+                "provider_type": "litellm",
+                "model": "qwen3-27b-q8",
             },
         )
         assert response.status_code == 400
@@ -93,8 +92,8 @@ class TestLLMAPI:
         response = client.post(
             "/api/llm/chat",
             json={
-                "provider_type": "ollama",
-                "model": "llama3:8b",
+                "provider_type": "litellm",
+                "model": "qwen3-27b-q8",
                 "prompt": "Test prompt",
             },
         )
@@ -111,8 +110,8 @@ class TestLLMAPI:
         response = client.post(
             "/api/llm/chat",
             json={
-                "provider_type": "ollama",
-                "model": "llama3:8b",
+                "provider_type": "litellm",
+                "model": "qwen3-27b-q8",
                 "prompt": "Test prompt",
             },
         )

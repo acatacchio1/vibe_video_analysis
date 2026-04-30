@@ -90,10 +90,7 @@ Upload a video file. Starts parallel frame extraction and audio transcription.
 | Method | Path | Description | CLI Equivalent |
 |--------|------|-------------|----------------|
 | GET | `/api/providers` | List all providers | `va providers list` |
-| GET | `/api/providers/discover` | Scan network for Ollama instances | `va providers discover` |
-| GET | `/api/providers/ollama/models` | List Ollama models by URL | `va models ollama --url <url>` |
-| GET | `/api/providers/ollama-instances` | Get saved Ollama URLs | `va providers ollama-instances` |
-| POST | `/api/providers/ollama-instances` | Save Ollama URLs | — |
+| GET | `/api/providers/litellm/models` | List models via LiteLLM proxy | `va models litellm --server <url>` |
 | GET | `/api/providers/openrouter/models` | List OpenRouter models | `va models openrouter` |
 | GET | `/api/providers/openrouter/cost` | Estimate cost | `va providers cost --model <m> --frames <n>` |
 | GET | `/api/providers/openrouter/balance` | Check balance | `va providers balance` |
@@ -103,11 +100,11 @@ Upload a video file. Starts parallel frame extraction and audio transcription.
 ```json
 [
   {
-    "name": "Ollama-192.168.1.237",
-    "type": "ollama",
-    "url": "http://192.168.1.237:11434",
+    "name": "LiteLLM",
+    "type": "litellm",
+    "url": "http://172.16.17.3:4000/v1",
     "status": "online",
-    "models": ["qwen3.5:9b-q8-128k", "gemma4-180k"]
+    "models": ["qwen3-27b-q8", "qwen3-27b-best", "vision-best"]
   },
   {
     "name": "OpenRouter",
@@ -116,6 +113,24 @@ Upload a video file. Starts parallel frame extraction and audio transcription.
   }
 ]
 ```
+
+#### GET `/api/providers/litellm/models`
+
+Fetch available models from the LiteLLM proxy.
+
+**Query Parameters:**
+- `server`: LiteLLM proxy URL (default: `http://172.16.17.3:4000/v1`)
+
+**Response:**
+```json
+{
+  "server": "http://172.16.17.3:4000/v1",
+  "models": ["qwen3-27b-q8", "qwen3-27b-best", "vision-best"],
+  "status": "online"
+}
+```
+
+> **LiteLLM Proxy**: The app routes all LLM requests through a LiteLLM proxy at `http://172.16.17.3:4000/v1`. The proxy handles load balancing, rate limiting, and context management across backend GPU instances running `qwen3-27b-q8` on GPU backends.
 
 ### Jobs API
 
@@ -165,9 +180,10 @@ Upload a video file. Starts parallel frame extraction and audio transcription.
   "message": "Summarize the video",
   "context": "live",
   "job_id": "abc-123-def",
-  "provider_type": "ollama",
-  "provider_name": "Ollama-192.168.1.237",
-  "model": "qwen3.5:9b-q8-128k",
+  "provider_type": "litellm",
+  "provider_name": "LiteLLM",
+  "model": "qwen3-27b-q8",
+  "litellm_url": "http://172.16.17.3:4000/v1",
   "temperature": 0.0
 }
 ```
@@ -261,7 +277,7 @@ Upload a video file. Starts parallel frame extraction and audio transcription.
 | `job_complete` | `{job_id, success}` | Job finished |
 | `videos_updated` | `{}` | Video list changed |
 | `vram_event` | `{event, job}` | VRAM manager status change |
-| `system_status` | `{type, data}` | nvidia-smi / ollama ps output |
+| `system_status` | `{type, data}` | nvidia-smi / litellm proxy status output |
 | `log_message` | `{level, message, timestamp}` | Server log lines |
 | `video_processing_progress` | `{source, stage, progress, message}` | Upload processing (parallel) |
 | `kb_sync_complete` | `{job_id, kb_id}` | OpenWebUI sync done |
@@ -298,7 +314,7 @@ va videos list
 va videos upload myvideo.mp4 --whisper-model large
 
 # Start analysis
-va jobs start --video myvideo.mp4 --provider ollama --model qwen3.5:9b-q8-128k
+va jobs start --video myvideo.mp4 --provider litellm --model qwen3-27b-q8
 
 # View system status
 va system vram
@@ -358,6 +374,6 @@ va videos list
 ```bash
 va --url http://127.0.0.1:10001 jobs start \
   --video video.mp4 \
-  --provider ollama \
-  --model qwen3.5:9b-q8-128k
+  --provider litellm \
+  --model qwen3-27b-q8
 ```

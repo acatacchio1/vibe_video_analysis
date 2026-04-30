@@ -7,12 +7,9 @@ Handles rate limiting, queueing, and concurrent request management.
 import logging
 import threading
 import time
-import queue
-from typing import Dict, List, Optional, Callable, Any
-from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Callable
+from dataclasses import dataclass
 from enum import Enum
-import json
-from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -31,13 +28,13 @@ class ChatJob:
     """A chat request job"""
 
     job_id: str
-    provider_type: str  # "ollama" or "openrouter"
+    provider_type: str  # "litellm" or "openrouter"
     model_id: str
     prompt: str
     content: str
     temperature: float = 0.0
     api_key: str = ""
-    ollama_url: str = "http://localhost:11434"
+    litellm_url: str = "http://172.16.17.3:4000/v1"
     created_at: Optional[float] = None
     started_at: Optional[float] = None
     completed_at: Optional[float] = None
@@ -158,23 +155,22 @@ class ChatQueueManager:
                 f"{job.prompt}\n\n{job.content}".strip() if job.content else job.prompt
             )
 
-            if job.provider_type == "ollama":
+            if job.provider_type == "litellm":
                 resp = requests.post(
-                    f"{job.ollama_url.rstrip('/')}/api/chat",
+                    f"{job.litellm_url.rstrip('/')}/chat/completions",
+                    headers={
+                        "Authorization": "Bearer ",
+                        "Content-Type": "application/json",
+                    },
                     json={
                         "model": job.model_id,
                         "messages": [{"role": "user", "content": full_prompt}],
-                        "stream": False,
-                        "think": False,
-                        "options": {
-                            "temperature": job.temperature,
-                            "num_predict": 4096,
-                        },
+                        "temperature": job.temperature,
                     },
                     timeout=300,
                 )
                 resp.raise_for_status()
-                result = resp.json().get("message", {}).get("content", "")
+                result = resp.json()["choices"][0]["message"]["content"]
 
             else:  # openrouter
                 resp = requests.post(
@@ -225,7 +221,7 @@ class ChatQueueManager:
         content: str = "",
         temperature: float = 0.0,
         api_key: str = "",
-        ollama_url: str = "http://localhost:11434",
+        litellm_url: str = "http://172.16.17.3:4000/v1",
         priority: int = 0,
     ) -> str:
         """Submit a chat job and return job_id"""
@@ -245,7 +241,7 @@ class ChatQueueManager:
                 content=content,
                 temperature=temperature,
                 api_key=api_key,
-                ollama_url=ollama_url,
+                litellm_url=litellm_url,
                 created_at=time.time(),
                 priority=priority,
             )

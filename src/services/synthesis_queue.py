@@ -7,13 +7,10 @@ Handles concurrent frame synthesis requests to secondary LLM instances.
 import logging
 import threading
 import time
-import queue
 import uuid
-from typing import Dict, List, Optional, Callable, Any, Tuple
+from typing import Dict, List, Optional, Callable
 from dataclasses import dataclass, field
 from enum import Enum
-import json
-from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -39,11 +36,11 @@ class SynthesisJob:
     corrected_ts: float
     vision_analysis: str
     transcript_context: str
-    phase2_provider_type: str  # "ollama" or "openrouter"
+    phase2_provider_type: str  # "litellm" or "openrouter"
     phase2_model: str
     phase2_temperature: float = 0.0
     phase2_api_key: str = ""
-    phase2_ollama_url: str = "http://localhost:11434"
+    phase2_provider_config: Dict = field(default_factory=lambda: {"url": "http://172.16.17.3:4000/v1"})
     
     # Progress tracking
     started_at: Optional[float] = None
@@ -74,6 +71,7 @@ class SynthesisJob:
             "combined_analysis": self.combined_analysis,
             "error": self.error,
             "tokens": self.tokens,
+            "phase2_provider_config": self.phase2_provider_config,
         }
 
 
@@ -187,24 +185,27 @@ class SynthesisQueueManager:
             # Build synthesis prompt
             synthesis_prompt = self._build_synthesis_prompt(job)
             
-            if job.phase2_provider_type == "ollama":
+            if job.phase2_provider_type == "litellm":
+                phase2_provider_config = job.phase2_provider_config or {}
+                litellm_url = phase2_provider_config.get("url", "http://172.16.17.3:4000/v1")
                 resp = requests.post(
-                    f"{job.phase2_ollama_url.rstrip('/')}/api/chat",
+                    f"{litellm_url.rstrip('/')}/chat/completions",
+                    headers={
+                        "Authorization": "Bearer ",
+                        "Content-Type": "application/json",
+                    },
                     json={
                         "model": job.phase2_model,
                         "messages": [{"role": "user", "content": synthesis_prompt}],
-                        "stream": False,
-                        "think": False,
-                        "options": {
-                            "temperature": job.phase2_temperature,
-                            "num_predict": 4096,
-                        },
+                        "temperature": job.phase2_temperature,
+                        "max_tokens": 4096,
                     },
                     timeout=300,
                 )
                 resp.raise_for_status()
-                result = resp.json().get("message", {}).get("content", "")
-                tokens = resp.json().get("usage", {})
+                data = resp.json()
+                result = data["choices"][0]["message"]["content"]
+                tokens = data.get("usage", {})
                 
             else:  # openrouter
                 resp = requests.post(
@@ -283,7 +284,7 @@ ENHANCED ANALYSIS:"""
                 phase2_model=job_data["phase2_model"],
                 phase2_temperature=job_data.get("phase2_temperature", 0.0),
                 phase2_api_key=job_data.get("phase2_api_key", ""),
-                phase2_ollama_url=job_data.get("phase2_ollama_url", "http://localhost:11434"),
+                phase2_provider_config=job_data.get("phase2_provider_config", {}),
             )
             
             self.jobs[job_id] = job

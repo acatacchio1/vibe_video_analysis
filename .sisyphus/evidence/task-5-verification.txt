@@ -1,0 +1,43 @@
+# Task 5 Verification — Fix 5 P0/P1 Workflow Bugs
+
+## py_compile (all 4 changed files)
+```
+SYNTAX OK
+```
+
+## Bug 1: videos_updated emit in _process_video_direct
+```
+713:    socketio.emit("videos_updated", {})
+1486:                socketio.emit("videos_updated", {})
+```
+Line 1486 = new emit added in `_process_video_direct`. Line 713 = pre-existing emit (correct baseline).
+
+## Bug 2: KeyError fix in pre-computed dedup
+```
+(line removed - OK)
+```
+The line `keep_indices = keep_indices_by_threshold[str(threshold)]` was removed. No more KeyError on int thresholds.
+
+## Bug 3: Scene detection no-op warning comment
+```
+703:    # NOTE: Scene detection from frames (detect_scenes_from_frames) is a no-op —
+```
+
+## Bug 4: Context manager methods in OpenWebUIClient
+```
+170:    def __del__(self):
+175:    def close(self):
+180:    def __enter__(self):
+183:    def __exit__(self, exc_type, exc_val, exc_tb):
+```
+
+## Bug 4: Context manager usage in knowledge.py (4 sites)
+```
+97:        with client:          # sync_job_to_kb
+171:        with _get_client()   # get_kb_status
+236:        with client:         # list_knowledge_bases
+271:        with client:         # send_to_kb
+```
+
+## Summary
+All 5 bugs fixed. All 4 changed files pass py_compile. All grep checks confirm correct changes.

@@ -1,0 +1,95 @@
+{
+  "active_plan": "/home/anthony/video-analyzer-web/.sisyphus/plans/codebase-review.md",
+  "started_at": "2026-04-29T20:40:03.851Z",
+  "session_ids": [
+    "ses_2254720a3ffeBTk7AF5fCKz86g",
+    "ses_224f190efffehtCaqGTUq7jjwn",
+    "ses_224968924ffeEAOFe01l9MfB6C",
+    "ses_22494c539ffeLtts0MnrRYsIO3",
+    "ses_22489b686ffes6x76Au47XgkY7",
+    "ses_2247d9aa0ffeILz50XB7its8RQ",
+    "ses_224337dddffeE2M2ktvpPxmrt8",
+    "ses_2243366d7ffeN3U1qAYRXLwoF9",
+    "ses_2243346fcffeVOE5k0ARxP3I0G",
+    "ses_22432fa2fffe6uz4ZmqwVfPyYw"
+  ],
+  "session_origins": {
+    "ses_2254720a3ffeBTk7AF5fCKz86g": "direct",
+    "ses_224f190efffehtCaqGTUq7jjwn": "appended",
+    "ses_224968924ffeEAOFe01l9MfB6C": "appended",
+    "ses_22494c539ffeLtts0MnrRYsIO3": "appended",
+    "ses_22489b686ffes6x76Au47XgkY7": "appended",
+    "ses_2247d9aa0ffeILz50XB7its8RQ": "appended",
+    "ses_224337dddffeE2M2ktvpPxmrt8": "appended",
+    "ses_2243366d7ffeN3U1qAYRXLwoF9": "appended",
+    "ses_2243346fcffeVOE5k0ARxP3I0G": "appended",
+    "ses_22432fa2fffe6uz4ZmqwVfPyYw": "appended"
+  },
+  "plan_name": "codebase-review",
+  "agent": "atlas",
+  "task_sessions": {
+    "todo:1": {
+      "task_key": "todo:1",
+      "task_label": "1",
+      "task_title": "Compile Oracle Audit Report",
+      "session_id": "ses_225051baaffeFkuIRMw1nrQXa9",
+      "agent": "Sisyphus-Junior",
+      "category": "writing",
+      "updated_at": "2026-04-29T20:44:42.261Z"
+    },
+    "todo:4": {
+      "task_key": "todo:4",
+      "task_label": "4",
+      "task_title": "Fix CI Workflow (test.yml)",
+      "session_id": "ses_225007356ffepxf5UYN28992eP",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-04-29T20:48:07.317Z"
+    },
+    "todo:5": {
+      "task_key": "todo:5",
+      "task_label": "5",
+      "task_title": "Fix P0 Workflow Bugs",
+      "session_id": "ses_224ff1711ffeF7tzW4K464bS9I",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-04-29T20:53:02.895Z"
+    },
+    "todo:6": {
+      "task_key": "todo:6",
+      "task_label": "6",
+      "task_title": "Run Unit Test Suite",
+      "session_id": "ses_224f69169ffeT1fB5Iqal9x8nb",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-04-29T20:58:47.967Z"
+    },
+    "todo:10": {
+      "task_key": "todo:10",
+      "task_label": "10",
+      "task_title": "Upload Small Video via CLI",
+      "session_id": "ses_224ed45e7ffeE9yUOXM9aa0GRQ",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-04-29T21:14:37.889Z"
+    },
+    "todo:11": {
+      "task_key": "todo:11",
+      "task_label": "11",
+      "task_title": "Run Analysis via CLI",
+      "session_id": "ses_2247d9aa0ffeILz50XB7its8RQ",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-04-29T23:10:49.356Z"
+    },
+    "final-wave:f1": {
+      "task_key": "final-wave:f1",
+      "task_label": "F1",
+      "task_title": "**Plan Compliance Audit** — `oracle`",
+      "session_id": "ses_22432fa2fffe6uz4ZmqwVfPyYw",
+      "agent": "Sisyphus-Junior",
+      "category": "artistry",
+      "updated_at": "2026-04-30T00:32:20.083Z"
+    }
+  }
+}

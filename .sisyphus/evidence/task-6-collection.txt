@@ -1,0 +1,14 @@
+tests/unit/api/test_jobs.py: 14
+tests/unit/api/test_llm.py: 11
+tests/unit/api/test_providers.py: 9
+tests/unit/api/test_videos.py: 13
+tests/unit/services/test_openwebui_kb.py: 28
+tests/unit/test_chat_queue.py: 18
+tests/unit/test_chat_utils.py: 7
+tests/unit/test_file_utils.py: 36
+tests/unit/test_gpu_transcode.py: 8
+tests/unit/test_transcode_utils.py: 19
+tests/unit/utils/test_helpers.py: 29
+tests/unit/utils/test_transcript.py: 21
+tests/unit/websocket/test_handlers.py: 20
+

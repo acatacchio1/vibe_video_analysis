@@ -60,9 +60,9 @@ class TestEndToEndAnalysisWorkflow:
         input_config = {
             "job_id": job_id,
             "video_path": str(env["video_path"]),
-            "provider_type": "ollama",
-            "provider_name": "Ollama-Local",
-            "provider_config": {"url": "http://localhost:11434"},
+            "provider_type": "litellm",
+            "provider_name": "LiteLLM-Proxy",
+            "provider_config": {"url": "http://172.16.17.3:4000/v1"},
             "model": "llava:7b",
             "params": {
                 "temperature": 0.0,
@@ -108,7 +108,7 @@ class TestEndToEndAnalysisWorkflow:
         results = {
             "metadata": {
                 "job_id": job_id,
-                "provider": "ollama",
+                "provider": "litellm",
                 "model": "llava:7b",
                 "frames_processed": 5,
             },
@@ -164,8 +164,8 @@ class TestEndToEndAnalysisWorkflow:
                     {
                         "job_id": job_id,
                         "video_path": str(env["video_path"]),
-                        "provider_type": "ollama",
-                        "provider_name": "Ollama-Local",
+                        "provider_type": "litellm",
+                        "provider_name": "LiteLLM-Local",
                         "model": "llava:7b",
                         "created_at": time.time(),
                     }
@@ -310,8 +310,8 @@ class TestEndToEndAnalysisWorkflow:
             input_config = {
                 "job_id": job_id,
                 "video_path": str(env["video_path"]),
-                "provider_type": "ollama" if i < 2 else "openrouter",
-                "provider_name": f"Ollama-GPU{gpu_id}" if i < 2 else "OpenRouter",
+                "provider_type": "litellm" if i < 2 else "openrouter",
+                "provider_name": f"LiteLLM-GPU{gpu_id}" if i < 2 else "OpenRouter",
                 "provider_config": {"url": "http://localhost:11434"} if i < 2 else {},
                 "model": "llava:7b",
                 "params": {},

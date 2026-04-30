@@ -42,7 +42,7 @@ def list_providers(ctx):
 @providers.command()
 @click.pass_context
 def discover(ctx):
-    ctx.obj["fmt"].info("Scanning network for Ollama instances (this may take ~30s)...")
+    ctx.obj["fmt"].info("Scanning network for AI instances (this may take ~30s)...")
     try:
         result = ctx.obj["client"].discover_providers()
     except Exception as e:
@@ -56,44 +56,21 @@ def discover(ctx):
         ctx.obj["fmt"].info(f"  - {url}")
 
 
-@providers.command(name="add-ollama")
-@click.argument("url")
+@providers.command(name="status")
 @click.pass_context
-def add_ollama(ctx, url):
-    client = ctx.obj["client"]
-    fmt = ctx.obj["fmt"]
+def litellm_status(ctx):
+    """Check LiteLLM status and list available models."""
     try:
-        current = client.get_ollama_instances().get("instances", [])
-    except Exception:
-        current = []
-    if url not in current:
-        current.append(url)
-    try:
-        result = client.update_ollama_instances(current)
-    except Exception as e:
-        fmt.error(str(e))
-        return
-    if result.get("ok"):
-        fmt.success(f"Added Ollama instance: {url}")
-    else:
-        fmt.error(result.get("error", "Failed to add instance"))
-
-
-@providers.command(name="instances")
-@click.pass_context
-def instances(ctx):
-    try:
-        result = ctx.obj["client"].get_ollama_instances()
+        result = ctx.obj["client"].get_litellm_status()
     except Exception as e:
         ctx.obj["fmt"].error(str(e))
         return
     if ctx.obj["as_json"]:
         ctx.obj["fmt"].print_json(result)
         return
-    insts = result.get("instances", [])
-    if not insts:
-        ctx.obj["fmt"].info("No Ollama instances configured")
-        return
-    for u in insts:
-        print(f"  {u}")
-    print()
+    models = result.get("models", [])
+    ctx.obj["fmt"].success(f"LiteLLM online - {len(models)} models available")
+    for m in models[:20]:
+        ctx.obj["fmt"].info(f"  - {m.get('id', m.get('name', str(m)))}")
+    if len(models) > 20:
+        ctx.obj["fmt"].info(f"  ... and {len(models) - 20} more")

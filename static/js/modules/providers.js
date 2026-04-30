@@ -38,10 +38,10 @@ function updateProviderSelect() {
 
     const currentValue = select.value;
     select.innerHTML = '<option value="">Select provider...</option>' +
-        '<optgroup label="Ollama">' +
+        '<optgroup label="LiteLLM">' +
         Object.values(state.providers)
-            .filter(p => p.type === 'ollama')
-            .map(p => `<option value="ollama" data-name="${p.name}" data-url="${p.url}">${p.name} (${p.status})</option>`)
+            .filter(p => p.type === 'litellm')
+            .map(p => `<option value="litellm" data-name="${p.name}" data-url="${p.url}">${p.name} (${p.status})</option>`)
             .join('') +
         '</optgroup>' +
         '<optgroup label="Cloud">' +
@@ -58,11 +58,11 @@ function updateProviderSelect() {
         // Build options for Phase 2
         let phase2Options = '<option value="">Select provider...</option>';
         
-        // Add specific Ollama instances
-        const ollamaProviders = Object.values(state.providers).filter(p => p.type === 'ollama');
-        if (ollamaProviders.length > 0) {
-            phase2Options += ollamaProviders
-                .map(p => `<option value="ollama" data-url="${p.url}">${p.name} (${p.status})</option>`)
+        // Add specific LiteLLM instances
+        const litellmProviders = Object.values(state.providers).filter(p => p.type === 'litellm');
+        if (litellmProviders.length > 0) {
+            phase2Options += litellmProviders
+                .map(p => `<option value="litellm" data-url="${p.url}">${p.name} (${p.status})</option>`)
                 .join('');
         }
         
@@ -72,17 +72,18 @@ function updateProviderSelect() {
         
         phase2Select.innerHTML = phase2Options;
         
-        // Auto-select the first Ollama instance for Phase 2 (if available)
-        const ollamaOptions = Array.from(phase2Select.options).filter(opt => opt.value === 'ollama' && opt.dataset.url);
-        if (ollamaOptions.length > 0) {
-            // Try to select a different Ollama instance than Phase 1 if possible
+        // Auto-select the first LiteLLM instance for Phase 2 (if available)
+        const litellmOptions = Array.from(phase2Select.options).filter(opt => opt.value === 'litellm' && opt.dataset.url);
+        if (litellmOptions.length > 0) {
+            // Try to select a different LiteLLM instance than Phase 1 if possible
             const phase1Select = document.getElementById('provider-select');
             const phase1SelectedOption = phase1Select?.selectedOptions[0];
             const phase1Url = phase1SelectedOption?.dataset.url;
             
-            // Find an Ollama instance different from Phase 1, or just use the first one
-            const differentOption = ollamaOptions.find(opt => opt.dataset.url !== phase1Url) || ollamaOptions[0];
+            // Find a LiteLLM instance different from Phase 1, or just use the first one
+            const differentOption = litellmOptions.find(opt => opt.dataset.url !== phase1Url) || litellmOptions[0];
             phase2Select.value = differentOption.value;
+
             
             // Trigger change event to load models
             setTimeout(() => {
@@ -94,8 +95,9 @@ function updateProviderSelect() {
         if (currentPhase2Value && !phase2Select.value) {
             // Try to find and restore the exact option
             const options = Array.from(phase2Select.options);
-            const matchingOption = options.find(opt => opt.value === currentPhase2Value || 
-                (currentPhase2Value === 'ollama' && opt.dataset.url && opt.text.includes(currentPhase2Value)));
+            const matchingOption = options.find(opt => opt.value === currentPhase2Value ||
+                (currentPhase2Value === 'litellm' && opt.dataset.url && opt.text.includes(currentPhase2Value)));
+
             if (matchingOption) {
                 phase2Select.value = matchingOption.value;
             }
@@ -128,12 +130,12 @@ async function handleProviderChange() {
     const providerType = select.value;
     const selectedOption = select.selectedOptions[0];
 
-    if (providerType === 'ollama') {
+    if (providerType === 'litellm') {
         const url = selectedOption?.dataset.url;
         if (!url) return;
 
         try {
-            const response = await fetch(`/api/providers/ollama/models?server=${encodeURIComponent(url)}`);
+            const response = await fetch(`/api/providers/litellm/models?server=${encodeURIComponent(url)}`);
             const data = await response.json();
 
             if (data.models && data.models.length > 0) {
@@ -144,7 +146,7 @@ async function handleProviderChange() {
                 modelSelect.innerHTML = '<option value="">No models available</option>';
             }
         } catch (error) {
-            console.error('Failed to load Ollama models:', error);
+            console.error('Failed to load LiteLLM models:', error);
             modelSelect.innerHTML = '<option value="">Failed to load models</option>';
         }
 
@@ -227,29 +229,22 @@ async function handlePhase2ProviderChange() {
         return;
     }
 
-    if (phase2ProviderType === 'ollama') {
-        // Get URL - default to localhost for Phase 2
-        const url = selectedOption?.dataset.url || "http://localhost:11434";
+    if (phase2ProviderType === 'litellm') {
+        const url = selectedOption?.dataset.url || "http://172.16.17.3:4000/v1";
         
         try {
-            const response = await fetch(`/api/providers/ollama/models?server=${encodeURIComponent(url)}`);
+            const response = await fetch(`/api/providers/litellm/models?server=${encodeURIComponent(url)}`);
             const data = await response.json();
 
             if (data.models && data.models.length > 0) {
                 phase2ModelSelect.innerHTML = '<option value="">Select model...</option>' +
                     data.models.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
                 phase2ModelSelect.disabled = false;
-                
-                // Set default Phase 2 model if available
-                const defaultModel = data.models.find(m => m.id.includes('llama3.1:8b') || m.id.includes('llama3'));
-                if (defaultModel && !phase2ModelSelect.value) {
-                    phase2ModelSelect.value = defaultModel.id;
-                }
             } else {
                 phase2ModelSelect.innerHTML = '<option value="">No models available</option>';
             }
         } catch (error) {
-            console.error('Failed to load Phase 2 Ollama models:', error);
+            console.error('Failed to load Phase 2 LiteLLM models:', error);
             phase2ModelSelect.innerHTML = '<option value="">Failed to load models</option>';
         }
         
@@ -279,7 +274,7 @@ async function handlePhase2ProviderChange() {
     
     // Check for warnings
     if (phase2ProviderType === phase1ProviderType && phase1ProviderType) {
-        phase2Warning.textContent = 'Warning: Using the same provider for both phases may overload the system. Consider using a secondary Ollama instance for Phase 2.';
+        phase2Warning.textContent = 'Warning: Using the same provider for both phases may overload the system. Consider using a secondary LiteLLM instance for Phase 2.';
         phase2Warning.classList.remove('hidden');
     }
 }
@@ -330,9 +325,7 @@ function handlePhase1ProviderChangeForPhase2Warning() {
     
     // Show warning if using same provider (but don't block)
     if (phase2ProviderType === phase1ProviderType && phase1ProviderType) {
-        phase2Warning.textContent = 'Warning: Using the same provider for both phases may overload the system. Consider using a secondary Ollama instance for Phase 2.';
+        phase2Warning.textContent = 'Warning: Using the same provider for both phases may overload the system. Consider using a secondary LiteLLM instance for Phase 2.';
         phase2Warning.classList.remove('hidden');
-    } else {
-        phase2Warning.classList.add('hidden');
     }
 }

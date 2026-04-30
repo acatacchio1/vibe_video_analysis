@@ -1,5 +1,5 @@
 from .base import BaseProvider
-from .ollama import OllamaProvider
+from .litellm import LiteLLMProvider
 from .openrouter import OpenRouterProvider
 
-__all__ = ["BaseProvider", "OllamaProvider", "OpenRouterProvider"]
+__all__ = ["BaseProvider", "LiteLLMProvider", "OpenRouterProvider"]

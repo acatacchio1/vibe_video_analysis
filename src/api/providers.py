@@ -1,14 +1,11 @@
 """
 Provider API routes
 """
-import json
 import requests
 import os
-from pathlib import Path
 from flask import Blueprint, request, jsonify
-from providers.ollama import OllamaProvider
+from providers.litellm import LiteLLMProvider
 from providers.openrouter import OpenRouterProvider
-from discovery import discovery
 
 providers_bp = Blueprint("providers", __name__)
 
@@ -38,58 +35,13 @@ def list_providers():
     return jsonify(result)
 
 
-@providers_bp.route("/api/providers/discover")
-def discover_ollama():
-    """Trigger Ollama discovery scan (full subnet scan)"""
-    found = discovery.scan(force=True)
-    for url in found:
-        name = f"Ollama-{url.split('//')[1].split(':')[0]}"
-        if name not in get_providers():
-            get_providers()[name] = OllamaProvider(name, url)
-    return jsonify({"discovered": len(found), "urls": found})
-
-
-@providers_bp.route("/api/providers/ollama-instances", methods=["GET"])
-def get_ollama_instances():
-    """Get the list of known Ollama instances"""
-    return jsonify({"instances": discovery.get_known_hosts()})
-
-
-@providers_bp.route("/api/providers/ollama-instances", methods=["POST"])
-def update_ollama_instances():
-    """Update the list of known Ollama instances"""
-    data = request.get_json()
-    instances = data.get("instances", [])
-    if not isinstance(instances, list):
-        return jsonify({"error": "instances must be a list"}), 400
-
-    config_path = Path(__file__).parent.parent.parent.parent / "config" / "default_config.json"
-    try:
-        config = json.loads(config_path.read_text())
-    except Exception:
-        config = {}
-    config["ollama_instances"] = instances
-    config_path.write_text(json.dumps(config, indent=2))
-
-    discovery.set_known_hosts(instances)
-    
-    # Also add/update providers
-    for url in instances:
-        name = f"Ollama-{url.split('//')[1].split(':')[0]}"
-        get_providers()[name] = OllamaProvider(name, url)
-    
-    return jsonify({"ok": True, "instances": instances})
-
-
-@providers_bp.route("/api/providers/ollama/models")
-def get_ollama_models():
-    """Get models from Ollama server"""
-    url = request.args.get("server")
-    if not url:
-        return jsonify({"error": "No server URL"}), 400
-    provider = OllamaProvider("temp", url)
+@providers_bp.route("/api/providers/litellm/models")
+def get_litellm_models():
+    """Get models from LiteLLM server"""
+    api_url = request.args.get("server", "http://172.16.17.3:4000/v1")
+    provider = LiteLLMProvider("temp", api_url)
     models = provider.get_models()
-    return jsonify({"server": url, "models": models, "status": provider.status})
+    return jsonify({"server": api_url, "models": models, "status": provider.status})
 
 
 @providers_bp.route("/api/providers/openrouter/models")

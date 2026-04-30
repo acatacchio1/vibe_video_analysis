@@ -21,12 +21,12 @@ class TestChatJobDataclass:
         """Test creating a chat job"""
         job = ChatJob(
             job_id="chat_abc12345",
-            provider_type="ollama",
+            provider_type="litellm",
             model_id="llama3:8b",
             prompt="Test prompt",
             content="Test content",
             api_key="test_key",
-            ollama_url="http://localhost:11434",
+            litellm_url="http://172.16.17.3:4000/v1",
             created_at=time.time(),
             started_at=None,
             completed_at=None,
@@ -38,19 +38,19 @@ class TestChatJobDataclass:
         )
 
         assert job.job_id == "chat_abc12345"
-        assert job.provider_type == "ollama"
+        assert job.provider_type == "litellm"
         assert job.status == ChatJobStatus.PENDING
 
     def test_job_to_dict(self):
         """Test job conversion to dictionary"""
         job = ChatJob(
             job_id="chat_abc12345",
-            provider_type="ollama",
+            provider_type="litellm",
             model_id="llama3:8b",
             prompt="Test",
             content="Content",
             api_key="key",
-            ollama_url="http://localhost:11434",
+            litellm_url="http://172.16.17.3:4000/v1",
             created_at=time.time(),
             started_at=None,
             completed_at=None,
@@ -79,12 +79,12 @@ class TestQueuePositioning:
         jobs = [
             ChatJob(
                 job_id=f"job{i}",
-                provider_type="ollama",
+            provider_type="litellm",
                 model_id="test" if i == 0 else f"test{i}",
                 prompt="Test",
                 content="Content",
                 api_key="key",
-                ollama_url="http://localhost:11434",
+                litellm_url="http://172.16.17.3:4000/v1",
                 created_at=base_time - i,
                 started_at=None,
                 completed_at=None,
@@ -120,12 +120,12 @@ class TestStatusTransitions:
         """Test transition from PENDING to QUEUED"""
         job = ChatJob(
             job_id="test",
-            provider_type="ollama",
+            provider_type="litellm",
             model_id="test",
             prompt="Test",
             content="Content",
             api_key="key",
-            ollama_url="http://localhost:11434",
+            litellm_url="http://172.16.17.3:4000/v1",
             created_at=time.time(),
             started_at=None,
             completed_at=None,
@@ -143,12 +143,12 @@ class TestStatusTransitions:
         """Test transition from QUEUED to RUNNING"""
         job = ChatJob(
             job_id="test",
-            provider_type="ollama",
+            provider_type="litellm",
             model_id="test",
             prompt="Test",
             content="Content",
             api_key="key",
-            ollama_url="http://localhost:11434",
+            litellm_url="http://172.16.17.3:4000/v1",
             created_at=time.time(),
             started_at=None,
             completed_at=None,
@@ -167,12 +167,12 @@ class TestStatusTransitions:
         """Test transition from RUNNING to COMPLETED"""
         job = ChatJob(
             job_id="test",
-            provider_type="ollama",
+            provider_type="litellm",
             model_id="test",
             prompt="Test",
             content="Content",
             api_key="key",
-            ollama_url="http://localhost:11434",
+            litellm_url="http://172.16.17.3:4000/v1",
             created_at=time.time(),
             started_at=time.time() - 10,
             completed_at=time.time(),
@@ -202,7 +202,7 @@ class TestJobValidation:
             "prompt",
             "content",
             "api_key",
-            "ollama_url",
+            "litellm_url",
             "created_at",
             "status",
         }
@@ -214,7 +214,7 @@ class TestJobValidation:
             "prompt",
             "content",
             "api_key",
-            "ollama_url",
+            "litellm_url",
             "created_at",
             "started_at",
             "completed_at",

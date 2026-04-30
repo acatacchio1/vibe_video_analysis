@@ -19,14 +19,14 @@ def llm(ctx, url, as_json):
 @llm.command()
 @click.argument("model")
 @click.argument("prompt")
-@click.option("--provider-type", default="ollama", type=click.Choice(["ollama", "openrouter"]),
+@click.option("--provider-type", default="litellm", type=click.Choice(["litellm", "openrouter"]),
               help="Provider type")
-@click.option("--ollama-url", default="http://host.docker.internal:11434",
-              help="Ollama server URL")
+@click.option("--litellm-url", default="http://172.16.17.3:4000/v1",
+              help="LiteLLM server URL")
 @click.option("--temperature", type=float, default=0.1, help="Temperature")
 @click.option("--content", default="", help="Additional content/context")
 @click.pass_context
-def chat(ctx, model, prompt, provider_type, ollama_url, temperature, content):
+def chat(ctx, model, prompt, provider_type, litellm_url, temperature, content):
     client = ctx.obj["client"]
     fmt = ctx.obj["fmt"]
     api_key = ""
@@ -44,7 +44,7 @@ def chat(ctx, model, prompt, provider_type, ollama_url, temperature, content):
             content=content,
             temperature=temperature,
             api_key=api_key,
-            ollama_url=ollama_url,
+            ollama_url=litellm_url,
         )
     except Exception as e:
         fmt.error(str(e))

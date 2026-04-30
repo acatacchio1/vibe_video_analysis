@@ -23,8 +23,8 @@ class TestJobsAPI:
         mock_job.to_dict.return_value = {
             "job_id": "test_job_123",
             "status": "running",
-            "provider_type": "ollama",
-            "model_id": "llava:7b",
+            "provider_type": "litellm",
+            "model_id": "qwen3-27b-q8",
         }
         mock_manager.get_all_jobs.return_value = [mock_job]
 

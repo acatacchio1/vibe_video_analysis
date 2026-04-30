@@ -70,7 +70,7 @@ class TestHandleConnect:
     def test_connect_emits_connected_event(self, flask_request_context, mock_sio):
         with patch("monitor.monitor") as mock_mon:
             mock_mon.get_latest.return_value = {
-                "nvidia_smi": "", "ollama_ps": "", "nvidia_gpus": [], "timestamp": 0
+                "nvidia_smi": "", "litellm_ps": "", "nvidia_gpus": [], "timestamp": 0
             }
             mock_socket_request = Mock(sid="test_sid_123")
 
@@ -87,7 +87,7 @@ class TestHandleConnect:
         with patch("monitor.monitor") as mock_mon:
             mock_mon.get_latest.return_value = {
                 "nvidia_smi": "GPU 0: 8GB used",
-                "ollama_ps": "",
+                "litellm_ps": "",
                 "nvidia_gpus": [{"index": 0, "name": "RTX 3080"}],
                 "timestamp": 1234567890.0,
             }
@@ -108,7 +108,7 @@ class TestHandleConnect:
     def test_connect_skips_system_status_when_empty(self, flask_request_context, mock_sio):
         with patch("monitor.monitor") as mock_mon:
             mock_mon.get_latest.return_value = {
-                "nvidia_smi": "", "ollama_ps": "", "nvidia_gpus": [], "timestamp": 0
+                "nvidia_smi": "", "litellm_ps": "", "nvidia_gpus": [], "timestamp": 0
             }
             mock_socket_request = Mock(sid="test_sid_123")
 
@@ -390,15 +390,15 @@ class TestHandleStartAnalysis:
 
             handler({
                 "video_path": video_path,
-                "provider_type": "ollama",
-                "provider_name": "Ollama-Local",
+                "provider_type": "litellm",
+                "provider_name": "LiteLLM-Proxy",
                 "model": "llava:7b",
                 "priority": 5,
             })
 
             mock_vm.submit_job.assert_called_once()
             call_kwargs = mock_vm.submit_job.call_args[1]
-            assert call_kwargs["provider_type"] == "ollama"
+            assert call_kwargs["provider_type"] == "litellm"
             assert call_kwargs["priority"] == 5
             emit_events = [c[0][0] for c in mock_emit.call_args_list]
             assert "job_created" in emit_events

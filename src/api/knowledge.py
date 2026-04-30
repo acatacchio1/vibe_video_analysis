@@ -94,13 +94,14 @@ def sync_job_to_kb(job_id: str) -> dict:
         return {"success": False, "error": str(e)}
 
     try:
-        result = client.upload_result_to_kb(
-            results=results,
-            video_name=video_name,
-            kb_name=kb_name,
-            job_id=job_id,
-        )
-        return result
+        with client:
+            result = client.upload_result_to_kb(
+                results=results,
+                video_name=video_name,
+                kb_name=kb_name,
+                job_id=job_id,
+            )
+            return result
     except Exception as e:
         logger.error(f"Error syncing job {job_id} to KB: {e}")
         return {"success": False, "error": str(e)}
@@ -167,9 +168,9 @@ def get_kb_status():
 
     if status["enabled"] and status["has_api_key"]:
         try:
-            client = _get_client()
-            test = client.test_connection()
-            status["connection"] = test
+            with _get_client() as client:
+                test = client.test_connection()
+                status["connection"] = test
         except Exception as e:
             status["connection"] = {"ok": False, "error": str(e)}
 
@@ -187,9 +188,9 @@ def test_connection():
         return jsonify({"ok": False, "error": "URL and API key are required"}), 400
 
     try:
-        client = OpenWebUIClient(url, api_key)
-        result = client.test_connection()
-        return jsonify(result)
+        with OpenWebUIClient(url, api_key) as client:
+            result = client.test_connection()
+            return jsonify(result)
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -232,8 +233,9 @@ def list_knowledge_bases():
         return jsonify({"error": str(e)}), 400
 
     try:
-        bases = client.list_knowledge_bases()
-        return jsonify({"bases": bases})
+        with client:
+            bases = client.list_knowledge_bases()
+            return jsonify({"bases": bases})
     except Exception as e:
         logger.error(f"Failed to list KBs: {e}")
         return jsonify({"error": str(e)}), 500
@@ -266,29 +268,29 @@ def send_to_kb(job_id):
         return jsonify({"error": str(e)}), 400
 
     try:
-        if kb_id:
-            target_kb_id = kb_id
-            existing = client.find_knowledge_base(kb_name or "")
-            actual_kb_name = existing["name"] if existing else kb_id
-        else:
-            target_kb_id = client.ensure_knowledge_base(kb_name)
-            if not target_kb_id:
-                return jsonify({"error": f"Could not find or create KB '{kb_name}'"}), 400
-            actual_kb_name = kb_name
+        with client:
+            if kb_id:
+                target_kb_id = kb_id
+                existing = client.find_knowledge_base(kb_name or "")
+                actual_kb_name = existing["name"] if existing else kb_id
+            else:
+                target_kb_id = client.ensure_knowledge_base(kb_name)
+                if not target_kb_id:
+                    return jsonify({"error": f"Could not find or create KB '{kb_name}'"}), 400
+                actual_kb_name = kb_name
 
-        content = client.__class__.__module__.split('.')[0]
-        from src.services.openwebui_kb import format_results_as_markdown
-        content = format_results_as_markdown(results, video_name, job_id)
-        safe_filename = Path(video_name).stem.replace(" ", "_")[:80]
-        file_id = client.upload_text_file(content, f"{safe_filename}_{job_id[:8]}")
-        if not file_id:
-            return jsonify({"error": "Failed to upload file to OpenWebUI"}), 500
+            from src.services.openwebui_kb import format_results_as_markdown
+            content = format_results_as_markdown(results, video_name, job_id)
+            safe_filename = Path(video_name).stem.replace(" ", "_")[:80]
+            file_id = client.upload_text_file(content, f"{safe_filename}_{job_id[:8]}")
+            if not file_id:
+                return jsonify({"error": "Failed to upload file to OpenWebUI"}), 500
 
-        added = client.add_file_to_knowledge(target_kb_id, file_id)
-        if added:
-            logger.info(f"Job {job_id} sent to KB '{actual_kb_name}'")
-            return jsonify({"success": True, "kb_id": target_kb_id, "kb_name": actual_kb_name, "file_id": file_id})
-        return jsonify({"error": "Failed to add file to knowledge base"}), 500
+            added = client.add_file_to_knowledge(target_kb_id, file_id)
+            if added:
+                logger.info(f"Job {job_id} sent to KB '{actual_kb_name}'")
+                return jsonify({"success": True, "kb_id": target_kb_id, "kb_name": actual_kb_name, "file_id": file_id})
+            return jsonify({"error": "Failed to add file to knowledge base"}), 500
     except Exception as e:
         logger.error(f"Error sending job {job_id} to KB: {e}")
         return jsonify({"error": str(e)}), 500

@@ -22,8 +22,8 @@ def test_job_config_defaults():
     cfg = JobConfig(
         job_id="test",
         video_path="/tmp/test.mp4",
-        provider_type="ollama",
-        model="llama3",
+        provider_type="litellm",
+        model="qwen3-27b-q8",
     )
     assert cfg.params.pipeline_type == "standard_two_step"
     assert cfg.params.audio.whisper_model == "large"
@@ -36,8 +36,8 @@ def test_job_config_cpu_compute_type():
     cfg = JobConfig(
         job_id="test",
         video_path="/tmp/test.mp4",
-        provider_type="ollama",
-        model="llama3",
+        provider_type="litellm",
+        model="qwen3-27b-q8",
         params={"device": "cpu"},
     )
     assert cfg.params.audio.compute_type == "int8"
@@ -47,8 +47,8 @@ def test_legacy_field_mapping():
     cfg = JobConfig(
         job_id="test",
         video_path="/tmp/test.mp4",
-        provider_type="ollama",
-        model="llama3",
+        provider_type="litellm",
+        model="qwen3-27b-q8",
         params={
             "whisper_model": "base",
             "language": "es",
@@ -66,8 +66,8 @@ def test_explicit_nested_override():
     cfg = JobConfig(
         job_id="test",
         video_path="/tmp/test.mp4",
-        provider_type="ollama",
-        model="llama3",
+        provider_type="litellm",
+        model="qwen3-27b-q8",
         params={
             "audio": {"whisper_model": "large"},
             "whisper_model": "base",  # should be ignored
@@ -80,8 +80,8 @@ def test_linkedin_auto_created():
     cfg = JobConfig(
         job_id="test",
         video_path="/tmp/test.mp4",
-        provider_type="ollama",
-        model="llama3",
+        provider_type="litellm",
+        model="qwen3-27b-q8",
         params={"pipeline_type": "linkedin_extraction"},
     )
     assert cfg.params.linkedin is not None
@@ -94,9 +94,9 @@ def test_create_standard_pipeline():
     config = {
         "job_id": "test",
         "video_path": "/tmp/test.mp4",
-        "provider_type": "ollama",
-        "model": "llama3",
-        "provider_config": {"url": "http://localhost:11434"},
+        "provider_type": "litellm",
+        "model": "qwen3-27b-q8",
+        "provider_config": {"url": "http://172.16.17.3:4000/v1"},
         "params": {"whisper_model": "base"},
     }
     p = create_pipeline("standard_two_step", job_dir, config)
@@ -110,9 +110,9 @@ def test_create_linkedin_pipeline():
     config = {
         "job_id": "test",
         "video_path": "/tmp/test.mp4",
-        "provider_type": "ollama",
-        "model": "llama3",
-        "provider_config": {"url": "http://localhost:11434"},
+        "provider_type": "litellm",
+        "model": "qwen3-27b-q8",
+        "provider_config": {"url": "http://172.16.17.3:4000/v1"},
         "params": {"pipeline_type": "linkedin_extraction"},
     }
     p = create_pipeline("linkedin_extraction", job_dir, config)

@@ -21,9 +21,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from vram_manager import vram_manager, JobStatus
-from discovery import discovery
 from monitor import monitor
-from providers.ollama import OllamaProvider
+from providers.litellm import LiteLLMProvider
 from providers.openrouter import OpenRouterProvider
 from thumbnail import ensure_thumbnail
 from gpu_transcode import build_transcode_command, get_transcode_progress_parser
@@ -182,23 +181,50 @@ def spawn_worker(job_id: str, job_dir: Path, gpu_assigned: Optional[int] = None)
             f"Job {job_id} assigned to GPU {gpu_assigned}, setting CUDA_VISIBLE_DEVICES={gpu_assigned}"
         )
 
-    proc = subprocess.Popen(
-        ["python3", "worker.py", str(job_dir)],
-        stdout=log_file,
-        stderr=subprocess.STDOUT,
-        start_new_session=True,
-        env=env,
+    # Always use venv python for worker (gunicorn may run with system python)
+    python_path = os.environ.get(
+        "WORKER_PYTHON", "/home/anthony/venvs/video-analyzer/bin/python"
     )
+    if not os.path.isfile(python_path):
+        python_path = sys.executable
 
-    pgid = os.getpgid(proc.pid)
-    pid_file.write_text(str(proc.pid))
-    (job_dir / "pgid").write_text(str(pgid))
+    # Bypass eventlet's patched subprocess to avoid segfault with CUDA + fork.
+    # Use os.fork() in a real OS thread to spawn the worker independently.
+    import threading as _t_spawn
 
-    logger.info(f"Spawned worker for job {job_id} (PID: {proc.pid}, PGID: {pgid})")
-    socketio.start_background_task(monitor_job, job_id, job_dir, proc)
+    def _fork_worker():
+        try:
+            pid = os.fork()
+            if pid == 0:
+                # Child: reset signals, set session, exec worker
+                os.setsid()
+                import signal as _sig
+                _sig.signal(_sig.SIGCHLD, _sig.SIG_DFL)
+                log_file_fd = log_file.fileno()
+                os.dup2(log_file_fd, 1)
+                os.dup2(log_file_fd, 2)
+                if log_file_fd > 2:
+                    os.close(log_file_fd)
+                for k, v in env.items():
+                    os.environ[k] = v
+                os.execv(python_path, [python_path, "worker.py", str(job_dir)])
+            else:
+                # Parent
+                pgid = os.getpgid(pid)
+                pid_file.write_text(str(pid))
+                (job_dir / "pgid").write_text(str(pgid))
+                logger.info(f"Spawned worker for job {job_id} (PID: {pid}, PGID: {pgid})")
+        finally:
+            log_file.close()
+
+    # Spawn in a real thread (not eventlet green thread) to avoid preemption
+    _t_spawn.Thread(target=_fork_worker, daemon=True).start()
+
+    # Start monitor after brief delay to let fork complete
+    socketio.start_background_task(monitor_job, job_id, job_dir, None)
 
 
-def monitor_job(job_id: str, job_dir: Path, proc: subprocess.Popen):
+def monitor_job(job_id: str, job_dir: Path, proc: Optional[subprocess.Popen]):
     """Monitor job status and emit updates"""
     status_file = job_dir / "status.json"
     last_status = {}
@@ -207,7 +233,21 @@ def monitor_job(job_id: str, job_dir: Path, proc: subprocess.Popen):
     last_transcript = None
     last_description = None
 
-    while proc.poll() is None:
+    pid_file = job_dir / "pid"
+
+    while True:
+        if proc is not None:
+            if proc.poll() is not None:
+                break
+        else:
+            if not pid_file.exists():
+                socketio.sleep(0.5)
+                continue
+            try:
+                pid = int(pid_file.read_text().strip())
+                os.kill(pid, 0)
+            except (OSError, ProcessLookupError, ValueError):
+                break
         try:
             if status_file.exists():
                 try:
@@ -318,9 +358,10 @@ def monitor_job(job_id: str, job_dir: Path, proc: subprocess.Popen):
         except Exception as e:
             logger.debug(f"PGID cleanup for job {job_id}: {e}")
 
-    success = proc.returncode == 0
+    success = (proc.returncode == 0) if proc is not None else False
     if DEBUG:
-        logger.debug(f"[MONITOR] job={job_id} worker exited returncode={proc.returncode} success={success}")
+        rc = proc.returncode if proc is not None else "N/A"
+        logger.debug(f"[MONITOR] job={job_id} worker exited returncode={rc} success={success}")
     job_obj = vram_manager.get_job(job_id)
     if job_obj and job_obj.status in (
         JobStatus.COMPLETED,
@@ -475,7 +516,7 @@ def recover_stale_jobs():
                         config = json.loads(input_file.read_text())
                         vram_manager.submit_job(
                             job_id=job_dir.name,
-                            provider_type=config.get("provider_type", "ollama"),
+                            provider_type=config.get("provider_type", "litellm"),
                             provider_name=config.get("provider_name", ""),
                             model_id=config.get("model", ""),
                             vram_required=0,
@@ -941,7 +982,7 @@ def _run_dedup_parallel(frames_dir: Path, thumbs_dir: Path, dedup_threshold: int
                     original_to_dedup[str(actual_num)] = new_idx
                     dedup_to_original[str(new_idx)] = actual_num
                     kept_timestamps[str(new_idx)] = round((actual_num - 1) / fps, 3)
-                except:
+                except (ValueError, IndexError):
                     # Fallback: use index
                     original_to_dedup[str(new_idx)] = new_idx
                     dedup_to_original[str(new_idx)] = new_idx
@@ -1220,10 +1261,16 @@ def _extract_frames_direct(video_path: str, original_video_path: str = None):
             universal_newlines=True,
         )
 
+        # Collect stderr lines so we can report them if extraction fails
+        stderr_lines: list[str] = []
+
         def read_output(stream, prefix="", progress_callback=None):
             for line in stream:
                 line = line.strip()
                 if line:
+                    # Always collect stderr for error reporting
+                    if prefix == "stderr":
+                        stderr_lines.append(line)
                     # Parse frame number from ffmpeg output
                     if "frame=" in line:
                         try:
@@ -1240,10 +1287,10 @@ def _extract_frames_direct(video_path: str, original_video_path: str = None):
 
         stdout_thread = threading.Thread(target=read_output, args=(proc.stdout, "stdout"))
         stderr_thread = threading.Thread(target=read_output, args=(proc.stderr, "stderr"))
-        
+
         stdout_thread.start()
         stderr_thread.start()
-        
+
         proc.wait(timeout=3600)  # 1 hour timeout
         stdout_thread.join(timeout=5)
         stderr_thread.join(timeout=5)
@@ -1252,14 +1299,14 @@ def _extract_frames_direct(video_path: str, original_video_path: str = None):
             # Count actually extracted frames
             extracted_frames = sorted(frames_dir.glob("frame_*.jpg"))
             actual_count = len(extracted_frames)
-            
+
             # Save frame index with original timestamps
             frames_index = {}
             for i, frame_file in enumerate(extracted_frames, start=1):
                 frame_num = i
                 timestamp_seconds = round((frame_num - 1) / fps, 3)
                 frames_index[frame_num] = timestamp_seconds
-            
+
             index_file = video_dir / "frames_index.json"
             with open(index_file, "w") as f:
                 json.dump(frames_index, f, indent=2)
@@ -1277,20 +1324,24 @@ def _extract_frames_direct(video_path: str, original_video_path: str = None):
                     first_frame = extracted_frames[0]
                     thumb_path = video.parent / "thumbs" / f"{stem}.jpg"
                     thumb_path.parent.mkdir(parents=True, exist_ok=True)
-                    
+
                     img = Image.open(first_frame)
                     img.thumbnail((320, 240))
                     img.save(thumb_path, "JPEG", quality=85)
                 except Exception as e:
-                    logger.warning(f"Failed to create thumbnail: {e}")
-                    # Copy first frame as thumbnail
-                    import shutil
-                    thumb_path.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(first_frame, thumb_path)
-            
+                    logger.warning(f"Failed to create thumbnail via PIL: {e}")
+                    try:
+                        import shutil
+                        first_frame = extracted_frames[0]
+                        thumb_path = video.parent / "thumbs" / f"{stem}.jpg"
+                        thumb_path.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(first_frame, thumb_path)
+                    except Exception as e2:
+                        logger.warning(f"Thumbnail creation fallback also failed: {e2}")
+
             _emit("complete", 100, f"Extracted {actual_count} frames")
             logger.info(f"Direct frame extraction complete: {actual_count} frames from {src_name}")
-            
+
             return {
                 "frames_dir": str(frames_dir),
                 "frame_count": actual_count,
@@ -1299,7 +1350,7 @@ def _extract_frames_direct(video_path: str, original_video_path: str = None):
                 "video_dir": str(video_dir),
             }
         else:
-            stderr_content = proc.stderr.read() if proc.stderr else "unknown error"
+            stderr_content = "\n".join(stderr_lines) if stderr_lines else f"ffmpeg exited with code {proc.returncode}"
             error_msg = f"Frame extraction failed: {stderr_content[-300:]}"
             _emit("failed", 0, error=error_msg)
             logger.error(f"Direct frame extraction failed for {src_name}: {stderr_content}")
@@ -1484,6 +1535,7 @@ def _process_video_direct(src_path: str, whisper_model: str = "base", language: 
             
             if frames_result and transcribe_result:
                 _emit_progress("complete", 100, "Processing complete")
+                socketio.emit("videos_updated", {})
                 logger.info(f"Direct video processing complete for {src_name}")
                 return True
             else:
@@ -1765,77 +1817,13 @@ def _transcribe_video(video_path: str, whisper_model: str = "base", language: st
 
 
 def init_providers():
-    """Initialize default providers"""
-    # Use localhost since we're running outside Docker
-    ollama_local = OllamaProvider("Ollama-Local", "http://localhost:11434")
-    providers["Ollama-Local"] = ollama_local
-
-    # Load existing Ollama instances from config without scanning
-    config_path = Path(__file__).parent / "config" / "default_config.json"
-    known_instances = []
-    if config_path.exists():
-        try:
-            config = json.loads(config_path.read_text())
-            known_instances = config.get("ollama_instances", [])
-        except Exception as e:
-            logger.warning(f"Could not load config: {e}")
-
-    # Add known instances from config
-    for url in known_instances:
-        if "localhost" not in url and "127.0.0.1" not in url:
-            name = f"Ollama-{url.split('//')[1].split(':')[0]}"
-            providers[name] = OllamaProvider(name, url)
-            discovery.add_host(url)
-
-    # Add specific Ollama instances on the network (hardcoded fallback)
-    additional_ollama_hosts = [
-        ("Ollama-192.168.1.237", "http://192.168.1.237:11434"),
-        ("Ollama-192.168.1.241", "http://192.168.1.241:11434"),
-    ]
-    for name, url in additional_ollama_hosts:
-        if url not in known_instances:
-            providers[name] = OllamaProvider(name, url)
-            discovery.add_host(url)
-
-    # Initialize OpenRouter provider with API key from environment
+    providers["LiteLLM"] = LiteLLMProvider("LiteLLM", "http://172.16.17.3:4000/v1")
     openrouter_key = os.environ.get("OPENROUTER_API_KEY")
     if openrouter_key:
         providers["OpenRouter"] = OpenRouterProvider("OpenRouter", openrouter_key)
         logger.info("OpenRouter provider initialized with API key from environment")
     else:
         logger.warning("OPENROUTER_API_KEY not set - OpenRouter provider not available")
-
-    def get_loaded_ollama_models() -> set:
-        loaded = set()
-        for p in providers.values():
-            if hasattr(p, "get_running_models"):
-                try:
-                    for m in p.get_running_models():
-                        loaded.add(m.get("name", ""))
-                except Exception:
-                    pass
-        return loaded
-
-    vram_manager.set_ollama_running_models_provider(get_loaded_ollama_models)
-
-
-def _get_monitor_ollama_url():
-    """Return the best available Ollama URL for monitoring.
-    Prefers non-localhost providers (which work inside Docker) over localhost."""
-    # First try any online non-localhost provider
-    for p in providers.values():
-        if hasattr(p, "base_url") and p.status == "online":
-            url = p.base_url
-            if "localhost" not in url and "127.0.0.1" not in url:
-                return url
-    # Fall back to any online provider
-    for p in providers.values():
-        if hasattr(p, "base_url") and p.status == "online":
-            return p.base_url
-    # Last resort: any provider with a base_url
-    return next((p.base_url for p in providers.values() if hasattr(p, "base_url")), None)
-
-monitor.set_ollama_url_provider(_get_monitor_ollama_url)
 
 monitor.start()
 init_providers()

@@ -167,6 +167,23 @@ class OpenWebUIClient:
 
         return result
 
+    def __del__(self):
+        """Close session on cleanup"""
+        if hasattr(self, '_session') and self._session is not None:
+            self._session.close()
+
+    def close(self):
+        """Explicit close for use in context managers"""
+        if hasattr(self, '_session') and self._session is not None:
+            self._session.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
+
 
 def format_results_as_markdown(results: dict, video_name: str, job_id: str) -> str:
     """Convert results.json into a structured markdown document for the knowledge base"""

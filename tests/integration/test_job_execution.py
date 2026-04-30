@@ -42,10 +42,10 @@ class TestJobDirectoryStructureIntegration:
         input_data = {
             "job_id": job_id,
             "video_path": "/uploads/video.mp4",
-            "provider_type": "ollama",
-            "provider_name": "Ollama-Local",
-            "provider_config": {"url": "http://localhost:11434"},
-            "model": "llava:7b",
+            "provider_type": "litellm",
+            "provider_name": "LiteLLM-Proxy",
+            "provider_config": {"url": "http://172.16.17.3:4000/v1"},
+            "model": "qwen3-27b-q8",
             "params": {
                 "temperature": 0.0,
                 "duration": 0,
@@ -60,7 +60,7 @@ class TestJobDirectoryStructureIntegration:
         loaded = json.loads(input_file.read_text())
 
         assert loaded["job_id"] == job_id
-        assert loaded["provider_type"] == "ollama"
+        assert loaded["provider_type"] == "litellm"
         assert "params" in loaded
 
     def test_output_directory_created(self, temp_jobs_dir):
@@ -125,9 +125,9 @@ class TestWorkerProcessIntegration:
                 {
                     "job_id": "test_worker",
                     "video_path": "/test.mp4",
-                    "provider_type": "ollama",
-                    "provider_config": {"url": "http://localhost:11434"},
-                    "model": "llava:7b",
+                    "provider_type": "litellm",
+                    "provider_config": {"url": "http://172.16.17.3:4000/v1"},
+                    "model": "qwen3-27b-q8",
                     "params": {
                         "temperature": 0.0,
                         "frames_per_minute": 60,
@@ -196,8 +196,8 @@ class TestWorkerProcessIntegration:
         results = {
             "metadata": {
                 "job_id": "test_worker",
-                "provider": "ollama",
-                "model": "llava:7b",
+                "provider": "litellm",
+                "model": "qwen3-27b-q8",
                 "frames_processed": 50,
             },
             "transcript": {

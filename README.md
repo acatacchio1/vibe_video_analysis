@@ -2,13 +2,13 @@
 
 > **Version 0.6.0**
 
-A web-based video analysis platform with multi-provider AI support (Ollama + OpenRouter), multi-GPU VRAM-aware job scheduling, real-time frame-by-frame analysis, and a comprehensive CLI for headless operation.
+A web-based video analysis platform with multi-provider AI support (LiteLLM + OpenRouter), multi-GPU VRAM-aware job scheduling, real-time frame-by-frame analysis, and a comprehensive CLI for headless operation.
 
 ---
 
 ## Features
 
-- **Multi-Provider AI**: Ollama (local/remote) and OpenRouter (cloud) with dynamic model discovery
+- **Multi-Provider AI**: LiteLLM proxy and OpenRouter (cloud) with dynamic model discovery
 - **Two-Step Video Analysis**: Phase 1 (frame vision) + Phase 2 (vision + transcript synthesis via secondary LLM)
 - **Multi-GPU VRAM-Aware Queueing**: Jobs distributed across GPUs based on available memory
 - **Parallel Upload Processing**: Frame extraction and audio transcription run concurrently
@@ -27,7 +27,7 @@ A web-based video analysis platform with multi-provider AI support (Ollama + Ope
 
 - Docker with Docker Compose plugin
 - NVIDIA Docker runtime (for GPU support)
-- At least one Ollama instance or OpenRouter API key
+- LiteLLM proxy at `http://172.16.17.3:4000/v1` or OpenRouter API key
 
 ### Docker Installation
 
@@ -95,7 +95,7 @@ va --help
               └───────────┘          │          └─────────┘
                                      │
                            ┌─────────▼─────────┐
-                           │  Ollama /         │
+                           │  LiteLLM /        │
                            │  OpenRouter       │
                            │  LLM Providers    │
                            └───────────────────┘
@@ -105,14 +105,22 @@ va --help
 
 ## Configuration
 
-### Ollama Setup
+### LiteLLM Proxy Setup
 
-1. Ensure Ollama is running: `ollama serve`
-2. The app auto-discovers instances on `192.168.1.0/24`, or add manually via:
-   ```bash
-   va config set url http://your-ollama:11434
-   ```
-3. VRAM estimation uses model size + 2GB overhead for the KV cache
+The app uses a LiteLLM proxy to route LLM requests to backend GPU instances. The proxy runs at `http://172.16.17.3:4000/v1` and handles load balancing, rate limiting, and context management across deployed models.
+
+**Available Models:**
+- `qwen3-27b-q8` — standard vision + text analysis
+- `qwen3-27b-best` — higher quality analysis (load balanced)
+- `vision-best` — optimized for frame analysis
+
+The app authenticates to the LiteLLM proxy without an API key (network-trusted deployment). To configure a custom proxy URL:
+
+```bash
+va config set litellm_api_base http://your-litellm:4000/v1
+```
+
+VRAM estimation uses model size + 2GB overhead for the KV cache.
 
 ### OpenRouter Setup
 
@@ -123,7 +131,7 @@ va --help
 ### Default Configuration
 
 See `config/default_config.json` for all defaults. Key settings:
-- Default Ollama model: `gemma4-180k`
+- Default LiteLLM model: `qwen3-27b-q8`
 - Default OpenRouter model: `meta-llama/llama-3.2-11b-vision-instruct`
 - Default Whisper model: `large`
 - Default frames per minute: 60
@@ -133,7 +141,7 @@ See `config/default_config.json` for all defaults. Key settings:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `OLLAMA_HOST` | `http://host.docker.internal:11434` | Default Ollama host |
+| `LITELLM_API_BASE` | `http://172.16.17.3:4000/v1` | LiteLLM proxy endpoint |
 | `NVIDIA_VISIBLE_DEVICES` | `all` | GPU visibility |
 | `APP_URL` | `http://localhost:10000` | Internal API URL (for auto-LLM) |
 

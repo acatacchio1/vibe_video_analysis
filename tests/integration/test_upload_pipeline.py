@@ -202,10 +202,10 @@ class TestJobLifecycleIntegration:
         sample_job = {
             "job_id": "test_job_123",
             "video_path": "/test.mp4",
-            "provider_type": "ollama",
-            "provider_name": "Ollama-Local",
-            "provider_config": {"url": "http://localhost:11434"},
-            "model": "llava:7b",
+            "provider_type": "litellm",
+            "provider_name": "LiteLLM-Proxy",
+            "provider_config": {"url": "http://172.16.17.3:4000/v1"},
+            "model": "qwen3-27b-q8",
             "params": {
                 "temperature": 0.0,
                 "duration": 0,
@@ -221,7 +221,7 @@ class TestJobLifecycleIntegration:
         parsed = json.loads(json_str)
 
         assert parsed["job_id"] == "test_job_123"
-        assert parsed["provider_type"] == "ollama"
+        assert parsed["provider_type"] == "litellm"
         assert "params" in parsed
 
 

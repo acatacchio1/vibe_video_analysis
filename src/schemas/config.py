@@ -27,10 +27,10 @@ class ProviderConfig(BaseModel):
         return v
 
 
-class OllamaProviderConfig(ProviderConfig):
-    """Ollama-specific provider configuration."""
+class LiteLLMProviderConfig(ProviderConfig):
+    """LiteLLM-specific provider configuration."""
 
-    type: Literal["ollama"] = "ollama"
+    type: Literal["litellm"] = "litellm"
     model: str = ""
 
 
@@ -41,7 +41,7 @@ class OpenRouterProviderConfig(ProviderConfig):
     model: str = ""
 
 
-ProviderConfigUnion = Union[OllamaProviderConfig, OpenRouterProviderConfig]
+ProviderConfigUnion = Union[LiteLLMProviderConfig, OpenRouterProviderConfig]
 
 
 class AudioConfig(BaseModel):
@@ -74,7 +74,7 @@ class Phase2Config(BaseModel):
     """Phase 2 synthesis configuration."""
 
     enabled: bool = Field(default=True, alias="two_step_enabled")
-    provider_type: Literal["ollama", "openrouter"] = "ollama"
+    provider_type: Literal["litellm", "openrouter"] = "litellm"
     model: str = "qwen3.5:9b-q8-128k"
     temperature: float = Field(default=0.0, ge=0, le=2)
     provider_config: ProviderConfig = Field(default_factory=ProviderConfig)
@@ -205,7 +205,7 @@ class JobConfig(BaseModel):
 
     job_id: str
     video_path: str
-    provider_type: Literal["ollama", "openrouter"]
+    provider_type: Literal["litellm", "openrouter"]
     provider_name: str = ""
     provider_config: ProviderConfig = Field(default_factory=ProviderConfig)
     model: str
@@ -247,7 +247,7 @@ __all__ = [
     "AnalysisParams",
     "JobConfig",
     "ProviderConfig",
-    "OllamaProviderConfig",
+    "LiteLLMProviderConfig",
     "OpenRouterProviderConfig",
     "ProviderConfigUnion",
 ]

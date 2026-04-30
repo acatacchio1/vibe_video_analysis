@@ -1,0 +1,5 @@
+tests/integration/dedup/test_api_dedup.py: 4
+tests/integration/test_backend/test_vram_manager.py: 30
+tests/integration/test_job_execution.py: 12
+tests/integration/test_upload_pipeline.py: 13
+

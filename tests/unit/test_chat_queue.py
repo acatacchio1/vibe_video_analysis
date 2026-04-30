@@ -95,12 +95,12 @@ class TestProcessQueue:
         manager = _make_manager()
 
         job_id = manager.submit_job(
-            provider_type="ollama",
+            provider_type="litellm",
             model_id="test-model",
             prompt="Test",
             content="Content",
             api_key="",
-            ollama_url="http://localhost:11434",
+            litellm_url="http://172.16.17.3:4000/v1",
         )
 
         # Queue should contain the job
@@ -115,12 +115,12 @@ class TestSubmitJob:
         manager = _make_manager()
 
         job_id = manager.submit_job(
-            provider_type="ollama",
+            provider_type="litellm",
             model_id="test-model",
             prompt="Test",
             content="Content",
             api_key="",
-            ollama_url="http://localhost:11434",
+            litellm_url="http://172.16.17.3:4000/v1",
         )
 
         assert job_id.startswith("chat_")
@@ -131,12 +131,12 @@ class TestSubmitJob:
         manager = _make_manager()
 
         job_id = manager.submit_job(
-            provider_type="ollama",
+            provider_type="litellm",
             model_id="test-model",
             prompt="Test",
             content="Content",
             api_key="",
-            ollama_url="http://localhost:11434",
+            litellm_url="http://172.16.17.3:4000/v1",
         )
 
         assert job_id in manager.queue
@@ -148,23 +148,23 @@ class TestSubmitJob:
 
         # Submit low priority first
         job_low = manager.submit_job(
-            provider_type="ollama",
+            provider_type="litellm",
             model_id="test-model",
             prompt="Test",
             content="Content",
             api_key="",
-            ollama_url="http://localhost:11434",
+            litellm_url="http://172.16.17.3:4000/v1",
             priority=1,
         )
 
         # Submit high priority second
         job_high = manager.submit_job(
-            provider_type="ollama",
+            provider_type="litellm",
             model_id="test-model",
             prompt="Test",
             content="Content",
             api_key="",
-            ollama_url="http://localhost:11434",
+            litellm_url="http://172.16.17.3:4000/v1",
             priority=10,
         )
 
@@ -179,12 +179,12 @@ class TestSubmitJob:
         # Missing model
         with pytest.raises(ValueError):
             manager.submit_job(
-                provider_type="ollama",
+            provider_type="litellm",
                 model_id="",
                 prompt="Test",
                 content="Content",
                 api_key="",
-                ollama_url="http://localhost:11434",
+            litellm_url="http://172.16.17.3:4000/v1",
             )
 
 
@@ -196,12 +196,12 @@ class TestGetJobStatus:
         manager = _make_manager()
 
         job_id = manager.submit_job(
-            provider_type="ollama",
+            provider_type="litellm",
             model_id="test-model",
             prompt="Test",
             content="Content",
             api_key="",
-            ollama_url="http://localhost:11434",
+            litellm_url="http://172.16.17.3:4000/v1",
         )
 
         status = manager.get_job_status(job_id)
@@ -221,12 +221,12 @@ class TestGetJobStatus:
         manager = _make_manager()
 
         job_id = manager.submit_job(
-            provider_type="ollama",
+            provider_type="litellm",
             model_id="test-model",
             prompt="Test",
             content="Content",
             api_key="",
-            ollama_url="http://localhost:11434",
+            litellm_url="http://172.16.17.3:4000/v1",
         )
 
         status = manager.get_job_status(job_id)
@@ -246,12 +246,12 @@ class TestCancelJob:
         manager = _make_manager()
 
         job_id = manager.submit_job(
-            provider_type="ollama",
+            provider_type="litellm",
             model_id="test-model",
             prompt="Test",
             content="Content",
             api_key="",
-            ollama_url="http://localhost:11434",
+            litellm_url="http://172.16.17.3:4000/v1",
         )
 
         result = manager.cancel_job(job_id)
@@ -264,12 +264,12 @@ class TestCancelJob:
         manager = _make_manager()
 
         job_id = manager.submit_job(
-            provider_type="ollama",
+            provider_type="litellm",
             model_id="test-model",
             prompt="Test",
             content="Content",
             api_key="",
-            ollama_url="http://localhost:11434",
+            litellm_url="http://172.16.17.3:4000/v1",
         )
 
         # Simulate job is running
@@ -284,12 +284,12 @@ class TestCancelJob:
         manager = _make_manager()
 
         job_id = manager.submit_job(
-            provider_type="ollama",
+            provider_type="litellm",
             model_id="test-model",
             prompt="Test",
             content="Content",
             api_key="",
-            ollama_url="http://localhost:11434",
+            litellm_url="http://172.16.17.3:4000/v1",
         )
 
         # Simulate job is completed
@@ -308,12 +308,12 @@ class TestQueueStats:
 
         # Add some jobs
         job1 = manager.submit_job(
-            provider_type="ollama",
+            provider_type="litellm",
             model_id="test",
             prompt="Test",
             content="Content",
             api_key="",
-            ollama_url="http://localhost:11434",
+            litellm_url="http://172.16.17.3:4000/v1",
         )
 
         manager.jobs[job1].status = ChatJobStatus.RUNNING

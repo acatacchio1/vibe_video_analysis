@@ -35,12 +35,12 @@ async function handleChatProviderChange(context = 'live') {
             modelSelect.innerHTML = '<option value="">Failed to load models</option>';
         }
 
-    } else if (providerName === 'ollama') {
+    } else if (providerName === 'litellm') {
         const selectedOption = providerSelect.selectedOptions[0];
-        const ollamaUrl = selectedOption?.dataset.url;
-        if (ollamaUrl) {
+        const litellmUrl = selectedOption?.dataset.url;
+        if (litellmUrl) {
             try {
-                const response = await fetch(`/api/providers/ollama/models?server=${encodeURIComponent(ollamaUrl)}`);
+                const response = await fetch(`/api/providers/litellm/models?server=${encodeURIComponent(litellmUrl)}`);
                 const data = await response.json();
 
                 if (data.models) {
@@ -49,7 +49,7 @@ async function handleChatProviderChange(context = 'live') {
                     modelSelect.disabled = false;
                 }
             } catch (error) {
-                console.error('Failed to load Ollama models for chat:', error);
+                console.error('Failed to load LiteLLM models for chat:', error);
                 modelSelect.innerHTML = '<option value="">Failed to load models</option>';
             }
         }
@@ -126,11 +126,11 @@ async function sendToLLM(context, jobId = null) {
         temperature: temperature,
     };
 
-    if (providerType === 'ollama') {
+    if (providerType === 'litellm') {
         const selectedOption = providerSelect.selectedOptions[0];
-        const ollamaUrl = selectedOption?.dataset.url;
-        if (ollamaUrl) {
-            requestData.ollama_url = ollamaUrl;
+        const litellmUrl = selectedOption?.dataset.url;
+        if (litellmUrl) {
+            requestData.litellm_url = litellmUrl;
         }
     }
 

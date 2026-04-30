@@ -1,0 +1,1 @@
+{"status": "failed", "stage": "error", "progress": 80, "current_frame": 162, "total_frames": 162, "pipeline": "linkedin_extraction", "last_update": 1777045056.8812366, "error": "LinkedInRAGService.__init__() missing 1 required positional argument: 'openwebui_client'"}

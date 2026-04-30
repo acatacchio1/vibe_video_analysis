@@ -1,6 +1,6 @@
 # Video Analyzer Web - Agent Development Guide
 
-> Version 0.5.0 | Last updated: 2026-04-26
+> Version 0.6.0 | Last updated: 2026-04-28
 
 This document provides essential context for AI agents working on this codebase.
 
@@ -15,27 +15,23 @@ This document provides essential context for AI agents working on this codebase.
 - Workflow order: planner → debater → implementor → reviewer → tester → linter → commit-message.
 - Agents must not skip steps or merge responsibilities.
 
-### Ollama Instance Map
+### Agent Provider Configuration
 
-| Instance | Provider | IP / Host | Model | Context | Role Assignment |
-|---|---|---|---|---|---|
-| GPU 0 | `ollama-gpu0` | 172.16.17.3:11434 | qwen3.6:27b-q8_0 | Full | Planner, Implementor |
-| GPU 1 | `ollama-gpu1` | 172.16.17.3:11435 | qwen3.6:27b-q8_0 | Full | Debater |
-| Node 237 | `ollama-237` | 192.168.1.237:11434 | qwen3.6:27b-q4_K_M | 32k | Reviewer, Linter |
-| Node 241 | `ollama-241` | 192.168.1.241:11434 | qwen3.6:27b-q4_K_M | 32k | Tester, Commit-message |
+| Instance | Provider | Endpoint | Model | Role Assignment |
+|---|---|---|---|---|
+| litellm-lb | LiteLLM | `http://172.16.17.3:4000/v1` | qwen3-27b-q8 | All agents |
 
 ### Context-Aware Routing Strategy
 
-**q8 instances (gpu0/gpu1 — full context, heavy reasoning tasks):**
-- **Planner** → `ollama-gpu0/qwen3.6:27b-q8_0` — Reads AGENTS.md + WORKFLOW_STATE.md + potentially reference files. Heaviest context.
-- **Debater** → `ollama-gpu1/qwen3.6:27b-q8_0` — Reads plan + AGENTS.md. Focused scope but needs reasoning quality.
-- **Implementor** → `ollama-gpu0/qwen3.6:27b-q8_0` — Reads full changed files, plan, generates code. Maximum context needed.
+All agents route through the LiteLLM proxy at `http://172.16.17.3:4000/v1`, which distributes across backend GPU instances running `qwen3-27b-q8`.
 
-**q4 instances (237/241 — 32k context, light/focused tasks):**
-- **Reviewer** → `ollama-237/qwen3.6:27b-q4_K_M` — Reviews changed files + plan. Scoped to specific diffs.
-- **Tester** → `ollama-241/qwen3.6:27b-q4_K_M` — Runs commands, records output. Minimal context.
-- **Linter** → `ollama-237/qwen3.6:27b-q4_K_M` — Runs commands, records output. Minimal context.
-- **Commit-message** → `ollama-241/qwen3.6:27b-q4_K_M` — Reads diff + workflow state. Small scope.
+- **Planner** → `litellm@172.16.17.3:4000/qwen3-27b-q8` — Reads AGENTS.md + WORKFLOW_STATE.md + potentially reference files. Heaviest context.
+- **Debater** → `litellm@172.16.17.3:4000/qwen3-27b-q8` — Reads plan + AGENTS.md. Focused scope but needs reasoning quality.
+- **Implementor** → `litellm@172.16.17.3:4000/qwen3-27b-q8` — Reads full changed files, plan, generates code. Maximum context needed.
+- **Reviewer** → `litellm@172.16.17.3:4000/qwen3-27b-q8` — Reviews changed files + plan. Scoped to specific diffs.
+- **Tester** → `litellm@172.16.17.3:4000/qwen3-27b-q8` — Runs commands, records output. Minimal context.
+- **Linter** → `litellm@172.16.17.3:4000/qwen3-27b-q8` — Runs commands, records output. Minimal context.
+- **Commit-message** → `litellm@172.16.17.3:4000/qwen3-27b-q8` — Reads diff + workflow state. Small scope.
 
 ### How to Kick Off the Workflow
 
@@ -85,7 +81,7 @@ video-analyzer-web/
 │   ├── _run_dedup_sequential() / _run_dedup_parallel() / _run_dedup() - smart dispatcher
 │   ├── _renumber_frames() - sequential renumbering with timestamp index
 │   ├── recover_stale_jobs() - startup recovery
-│   └── init_providers() - Ollama + OpenRouter provider initialization
+│   └── init_providers() - LiteLLM + OpenRouter provider initialization
 │
 ├── worker.py                       # Worker dispatcher → src.worker.pipelines.create_pipeline()
 │   └── run_analysis() - loads config, routes to pipeline factory
@@ -113,11 +109,7 @@ video-analyzer-web/
 │
 ├── monitor.py                      # System monitor (EXTERNAL, DO NOT MODIFY)
 │   ├── nvidia-smi polling (60s interval) with structured per-GPU stats
-│   └── ollama ps API polling (45s interval)
-│
-├── discovery.py                    # Ollama network discovery (EXTERNAL, DO NOT MODIFY)
-│   ├── Subnet scan (192.168.1.0/24) + common hosts
-│   └── Background refresh thread (30s interval)
+│   └── LiteLLM proxy health polling (45s interval)
 │
 ├── thumbnail.py                    # Thumbnail extraction (EXTERNAL, DO NOT MODIFY)
 │   └── FFmpeg-based thumbnail at 10% of video duration
@@ -128,18 +120,17 @@ video-analyzer-web/
 │
 ├── providers/                      # Provider implementations (EXTERNAL, DO NOT MODIFY)
 │   ├── base.py                     # Abstract BaseProvider class
-│   ├── ollama.py                   # OllamaProvider - /api/chat REST endpoint, VRAM estimation
 │   └── openrouter.py               # OpenRouterProvider - pricing cache, cost estimation
 │
 ├── config/                         # Configuration files
 │   ├── constants.py                # All tunable constants (VRAM, chat, video, dedup, etc.)
 │   ├── paths.py                    # Directory paths (uploads, jobs, cache, config, output)
-│   └── default_config.json         # Default analysis config, OpenWebUI settings, Ollama instances
+│   └── default_config.json         # Default analysis config, OpenWebUI settings
 │
 ├── src/                            # Refactored modules
 │   ├── api/                        # Flask blueprints (routes only)
 │   │   ├── videos.py               # /api/videos - upload, delete, frames, transcript, dedup, scenes
-│   │   ├── providers.py            # /api/providers - discover, models, cost, balance, ollama-instances
+│   │   ├── providers.py            # /api/providers - litellm, openrouter, models, cost, balance
 │   │   ├── jobs.py                 # /api/jobs - list, cancel, priority, results, frames_index
 │   │   ├── llm.py                  # /api/llm/chat - submit, status, cancel, queue stats
 │   │   ├── results.py              # /api/results - stored results browser
@@ -187,15 +178,15 @@ video-analyzer-web/
 │           ├── results.js          # Stored results browser, detail view, LLM chat in results
 │           ├── settings.js         # Settings persistence, debug toggle, advanced options
 │           ├── knowledge.js        # OpenWebUI KB settings, send-to-KB modal
-│           ├── ollama-settings.js  # Ollama instances management modal
 │           └── init.js             # DOMContentLoaded bootstrap, event wiring, submitAnalysis()
 │
 ├── templates/index.html            # Single-page template (~725 lines, loads all JS modules)
 ├── Dockerfile                      # nvidia/cuda:12.1.0-base-ubuntu22.04, gunicorn+eventlet
 ├── docker-compose.yml              # Port 10000, GPU reservations, host.docker.internal
 ├── requirements.txt
-├── VERSION                         # 0.5.0
+├── VERSION                         # 0.6.0
 ├── README.md                       # Project overview, quick start
+├── CLI.md                          # Command-line interface reference
 ├── CHANGELOG.md                    # Version history
 ├── CONTRIBUTING.md                 # Development guidelines
 ├── DEVELOPMENT.md                  # Architecture guide
@@ -215,12 +206,10 @@ These files are part of external packages or utilities. Treat as read-only:
 |---|---|
 | `vram_manager.py` | GPU-aware job scheduler with priority queue, VRAM tracking, callbacks |
 | `chat_queue.py` | LLM chat queue with rate limiting, priority, status tracking |
-| `monitor.py` | Background threads for nvidia-smi (60s) and ollama ps (45s) polling |
-| `discovery.py` | Subnet scan for Ollama instances on port 11434 |
+| `monitor.py` | Background threads for nvidia-smi (60s) and LiteLLM proxy health (45s) polling |
 | `thumbnail.py` | FFmpeg-based thumbnail extraction at 10% of video duration |
 | `gpu_transcode.py` | Builds ffmpeg transcode commands (forces CPU encoding currently) |
 | `providers/base.py` | Abstract `Provider` class |
-| `providers/ollama.py` | Ollama provider with direct REST /api/chat, model listing, VRAM estimation |
 | `providers/openrouter.py` | OpenRouter provider with pricing cache, cost estimation, balance check |
 
 ---
@@ -252,7 +241,7 @@ These files are part of external packages or utilities. Treat as read-only:
 
 ### Frontend
 
-1. **Module loading order** (defined in `index.html`): state → ui → socket → videos → providers → jobs → llm → frame-browser → scene-detection → system → results → settings → ollama-settings → knowledge → init.
+1. **Module loading order** (defined in `index.html`): state → ui → socket → videos → providers → jobs → llm → frame-browser → scene-detection → system → results → settings → knowledge → init.
 2. **Global `state` object** in `state.js` - single source of truth. Properties: `debug`, `providers`, `currentJob`, `currentJobResults`, `settings`, `analysisVideoName`, `frameBrowser`, `currentVideo`, `socket`.
 3. **SocketIO** connection established in `socket.js:initSocket()`. All event handler functions registered there (calling functions in other modules).
 4. **No build step** - Plain script tags in `index.html`. No ES modules, no bundler.
@@ -292,7 +281,7 @@ These files are part of external packages or utilities. Treat as read-only:
 | `job_complete` | `{job_id, success}` | Job finished |
 | `videos_updated` | `{}` | Video list changed |
 | `vram_event` | `{event, job}` | VRAM manager status change |
-| `system_status` | `{type, data}` | nvidia-smi / ollama ps output |
+| `system_status` | `{type, data}` | nvidia-smi output |
 | `log_message` | `{level, message, timestamp}` | Server log lines |
 | `transcode_progress` | `{source, stage, progress}` | Transcode progress (legacy) |
 | `video_processing_progress` | `{source, stage, progress, message}` | Upload processing (parallel) |
@@ -322,11 +311,7 @@ These files are part of external packages or utilities. Treat as read-only:
 | POST | `/api/videos/reprocess` | Re-extract + re-transcribe |
 | POST | `/api/videos/transcode` | Direct processing (legacy) |
 | GET | `/api/providers` | List all providers |
-| GET | `/api/providers/discover` | Scan network for Ollama |
-| GET | `/api/providers/ollama/models` | List Ollama models by URL |
 | GET | `/api/providers/openrouter/models` | List OpenRouter models |
-| GET | `/api/providers/ollama-instances` | Get saved Ollama URLs |
-| POST | `/api/providers/ollama-instances` | Save Ollama URLs |
 | GET | `/api/jobs` | List all jobs |
 | GET | `/api/jobs/<id>` | Get job details |
 | DELETE | `/api/jobs/<id>` | Cancel job |
@@ -373,7 +358,7 @@ jobs/<job_id>/
 1. **Initialization**: Load config, update status
 2. **Audio extraction + transcription**: Extract audio with ffmpeg, transcribe with faster-whisper, or load pre-existing transcript
 3. **Frame preparation**: Use pre-extracted frames from uploads/ or extract via VideoProcessor
-4. **Frame analysis (Phase 1)**: Analyze each frame via Ollama/OpenRouter, inject transcript context, write to `frames.jsonl`
+4. **Frame analysis (Phase 1)**: Analyze each frame via LiteLLM/OpenRouter, inject transcript context, write to `frames.jsonl`
 5. **Phase 2 synthesis**: For each frame, call secondary LLM combining vision + transcript, write to `synthesis.jsonl`
 6. **Video reconstruction**: Generate final video description from all analyses + transcript
 7. **Auto-LLM**: Submit results to chat queue if configured
@@ -444,7 +429,7 @@ Key: 1-based sequential frame number, Value: video timestamp in seconds.
 1. User selects Phase 2 provider/model in UI (or "Same as Phase 1")
 2. Config passed via `params.phase2_provider_type`, `params.phase2_model`, etc.
 3. Implementation:
-   - **`StandardTwoStepPipeline._synthesize_frame()`**: Direct HTTP call to Ollama/OpenRouter API
+   - **`StandardTwoStepPipeline._synthesize_frame()`**: Direct HTTP call to LiteLLM/OpenRouter API
    - **Pipeline via video_analyzer library**: Uses VideoAnalyzer with phase2 client config
 
 ### Synthesis Prompt
@@ -458,16 +443,19 @@ Create a comprehensive analysis... [5 focus areas]
 
 ---
 
-## Ollama Instance Management
+## LiteLLM Proxy Configuration
 
-### Discovery Methods
-1. **Static config**: URLs saved in `config/default_config.json` under `ollama_instances`
-2. **Manual addition**: via Ollama Instances modal in UI
-3. **Network scan**: `discovery.py` scans subnet `192.168.1.0/24` + common hosts (localhost, host.docker.internal)
-4. **Hardcoded fallback** in `app.py:init_providers()`: `192.168.1.237:11434`, `192.168.1.241:11434`
+### Configuration
+1. **Environment variable**: `LITELLM_API_BASE` defaults to `http://172.16.17.3:4000/v1`
+2. **CLI**: Set via `va config set litellm_api_base <url>`
+3. **Provider type**: Default provider type is `litellm`
+
+### Model Discovery
+- Models are discovered via `GET /api/providers/litellm/models`
+- Available models depend on backend GPU instances behind the LiteLLM proxy
+- Common models: `qwen3-27b-q8`, `qwen3-27b-best`, `vision-best`
 
 ### Monkey-patching
-- **worker.py**: Ollama client's `chat()` patched to add `think:false`, use `/api/chat` directly
 - **worker.py**: `VideoAnalyzer.analyze_frame()` patched for transcript injection + previous frame context limiting
 
 ---
@@ -480,11 +468,10 @@ Create a comprehensive analysis... [5 focus areas]
 4. **`flask.request` vs `flask_socketio.request`**: Use `from flask import request` in SocketIO handlers
 5. **SocketLogHandler must be created after socketio** - Otherwise `socketio.emit()` silently fails
 6. **Port 10000** - Non-privileged port. Port 1000 requires root on Linux.
-7. **`host.docker.internal`** is used for Docker-to-host communication (Ollama, OpenWebUI)
+7. **`host.docker.internal`** is used for Docker-to-host communication (LiteLLM, OpenWebUI)
 8. **`request` comes from `flask`, NOT `flask_socketio`** - Common import error in SocketIO handlers
-9. **Phase 2 Ollama URL** defaults to `http://192.168.1.237:11434` (not localhost) since text models are on that instance
-10. **`src/worker/main.py`** is legacy code (pre-v0.5.0). The active worker is `worker.py` at the root, which dispatches to `src/worker/pipelines`. `src/worker/__init__.py` exports pipeline classes.
-11. **Current two-step limitation**: Phase 2 synthesis runs sequentially within the frame loop, causing vision analysis to wait for synthesis completion before moving to next frame
+9. **`src/worker/main.py`** is legacy code (pre-v0.5.0). The active worker is `worker.py` at the root, which dispatches to `src/worker/pipelines`. `src/worker/__init__.py` exports pipeline classes.
+10. **Current two-step limitation**: Phase 2 synthesis runs sequentially within the frame loop, causing vision analysis to wait for synthesis completion before moving to next frame
 
 ---
 

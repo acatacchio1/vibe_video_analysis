@@ -156,11 +156,11 @@ def frames(ctx, id, limit, offset):
 @jobs.command(name="start")
 @click.argument("video-path")
 @click.option("--model", required=True, help="Model to use")
-@click.option("--provider-type", required=True, type=click.Choice(["ollama", "openrouter"]),
+@click.option("--provider-type", required=True, type=click.Choice(["litellm", "openrouter"]),
               help="Provider type")
-@click.option("--provider-name", default=None, help="Provider name (for ollama)")
-@click.option("--ollama-url", default="http://host.docker.internal:11434",
-              help="Ollama server URL")
+@click.option("--provider-name", default=None, help="Provider name (for litellm)")
+@click.option("--litellm-url", default="http://172.16.17.3:4000/v1",
+              help="LiteLLM server URL")
 @click.option("--priority", type=int, default=0, help="Job priority")
 @click.option("--whisper-model", default="large", help="Whisper transcription model")
 @click.option("--language", default="en", help="Transcription language")
@@ -172,7 +172,7 @@ def frames(ctx, id, limit, offset):
 @click.option("--phase2-provider-type", default=None, help="Phase 2 provider")
 @click.option("--phase2-model", default=None, help="Phase 2 model")
 @click.pass_context
-def start(ctx, video_path, model, provider_type, provider_name, ollama_url,
+def start(ctx, video_path, model, provider_type, provider_name, litellm_url,
           priority, whisper_model, language, temperature, fps, frames_per_minute,
           similarity_threshold, pipeline_type, phase2_provider_type, phase2_model):
     client = ctx.obj["client"]
@@ -183,16 +183,10 @@ def start(ctx, video_path, model, provider_type, provider_name, ollama_url,
         return
 
     provider_config = {}
-    if provider_type == "ollama":
+    if provider_type == "litellm":
         if not provider_name:
-            providers = client.list_providers()
-            ollama_provs = [p for p in providers if p.get("name", "").startswith("Ollama")]
-            if ollama_provs:
-                provider_name = ollama_provs[0]["name"]
-            else:
-                fmt.error("No Ollama providers configured. Use --provider-name or 'va providers discover'")
-                return
-        provider_config["ollama_url"] = ollama_url
+            provider_name = "LiteLLM"
+        provider_config["url"] = litellm_url
     elif provider_type == "openrouter":
         provider_name = "OpenRouter"
         api_key = resolve_openrouter_key()
@@ -246,13 +240,19 @@ def start(ctx, video_path, model, provider_type, provider_name, ollama_url,
 
     fmt.success(f"Job created: {got_job}")
 
-    # Stay connected and wait for job_complete
-    fmt.info("Monitoring job progress (Ctrl+C to stop monitoring)")
+    # Stay connected and wait for job_complete.
+    # python-socketio v5 requires sio.wait() to keep background polling threads alive.
+    # Run it in a daemon thread so KeyboardInterrupt can break the loop.
+    import time as _time_m
+    import threading as _t
+    sio = analyzer.sio
+    wait_thread = _t.Thread(target=lambda: sio.wait(), daemon=True)
+    wait_thread.start()
     try:
-        while True:
+        while not analyzer._done:
             if not analyzer.sio.connected:
                 break
-            analyzer.sio.wait(seconds=5)
+            _time_m.sleep(1)
     except KeyboardInterrupt:
         fmt.info("\nStopped monitoring. Job may still be running.")
 

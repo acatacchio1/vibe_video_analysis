@@ -422,8 +422,6 @@ def run_video_dedup(filename):
             
             if keep_indices is not None:
                 logger.info(f"Using pre-computed dedup results for threshold {threshold}")
-                # We have pre-computed results, apply them directly
-                keep_indices = keep_indices_by_threshold[str(threshold)]
                 
                 # Get list of all frame files
                 all_frames = sorted(frames_dir.glob("frame_*.jpg"))
@@ -681,7 +679,10 @@ def get_video_transcript(filename):
 
 
 def _get_frame_count(video_path: Path) -> int:
-    meta_path = video_path.parent / video_path.stem / "frames_meta.json"
+    stem = video_path.stem
+    # Strip _720p suffix to match video directory naming convention
+    stem = stem.rsplit('_720p', 1)[0] if '_720p' in stem else stem
+    meta_path = video_path.parent / stem / "frames_meta.json"
     if meta_path.exists():
         try:
             meta = json.loads(meta_path.read_text())
@@ -702,6 +703,9 @@ def _format_bytes(size: int) -> str:
 @videos_bp.route("/api/videos/<filename>/scenes", methods=["GET", "POST"])
 def detect_video_scenes(filename):
     """Detect scenes in a video with extracted frames."""
+    # NOTE: Scene detection from frames (detect_scenes_from_frames) is a no-op —
+    # it treats the entire video as a single scene. Proper frame-based scene
+    # detection is not yet implemented (see src/utils/scene_detection.py TODO).
     import time
     import logging
     

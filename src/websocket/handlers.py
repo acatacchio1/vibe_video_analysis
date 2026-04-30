@@ -3,6 +3,7 @@ SocketIO event handlers for Video Analyzer Web
 """
 import json
 import uuid
+import traceback
 import logging
 import os
 from pathlib import Path
@@ -133,99 +134,99 @@ def register_socket_handlers(socketio):
         from flask import request
         from vram_manager import vram_manager
 
-        job_id = str(uuid.uuid4())[:8]
-        video_path = data.get("video_path")
-        provider_type = data.get("provider_type")
-        provider_name = data.get("provider_name")
-        model_id = data.get("model")
-        priority = data.get("priority", 0)
-        provider_config = data.get("provider_config", {})
+        try:
+            job_id = str(uuid.uuid4())[:8]
+            video_path = data.get("video_path")
+            provider_type = data.get("provider_type")
+            provider_name = data.get("provider_name")
+            model_id = data.get("model")
+            priority = data.get("priority", 0)
+            provider_config = data.get("provider_config", {})
 
-        # For OpenRouter, inject API key from environment if not provided
-        if provider_type == "openrouter":
-            if not provider_config or not provider_config.get("api_key"):
-                env_key = get_openrouter_api_key()
-                if env_key:
-                    provider_config = provider_config or {}
-                    provider_config["api_key"] = env_key
-                    logger.info(f"Using OpenRouter API key from environment for job {job_id}")
-                else:
-                    emit("error", {"message": "OpenRouter API key not configured"})
-                    return
+            if provider_type == "openrouter":
+                if not provider_config or not provider_config.get("api_key"):
+                    env_key = get_openrouter_api_key()
+                    if env_key:
+                        provider_config = provider_config or {}
+                        provider_config["api_key"] = env_key
+                        logger.info(f"Using OpenRouter API key from environment for job {job_id}")
+                    else:
+                        emit("error", {"message": "OpenRouter API key not configured"})
+                        return
 
-        if DEBUG:
-            logger.debug(f"[SOCKET RECV] start_analysis video={video_path} provider={provider_name}/{provider_type} model={model_id} params_keys={list(data.keys())}")
+            if DEBUG:
+                logger.debug(f"[SOCKET RECV] start_analysis video={video_path} provider={provider_name}/{provider_type} model={model_id} params_keys={list(data.keys())}")
 
-        vram_required = 0
-        if provider_type == "ollama":
-            from app import providers
-            provider = providers.get(provider_name)
-            if provider:
-                vram_required = provider.estimate_vram(model_id) or 0
+            vram_required = 0
+            if provider_type == "litellm":
+                from app import providers
+                provider = providers.get(provider_name) or providers.get("LiteLLM")
+                if provider:
+                    vram_required = provider.estimate_vram(model_id) or 0
 
-        job_dir = Path("jobs") / job_id
-        job_dir.mkdir(parents=True)
+            job_dir = Path("jobs") / job_id
+            job_dir.mkdir(parents=True)
 
-        video_stem = Path(video_path).stem if video_path else ""
-        base_dir = Path(__file__).parent.parent.parent
-        video_frames_dir = str(base_dir / "uploads" / video_stem / "frames") if video_stem else ""
+            video_stem_raw = Path(video_path).stem if video_path else ""
+            video_stem = video_stem_raw.rsplit('_720p', 1)[0] if video_stem_raw and '_720p' in video_stem_raw else video_stem_raw
+            base_dir = Path(__file__).parent.parent.parent
+            video_frames_dir = str(base_dir / "uploads" / video_stem / "frames") if video_stem else ""
 
-        # Start with default params
-        params = {
-            "temperature": data.get("temperature", 0.0),
-            "start_frame": data.get("start_frame", 0),
-            "end_frame": data.get("end_frame"),
-            "fps": data.get("fps", 1),
-            "frames_per_minute": data.get("frames_per_minute", 60),
-            "similarity_threshold": data.get("similarity_threshold", 10),
-            "whisper_model": data.get("whisper_model", "large"),
-            "language": data.get("language", "en"),
-            "device": data.get("device", "gpu"),
-            "user_prompt": data.get("user_prompt", ""),
-            "pipeline_type": data.get("pipeline_type", "standard_two_step"),
-        }
-        
-        # Merge any params from data.params (includes Phase 2 config and LinkedIn config)
-        if "params" in data and isinstance(data["params"], dict):
-            params.update(data["params"])
-        
-        config = {
-            "job_id": job_id,
-            "video_path": video_path,
-            "provider_type": provider_type,
-            "provider_name": provider_name,
-            "provider_config": provider_config,
-            "model": model_id,
-            "video_frames_dir": video_frames_dir,
-            "params": params,
-        }
-        (job_dir / "input.json").write_text(json.dumps(config))
+            params = {
+                "temperature": data.get("temperature", 0.0),
+                "start_frame": data.get("start_frame", 0),
+                "end_frame": data.get("end_frame"),
+                "fps": data.get("fps", 1),
+                "frames_per_minute": data.get("frames_per_minute", 60),
+                "similarity_threshold": data.get("similarity_threshold", 10),
+                "whisper_model": data.get("whisper_model", "large"),
+                "language": data.get("language", "en"),
+                "device": data.get("device", "gpu"),
+                "user_prompt": data.get("user_prompt", ""),
+                "pipeline_type": data.get("pipeline_type", "standard_two_step"),
+            }
 
-        if DEBUG:
-            logger.debug(f"[JOB CREATED] job_id={job_id} video_frames_dir={video_frames_dir} start_frame={config['params']['start_frame']} end_frame={config['params']['end_frame']}")
+            if "params" in data and isinstance(data["params"], dict):
+                params.update(data["params"])
 
-        # Emit transcript immediately if it already exists on disk — no need to wait
-        # for the worker to reach the reconstructing stage.
-        if video_path:
-            transcript_path = Path(video_path).parent / Path(video_path).stem / "transcript.json"
-            try:
-                if transcript_path.exists():
-                    transcript_data = json.loads(transcript_path.read_text())
-                    transcript_text = transcript_data.get("text") or ""
-                    if transcript_text:
-                        emit("job_transcript", {"job_id": job_id, "transcript": transcript_text})
-                        logger.debug(f"[JOB CREATED] emitted pre-existing transcript for job {job_id}")
-            except Exception as e:
-                logger.warning(f"Could not pre-load transcript for job {job_id}: {e}")
+            config = {
+                "job_id": job_id,
+                "video_path": video_path,
+                "provider_type": provider_type,
+                "provider_name": provider_name,
+                "provider_config": provider_config,
+                "model": model_id,
+                "video_frames_dir": video_frames_dir,
+                "params": params,
+            }
+            (job_dir / "input.json").write_text(json.dumps(config))
 
-        job = vram_manager.submit_job(
-            job_id=job_id,
-            provider_type=provider_type,
-            provider_name=provider_name,
-            model_id=model_id,
-            vram_required=vram_required,
-            video_path=video_path,
-            params=config["params"],
-            priority=priority,
-        )
-        emit("job_created", {"job_id": job_id, "status": job.status.value})
+            if DEBUG:
+                logger.debug(f"[JOB CREATED] job_id={job_id} video_frames_dir={video_frames_dir} start_frame={config['params']['start_frame']} end_frame={config['params']['end_frame']}")
+
+            if video_path:
+                transcript_path = Path(video_path).parent / Path(video_path).stem / "transcript.json"
+                try:
+                    if transcript_path.exists():
+                        transcript_data = json.loads(transcript_path.read_text())
+                        transcript_text = transcript_data.get("text") or ""
+                        if transcript_text:
+                            emit("job_transcript", {"job_id": job_id, "transcript": transcript_text})
+                            logger.debug(f"[JOB CREATED] emitted pre-existing transcript for job {job_id}")
+                except Exception as e:
+                    logger.warning(f"Could not pre-load transcript for job {job_id}: {e}")
+
+            job = vram_manager.submit_job(
+                job_id=job_id,
+                provider_type=provider_type,
+                provider_name=provider_name,
+                model_id=model_id,
+                vram_required=vram_required,
+                video_path=video_path,
+                params=config["params"],
+                priority=priority,
+            )
+            emit("job_created", {"job_id": job_id, "status": job.status.value})
+        except Exception as e:
+            logger.error(f"[SOCKET] start_analysis crashed: {e}\n{traceback.format_exc()}")
+            emit("error", {"message": str(e)})

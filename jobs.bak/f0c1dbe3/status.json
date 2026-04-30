@@ -1,0 +1,1 @@
+{"status": "failed", "stage": "error", "progress": 20, "current_frame": 0, "total_frames": 1079, "last_update": 1776789980.2751858, "error": "VideoAnalyzer.analyze_frame() got an unexpected keyword argument 'prev_ts'"}

@@ -336,7 +336,7 @@ class TestFormatResultsAsMarkdown:
             "metadata": {
                 "date": "2024-01-01",
                 "model": "llama3.2",
-                "provider": "ollama",
+                "provider": "litellm",
                 "frames_processed": 10,
             }
         }
@@ -346,7 +346,7 @@ class TestFormatResultsAsMarkdown:
         assert "**Date:** 2024-01-01" in markdown
         assert "**Job ID:** job-123" in markdown
         assert "**Model:** llama3.2" in markdown
-        assert "**Provider:** ollama" in markdown
+        assert "**Provider:** litellm" in markdown
         assert "**Frames Processed:** 10" in markdown
 
     def test_format_results_with_transcript(self):

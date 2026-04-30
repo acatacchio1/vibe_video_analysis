@@ -23,7 +23,7 @@ def llm_chat():
     content = data.get("content", "")
     temperature = data.get("temperature", 0.1)
     api_key = data.get("api_key", "")
-    ollama_url = data.get("ollama_url", "http://localhost:11434")
+    litellm_url = data.get("litellm_url", "http://172.16.17.3:4000/v1")
 
     if not model_id:
         return jsonify({"error": "Model is required"}), 400
@@ -38,13 +38,13 @@ def llm_chat():
 
     try:
         job_id = chat_queue_manager.submit_job(
-            provider_type=provider_type or "ollama",
+            provider_type=provider_type or "litellm",
             model_id=model_id,
             prompt=prompt,
             content=content,
             temperature=temperature,
             api_key=api_key,
-            ollama_url=ollama_url,
+            litellm_url=litellm_url,
         )
         return jsonify({"job_id": job_id, "message": "Chat job submitted to queue"})
     except ValueError as e:

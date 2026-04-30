@@ -22,7 +22,7 @@ Video Analyzer Web uses a single-page interface (`templates/index.html`) with mo
 │  │ nvidia-smi  │ │  │ Live Analysis Display    │          │
 │  └─────────────┘ │  │ (Vision / Combined tabs) │          │
 │  ┌─────────────┐ │  │ Transcript / Description │          │
-│  │  ollama ps  │ │  └──────────────────────────┘          │
+│  │  LiteLLM    │ │  └──────────────────────────┘          │
 │  └─────────────┘ │                                          │
 └──────────────────┴──────────────────────────────────────┘
 ```
@@ -32,7 +32,7 @@ Video Analyzer Web uses a single-page interface (`templates/index.html`) with mo
 | Button | Action | Handler |
 |--------|--------|---------|
 | 📚 | Open OpenWebUI Knowledge Base settings modal | `knowledge.js` |
-| 🌐 | Open Ollama Instances management modal | `ollama-settings.js` |
+| 🌐 | Open LiteLLM Proxy settings modal | `providers.js` |
 | 🐛 | Toggle debug mode (enables detailed server log) | `settings.js` |
 | 🔔 | Enable browser notifications for job completion | `settings.js` |
 
@@ -66,7 +66,7 @@ Original uploaded files (preserved source). Supports bulk deletion via "Delete A
 ### 5. System Status
 
 - **VRAM Display**: Per-GPU VRAM usage cards with bar indicators
-- **Monitor Tabs**: Toggle between `nvidia-smi` output (10s polling) and `ollama ps` output (15s polling)
+- **Monitor Tabs**: Toggle between `nvidia-smi` output (10s polling) and LiteLLM proxy status
 - Powered by `system.js` which subscribes to `system_status` and `vram_event` SocketIO events
 
 ## Main Content Tabs
@@ -106,7 +106,7 @@ The form is built in sections:
 - Transcript context shown for selected frames
 
 **Vision Analysis (Phase 1)**
-- Provider selector (Ollama instances + OpenRouter)
+- Provider selector (LiteLLM proxy + OpenRouter)
 - Model dropdown — populated dynamically after provider selection
 - Cost/VRAM estimate display for OpenRouter providers
 - Priority (0-100, higher = runs sooner)
@@ -168,13 +168,13 @@ For individual job results:
 - Job ID display
 - Refresh / Send buttons
 
-### 3. Ollama Instances (`ollama-settings.js`)
+### 3. LiteLLM Proxy Settings (`providers.js`)
 
-Manage known Ollama URLs:
-- Multi-line textarea for URLs (one per line)
+Configure the LiteLLM proxy endpoint:
+- Proxy URL (default: `http://172.16.17.3:4000/v1`)
 - Save to `config/default_config.json`
-- Force Network Scan triggers `discovery.py` subnet scan
-- Discovered instances list (read-only)
+- Test Connection validates connectivity and fetches available models
+- Available models list (read-only, refreshed from `GET /api/providers/litellm/models`)
 
 ### 4. Job Details (`jobs.js`)
 
@@ -201,7 +201,7 @@ Modules loaded in strict dependency order via `<script>` tags in `index.html`:
 | 2 | `ui.js` | `escapeHtml()`, `showToast()`, `formatBytes()`, `formatFrameAnalysis()` |
 | 3 | `socket.js` | Socket.IO connection, all event registration |
 | 4 | `videos.js` | Upload, video lists, processing progress, server log |
-| 5 | `providers.js` | Provider/model selects, Phase 2 provider handling, discovery |
+| 5 | `providers.js` | Provider/model selects, Phase 2 provider handling, model discovery |
 | 6 | `jobs.js` | Job cards, live updates, detail modal, tab switching |
 | 7 | `llm.js` | Chat across 3 contexts (live/modal/results), polling |
 | 8 | `frame-browser.js` | Dual-range sliders, thumbnails, transcript context, scene markers |
@@ -209,9 +209,8 @@ Modules loaded in strict dependency order via `<script>` tags in `index.html`:
 | 10 | `system.js` | GPU status display, monitor tab switching |
 | 11 | `results.js` | Stored results browser, detail view, LLM chat in results |
 | 12 | `settings.js` | Settings persistence, debug toggle, advanced options |
-| 13 | `ollama-settings.js` | Ollama instances management modal |
-| 14 | `knowledge.js` | OpenWebUI KB settings, send-to-KB modal |
-| 15 | `init.js` | DOMContentLoaded bootstrap, event wiring, `submitAnalysis()` |
+| 13 | `knowledge.js` | OpenWebUI KB settings, send-to-KB modal |
+| 14 | `init.js` | DOMContentLoaded bootstrap, event wiring, `submitAnalysis()` |
 
 **No build step**: All modules are plain scripts loaded via `<script>` tags. No ES modules, no bundler.
 

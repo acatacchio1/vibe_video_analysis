@@ -61,10 +61,10 @@ def sample_job_config():
     return {
         "job_id": "test_job_123",
         "video_path": "/app/uploads/test_video.mp4",
-        "provider_type": "ollama",
-        "provider_name": "Ollama-Local",
-        "provider_config": {"url": "http://localhost:11434"},
-        "model": "llava:7b",
+        "provider_type": "litellm",
+        "provider_name": "LiteLLM-Proxy",
+        "provider_config": {"api_base": "http://172.16.17.3:4000/v1"},
+        "model": "qwen3-27b-q8",
         "params": {
             "temperature": 0.0,
             "duration": 0,
@@ -102,8 +102,8 @@ def sample_results_file():
     return {
         "metadata": {
             "job_id": "test_job_123",
-            "provider": "ollama",
-            "model": "llava:7b",
+            "provider": "litellm",
+            "model": "qwen3-27b-q8",
             "frames_processed": 10,
             "transcription_successful": True,
         },
@@ -160,8 +160,8 @@ def mock_chat_job_response():
     """Mock response for LLM chat job"""
     return {
         "job_id": "chat_abc12345",
-        "provider_type": "ollama",
-        "model_id": "llama3:8b",
+        "provider_type": "litellm",
+        "model_id": "qwen3-27b-q8",
         "status": "pending",
         "queue_position": 1,
         "prompt": "Summarize this",
@@ -170,14 +170,16 @@ def mock_chat_job_response():
 
 
 @pytest.fixture
-def mock_ollama_client():
-    """Mock Ollama client for testing"""
+def mock_litellm_client():
+    """Mock LiteLLM client for testing"""
     client = MagicMock()
-    client.generate.return_value = {
-        "response": "Test response",
-        "done": True,
-        "eval_count": 100,
-        "prompt_eval_count": 400,
+    client.completion.return_value = {
+        "choices": [{"message": {"content": "Test response"}}],
+        "usage": {
+            "prompt_tokens": 400,
+            "completion_tokens": 100,
+            "total_tokens": 500,
+        },
     }
     return client
 
@@ -243,8 +245,8 @@ def mock_vram_manager():
     job.to_dict.return_value = {
         "job_id": "test_job_123",
         "status": "running",
-        "provider_type": "ollama",
-        "model_id": "llava:7b",
+        "provider_type": "litellm",
+        "model_id": "qwen3-27b-q8",
     }
     manager.get_job.return_value = job
     manager.get_all_jobs.return_value = [job]
@@ -287,7 +289,6 @@ def mock_monitor():
     monitor = MagicMock()
     monitor.get_latest.return_value = {
         "nvidia_smi": "GPU 0: 10GB",
-        "ollama_ps": "",
         "nvidia_gpus": [],
         "timestamp": 1234567890.0,
     }
@@ -297,12 +298,12 @@ def mock_monitor():
 @pytest.fixture
 def mock_providers_dict():
     """Create a mocked providers dictionary"""
-    ollama_provider = MagicMock()
-    ollama_provider.estimate_vram.return_value = 8 * (1024**3)
-    ollama_provider.to_dict.return_value = {
-        "name": "Ollama-Local",
-        "type": "ollama",
-        "url": "http://localhost:11434",
+    litellm_provider = MagicMock()
+    litellm_provider.estimate_vram.return_value = 8 * (1024**3)
+    litellm_provider.to_dict.return_value = {
+        "name": "LiteLLM-Proxy",
+        "type": "litellm",
+        "api_base": "http://172.16.17.3:4000/v1",
         "status": "online",
     }
 
@@ -318,7 +319,7 @@ def mock_providers_dict():
     openrouter_provider.estimate_cost.return_value = {"total": 0.01}
 
     return {
-        "Ollama-Local": ollama_provider,
+        "LiteLLM-Proxy": litellm_provider,
         "OpenRouter": openrouter_provider,
     }
 
@@ -389,17 +390,16 @@ def app(
     # Fake `discovery` module
     mock_discovery = MagicMock()
     mock_discovery.scan.return_value = []
-    mock_discovery.get_known_hosts.return_value = ["http://localhost:11434"]
+    mock_discovery.get_known_hosts.return_value = ["http://172.16.17.3:4000/v1"]
     mock_discovery_instance = MagicMock()
     mock_discovery_instance.get_known_hosts.return_value = [
-        "http://localhost:11434",
+        "http://172.16.17.3:4000/v1",
     ]
     mock_discovery_instance.set_known_hosts = MagicMock()
     mock_discovery_instance.scan.return_value = []
     mock_discovery_instance.manager = MagicMock()
     mock_discovery_instance.manager.get_recent_results.return_value = {
         "nvidia_smi": "",
-        "ollama_ps": "",
         "nvidia_gpus": [],
         "timestamp": 0,
     }
@@ -509,9 +509,9 @@ def temp_job_with_results(tmp_path, sample_results_file):
     input_config = {
         "job_id": "test_job_123",
         "video_path": str(tmp_path / "uploads" / "test_video.mp4"),
-        "provider_type": "ollama",
-        "provider_name": "Ollama-Local",
-        "model": "llava:7b",
+        "provider_type": "litellm",
+        "provider_name": "LiteLLM-Proxy",
+        "model": "qwen3-27b-q8",
         "params": {"temperature": 0.0},
     }
     (job_dir / "input.json").write_text(json.dumps(input_config))

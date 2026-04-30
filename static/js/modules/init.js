@@ -100,9 +100,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Knowledge Base handlers
     initKbHandlers();
-
-    // Ollama Instances handlers
-    initOllamaInstancesHandlers();
 });
 
 async function submitAnalysis() {
@@ -137,10 +134,10 @@ async function submitAnalysis() {
     };
 
     // OpenRouter API key is handled server-side from environment variable
-    if (providerType === 'ollama') {
-        const ollamaUrl = providerOption?.dataset.url;
-        if (ollamaUrl) {
-            data.provider_config = { url: ollamaUrl };
+    if (providerType === 'litellm') {
+        const litellmUrl = providerOption?.dataset.url;
+        if (litellmUrl) {
+            data.provider_config = { url: litellmUrl };
         }
     }
 
@@ -181,8 +178,6 @@ async function submitAnalysis() {
             },
             generate_clips: document.getElementById('linkedin-generate-clips')?.checked || false,
         };
-        
-        console.log('LinkedIn config added:', data.params.linkedin_config);
     }
 
     // Add Phase 2 (synthesis) configuration
@@ -196,15 +191,6 @@ async function submitAnalysis() {
         const phase2Temperature = parseFloat(phase2TemperatureInput.value || '0.0');
         const phase2ProviderOption = phase2ProviderSelect.selectedOptions[0];
         
-        console.log('Phase 2 config debug:', {
-            phase2ProviderType,
-            phase2Model,
-            phase2Temperature,
-            phase2ProviderOption,
-            datasetUrl: phase2ProviderOption?.dataset.url,
-            optionText: phase2ProviderOption?.text
-        });
-        
         // Only add Phase 2 config if a provider and model are selected
         if (phase2ProviderType && phase2Model) {
             // Initialize params object if it doesn't exist
@@ -217,29 +203,25 @@ async function submitAnalysis() {
             data.params.phase2_model = phase2Model;
             data.params.phase2_temperature = phase2Temperature;
             
-            if (phase2ProviderType === 'ollama') {
+            if (phase2ProviderType === 'litellm') {
                 // Get URL from selected option's data-url attribute
-                const phase2OllamaUrl = phase2ProviderOption?.dataset.url;
-                if (phase2OllamaUrl) {
-                    data.params.phase2_provider_config = { url: phase2OllamaUrl };
-                    console.log('Setting Phase 2 URL to:', phase2OllamaUrl);
+                const phase2LitellmUrl = phase2ProviderOption?.dataset.url;
+                if (phase2LitellmUrl) {
+                    data.params.phase2_provider_config = { url: phase2LitellmUrl };
                 } else {
                     // Default URL if no specific instance selected
-                    data.params.phase2_provider_config = { url: "http://192.168.1.237:11434" };
-                    console.log('Using default Phase 2 URL');
+                    data.params.phase2_provider_config = { url: "http://172.16.17.3:4000/v1" };
                 }
             } else if (phase2ProviderType === 'same_as_phase1') {
                 // Use same provider as Phase 1
                 data.params.phase2_provider_type = providerType;
                 data.params.phase2_model = model;
                 data.params.phase2_temperature = data.temperature; // Use same temperature
-                if (providerType === 'ollama' && data.provider_config?.url) {
+                if (providerType === 'litellm' && data.provider_config?.url) {
                     data.params.phase2_provider_config = { url: data.provider_config.url };
-                    console.log('Phase 2 using same as Phase 1 URL:', data.provider_config.url);
                 }
             }
             // OpenRouter for Phase 2 would use environment variable server-side
-            console.log('Final Phase 2 config in params:', data.params.phase2_provider_config);
         }
     }
 
@@ -290,5 +272,4 @@ function handlePipelineChange() {
         }
     }
     
-    console.log(`Pipeline changed to: ${pipelineSelect.value}, LinkedIn: ${isLinkedIn}`);
 }

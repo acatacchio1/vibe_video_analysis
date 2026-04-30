@@ -8,7 +8,7 @@ This document provides technical architecture and development guidelines for Vid
 - **Backend**: Flask + Flask-SocketIO (eventlet driver)
 - **Frontend**: Vanilla JS (modular, no framework/bundler), CSS custom properties
 - **CLI**: Python argparse-based with `click`-style groups, SocketIO client, tabular output
-- **AI Providers**: Ollama (local), OpenRouter (cloud)
+- **AI Providers**: LiteLLM proxy (local), OpenRouter (cloud)
 - **ML**: faster-whisper (transcription), imagehash (frame dedup)
 - **Video**: ffmpeg/ffprobe for transcoding, frame extraction, audio extraction
 - **GPU**: NVIDIA CUDA, pynvml for VRAM monitoring
@@ -35,8 +35,7 @@ video-analyzer-web/
 ├── worker.py                       # Pure dispatcher (~85 lines) → src/worker/pipelines/*
 ├── vram_manager.py                 # GPU-aware job scheduler (EXTERNAL, DO NOT MODIFY)
 ├── chat_queue.py                   # LLM chat queue manager (EXTERNAL, DO NOT MODIFY)
-├── monitor.py                      # System monitor (nvidia-smi, ollama ps polling)
-├── discovery.py                    # Ollama network discovery (EXTERNAL, DO NOT MODIFY)
+├── monitor.py                      # System monitor (nvidia-smi, provider polling)
 ├── thumbnail.py                    # Thumbnail extraction (EXTERNAL, DO NOT MODIFY)
 ├── gpu_transcode.py               # FFmpeg transcode command builder (EXTERNAL, DO NOT MODIFY)
 ├── setup.py                        # Package definition with CLI entry point (`va`)
@@ -44,13 +43,13 @@ video-analyzer-web/
 │
 ├── providers/                      # Provider implementations (EXTERNAL, DO NOT MODIFY)
 │   ├── base.py                     # Abstract Provider class
-│   ├── ollama.py                   # OllamaProvider — /api/chat REST, VRAM estimation
+│   ├── litellm.py                  # LiteLLMProvider — /v1/chat/completions REST, VRAM estimation
 │   └── openrouter.py               # OpenRouterProvider — pricing cache, cost estimation
 │
 ├── src/
 │   ├── api/                        # Flask blueprints (routes only)
 │   │   ├── videos.py               # /api/videos — upload, delete, frames, transcript, dedup, scenes
-│   │   ├── providers.py            # /api/providers — discover, models, cost, balance, ollama-instances
+│   │   ├── providers.py            # /api/providers — discover, models, cost, balance, litellm-instances
 │   │   ├── jobs.py                 # /api/jobs — list, cancel, priority, results, frames_index
 │   │   ├── llm.py                  # /api/llm/chat — submit, status, cancel, queue stats
 │   │   ├── results.py              # /api/results — stored results browser
@@ -96,22 +95,21 @@ video-analyzer-web/
 │           ├── __init__.py
 │           ├── videos.py           # va videos (list, upload, delete, frames, transcript, dedup, scenes)
 │           ├── jobs.py             # va jobs (list, show, cancel, priority, frames, results)
-│           ├── providers.py        # va providers (list, discover, ollama-instances)
+│           ├── providers.py        # va providers (list, discover, litellm-instances)
 │           ├── results.py          # va results (list, show)
 │           ├── system.py           # va system (vram, gpus, debug)
 │           ├── llm.py              # va llm (chat, queue-stats, cancel)
-│           ├── knowledge.py        # va knowledge (config, test, sync, bases, send)
-│           └── models.py           # va models (ollama, openrouter)
+│           └── knowledge.py        # va knowledge (config, test, sync, bases, send)
 │
 ├── config/
 │   ├── constants.py                # MAX_FILE_SIZE, VRAM_BUFFER, DEDUP defaults
 │   ├── paths.py                    # UPLOAD_DIR, JOBS_DIR, THUMBS_DIR, CACHE_DIR, CONFIG_DIR, OUTPUT_DIR
-│   └── default_config.json         # Default analysis config, OpenWebUI settings, Ollama instances
+│   └── default_config.json         # Default analysis config, OpenWebUI settings, LiteLLM settings
 │
 ├── static/
 │   ├── css/style.css               # All styles (~3339 lines, dark theme with CSS custom properties)
 │   └── js/
-│       └── modules/                # 15 JS modules (no build step)
+│       └── modules/                # 14 JS modules (no build step)
 │           ├── state.js            # Global state, localStorage persistence
 │           ├── ui.js               # escapeHtml(), showToast(), formatBytes(), formatFrameAnalysis()
 │           ├── socket.js           # Socket.IO connection, event registration
@@ -124,7 +122,6 @@ video-analyzer-web/
 │           ├── system.js           # GPU status display, monitor tabs
 │           ├── results.js          # Stored results browser, detail view, LLM chat
 │           ├── settings.js         # Settings persistence, debug toggle
-│           ├── ollama-settings.js  # Ollama instances management
 │           ├── knowledge.js        # OpenWebUI KB settings, send-to-KB modal
 │           └── init.js             # DOMContentLoaded bootstrap, event wiring
 │
@@ -182,12 +179,11 @@ The `va` CLI provides full access to all functionality from the terminal.
 **Command Groups (in `src/cli/commands/`):**
 - `videos.py` — 16 subcommands (list, upload, delete, frames, transcript, dedup, scenes, etc.)
 - `jobs.py` — 9 subcommands (list, show, cancel, priority, frames, results, etc.)
-- `providers.py` — 4 subcommands (list, discover, ollama-instances, cost)
+- `providers.py` — 4 subcommands (list, discover, litellm-instances, cost)
 - `results.py` — 3 subcommands (list, show, delete)
 - `system.py` — 4 subcommands (vram, gpus, debug, logs)
 - `llm.py` — 4 subcommands (chat, status, cancel, queue-stats)
 - `knowledge.py` — 6 subcommands (status, config, test, sync, bases, send)
-- `models.py` — 2 subcommands (ollama, openrouter)
 
 ### 4. API Layer (`src/api/*.py`)
 - **Blueprints** — Modular route definitions, one file per domain
@@ -251,7 +247,7 @@ The `va` CLI provides full access to all functionality from the terminal.
 - `OPENROUTER_API_KEY` — OpenRouter API key for cloud inference
 - `OPENWEBUI_URL` — OpenWebUI instance URL for KB sync
 - `OPENWEBUI_API_KEY` — OpenWebUI API key
-- `OLLAMA_HOST` — Default Ollama host (default: `http://host.docker.internal:11434`)
+- `LITELLM_API_BASE` — LiteLLM proxy endpoint (default: `http://172.16.17.3:4000/v1`)
 
 ### Path Configuration (`config/paths.py`)
 - `UPLOAD_DIR` — Upload files (videos, frames, transcripts, thumbs)
@@ -300,11 +296,9 @@ The `va` CLI provides full access to all functionality from the terminal.
 3. **Double-spawn guard**: `_spawned_jobs` set prevents worker from being spawned twice
 4. **`flask.request` vs `flask_socketio.request`**: Use `from flask import request` in SocketIO handlers
 5. **SocketLogHandler must be created after socketio** — Otherwise `socketio.emit()` silently fails
-6. **`host.docker.internal`** is used for Docker-to-host communication (Ollama, OpenWebUI)
-7. **Phase 2 Ollama URL** defaults to `http://192.168.1.237:11434` (not localhost)
+6. **`host.docker.internal`** is used for Docker-to-host communication (LiteLLM, OpenWebUI)
 8. **`src/worker/main.py`** is legacy (pre-v0.5.0). Active worker is `worker.py` which dispatches to pipelines.
 9. **Current two-step limitation**: Phase 2 synthesis runs sequentially within the frame loop
-10. **Ollama monkey-patch**: Worker patches `ollama.chat` with `think:false` for reasoning models
 
 ## Testing & Debugging
 
@@ -329,7 +323,7 @@ python -m pytest tests/ --cov=src --cov-report=term-missing
 ### Common Issues
 - **Transcript errors**: Ensure `frames_index.json` exists and `transcript.json` is valid
 - **GPU memory**: Monitor VRAM with `nvidia-smi` or `/api/vram`
-- **Ollama connection**: Verify Ollama is running and accessible from Docker
+- **LiteLLM connection**: Verify LiteLLM proxy is running and accessible from Docker
 - **File permissions**: Check volume mounts in `docker-compose.yml`
 - **Port conflicts**: Ensure port 10000 is available
 
@@ -339,11 +333,10 @@ python -m pytest tests/ --cov=src --cov-report=term-missing
 |------|---------|
 | `vram_manager.py` | GPU-aware job scheduler with priority queue, VRAM tracking |
 | `chat_queue.py` | LLM chat queue with rate limiting, concurrent limits |
-| `monitor.py` | nvidia-smi (60s) and ollama ps (45s) polling |
-| `discovery.py` | Subnet scan (192.168.1.0/24) + common hosts |
+| `monitor.py` | nvidia-smi (60s) and provider ps (45s) polling |
 | `thumbnail.py` | FFmpeg-based thumbnail at 10% of video duration |
 | `gpu_transcode.py` | FFmpeg transcode command builder (CPU encoding) |
-| `providers/` | Provider implementations (base, ollama, openrouter) |
+| `providers/` | Provider implementations (base, litellm, openrouter) |
 
 ## References
 

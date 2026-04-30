@@ -178,25 +178,11 @@ class APIClient:
         resp = self.session.get(f"{self.base_url}/api/providers/discover", timeout=60)
         return resp.json()
 
-    def get_ollama_instances(self) -> dict:
-        resp = self.session.get(f"{self.base_url}/api/providers/ollama-instances", timeout=self.timeout)
+    def get_litellm_status(self) -> dict:
+        resp = self.session.get(f"{self.base_url}/api/providers/litellm/models", timeout=self.timeout)
         return resp.json()
 
-    def update_ollama_instances(self, instances: list[str]) -> dict:
-        resp = self.session.post(
-            f"{self.base_url}/api/providers/ollama-instances",
-            json={"instances": instances},
-            timeout=self.timeout,
-        )
-        return resp.json()
 
-    def get_ollama_models(self, server: str) -> dict:
-        resp = self.session.get(
-            f"{self.base_url}/api/providers/ollama/models",
-            params={"server": server},
-            timeout=self.timeout,
-        )
-        return resp.json()
 
     def get_openrouter_models(self) -> dict:
         resp = self.session.get(f"{self.base_url}/api/providers/openrouter/models", timeout=self.timeout)

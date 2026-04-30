@@ -54,25 +54,26 @@ Create a comprehensive analysis that integrates what's visually present with wha
 
 ENHANCED ANALYSIS:"""
 
-        if phase2_provider_type == "ollama":
-            ollama_url = phase2_provider_config.get("url", "http://192.168.1.237:11434")
+        if phase2_provider_type == "litellm":
+            litellm_url = phase2_provider_config.get("url", "http://172.16.17.3:4000/v1")
             resp = requests.post(
-                f"{ollama_url.rstrip('/')}/api/chat",
+                f"{litellm_url.rstrip('/')}/chat/completions",
+                headers={
+                    "Authorization": "Bearer ",
+                    "Content-Type": "application/json",
+                },
                 json={
                     "model": phase2_model,
                     "messages": [{"role": "user", "content": synthesis_prompt}],
-                    "stream": False,
-                    "think": False,
-                    "options": {
-                        "temperature": phase2_temperature,
-                        "num_predict": 4096,
-                    },
+                    "temperature": phase2_temperature,
+                    "max_tokens": 4096,
                 },
                 timeout=300,
             )
             resp.raise_for_status()
-            result = resp.json().get("message", {}).get("content", "")
-            tokens = resp.json().get("usage", {})
+            data = resp.json()
+            result = data["choices"][0]["message"]["content"]
+            tokens = data.get("usage", {})
 
         else:
             api_key = phase2_provider_config.get("api_key", "")
@@ -187,8 +188,8 @@ class StandardTwoStepPipeline(AnalysisPipeline):
         phase2_temperature = params.phase2.temperature
         phase2_provider_config = params.phase2.provider_config.model_dump()
 
-        if phase2_provider_type == "ollama" and not phase2_provider_config.get("url"):
-            phase2_provider_config["url"] = "http://192.168.1.237:11434"
+        if phase2_provider_type == "litellm" and not phase2_provider_config.get("url"):
+            phase2_provider_config["url"] = "http://172.16.17.3:4000/v1"
 
         logger.info(f"video_path={video_path}")
         logger.info(f"provider_type={provider_type}")
@@ -294,7 +295,7 @@ class StandardTwoStepPipeline(AnalysisPipeline):
         """Build video_analyzer library config dict from typed params."""
         config_data = {
             "clients": {
-                "default": provider_type if provider_type == "ollama" else "openai_api",
+                "default": "openai_api",
                 "temperature": params.temperature,
             },
             "analysis_pipeline": {
@@ -323,24 +324,30 @@ class StandardTwoStepPipeline(AnalysisPipeline):
             "prompt": params.user_prompt,
         }
 
-        if provider_type == "ollama":
-            config_data["clients"]["ollama"] = {
-                "url": provider_config.get("url", "http://localhost:11434"),
+        if provider_type == "litellm":
+            config_data["clients"]["default"] = "openai_api"
+            config_data["clients"]["openai_api"] = {
+                "api_key": "",
+                "api_url": provider_config.get("url", "http://172.16.17.3:4000/v1"),
                 "model": model,
             }
         else:
+            config_data["clients"]["default"] = "openai_api"
             config_data["clients"]["openai_api"] = {
                 "api_key": provider_config["api_key"],
                 "api_url": "https://openrouter.ai/api/v1",
                 "model": model,
             }
 
-        if phase2_provider_type == "ollama":
-            config_data["clients"]["phase2_ollama"] = {
-                "url": phase2_provider_config.get("url", "http://localhost:11434"),
+        if phase2_provider_type == "litellm":
+            config_data["clients"]["default"] = "openai_api"
+            config_data["clients"]["phase2_openai_api"] = {
+                "api_key": "",
+                "api_url": phase2_provider_config.get("url", "http://172.16.17.3:4000/v1"),
                 "model": params.phase2.model,
             }
         else:
+            config_data["clients"]["default"] = "openai_api"
             config_data["clients"]["phase2_openai_api"] = {
                 "api_key": phase2_provider_config.get("api_key", ""),
                 "api_url": "https://openrouter.ai/api/v1",
@@ -540,7 +547,7 @@ class StandardTwoStepPipeline(AnalysisPipeline):
                 frames_per_minute=config_data["frames"]["per_minute"],
                 duration=params.duration,
                 max_frames=config_data["frames"]["max_count"],
-                similarity_threshold=params.frames.similarity_threshold,
+                similarity_threshold=int(params.frames.similarity_threshold),
             )
             total_frames = len(frames)
             logger.info(f"VideoProcessor extracted {total_frames} frames")
@@ -576,61 +583,20 @@ class StandardTwoStepPipeline(AnalysisPipeline):
         phase2_provider_config: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
         logger.info("=== STAGE 3: Frame analysis ===")
-        from video_analyzer.clients.ollama import OllamaClient
         from video_analyzer.clients.generic_openai_api import GenericOpenAIAPIClient
 
         config_temperature = config_data["clients"].get("temperature", 0.2)
         logger.info(f"Using temperature={config_temperature} for LLM calls")
 
-        if provider_type == "ollama":
-            ollama_url = provider_config.get("url", "http://localhost:11434")
-            if "host.docker.internal" in ollama_url:
+        if provider_type == "litellm":
+            litellm_url = provider_config.get("url", "http://172.16.17.3:4000/v1")
+            if "host.docker.internal" in litellm_url:
                 if not Path("/.dockerenv").exists():
-                    ollama_url = ollama_url.replace("host.docker.internal", "localhost")
-            logger.info(f"Creating OllamaClient with url={ollama_url}")
-            client = OllamaClient(ollama_url)
-
-            import functools
-            _chat_url = f"{ollama_url.rstrip('/')}/api/chat"
-            logger.info(f"Patched OllamaClient chat_url={_chat_url}")
-
-            @functools.wraps(client.generate)
-            def _patched_generate(
-                self_inner,
-                prompt,
-                image_path=None,
-                stream=False,
-                model=model,
-                temperature=None,
-                num_predict=256,
-            ):
-                import requests as _req
-                msg = {"role": "user", "content": prompt}
-                if image_path:
-                    msg["images"] = [self_inner.encode_image(image_path)]
-
-                data = {
-                    "model": model,
-                    "messages": [msg],
-                    "stream": False,
-                    "think": False,
-                    "options": {
-                        "temperature": config_temperature,
-                        "num_predict": max(num_predict, MIN_NUM_PREDICT),
-                    },
-                }
-                logger.debug(f"Ollama request: model={model}, image={image_path}, url={_chat_url}")
-                resp = _req.post(_chat_url, json=data, timeout=LLM_TIMEOUT)
-                resp.raise_for_status()
-                d = resp.json()
-                return {
-                    "response": d.get("message", {}).get("content", ""),
-                    "done": d.get("done", True),
-                    "eval_count": d.get("eval_count", 0),
-                    "prompt_eval_count": d.get("prompt_eval_count", 0),
-                }
-
-            client.generate = types.MethodType(_patched_generate, client)
+                    litellm_url = litellm_url.replace("host.docker.internal", "localhost")
+            logger.info(f"Creating GenericOpenAIAPIClient with url={litellm_url}")
+            client = GenericOpenAIAPIClient(
+                "", litellm_url
+            )
 
         else:
             logger.info("Using OpenRouter client")
@@ -930,37 +896,12 @@ class StandardTwoStepPipeline(AnalysisPipeline):
 
         from video_analyzer.analyzer import VideoAnalyzer
         from video_analyzer.prompt import PromptLoader
-        from video_analyzer.clients.ollama import OllamaClient
         from video_analyzer.clients.generic_openai_api import GenericOpenAIAPIClient
 
-        if provider_type == "ollama":
-            ollama_url = provider_config.get("url", "http://localhost:11434")
-            client = OllamaClient(ollama_url)
-            import functools, requests
-            _chat_url = f"{ollama_url.rstrip('/')}/api/chat"
-
-            @functools.wraps(client.generate)
-            def _recon_patch(self_inner, prompt, image_path=None, stream=False, model=model, temperature=None, num_predict=256):
-                msg = {"role": "user", "content": prompt}
-                data = {
-                    "model": model,
-                    "messages": [msg],
-                    "stream": False,
-                    "think": False,
-                    "options": {
-                        "temperature": config_data["clients"].get("temperature", 0.2),
-                        "num_predict": 4096,
-                    },
-                }
-                resp = requests.post(_chat_url, json=data, timeout=300)
-                resp.raise_for_status()
-                d = resp.json()
-                return {
-                    "response": d.get("message", {}).get("content", ""),
-                    "done": d.get("done", True),
-                }
-
-            client.generate = types.MethodType(_recon_patch, client)
+        if provider_type == "litellm":
+            client = GenericOpenAIAPIClient(
+                "", provider_config.get("url", "http://172.16.17.3:4000/v1")
+            )
         else:
             client = GenericOpenAIAPIClient(
                 provider_config["api_key"], "https://openrouter.ai/api/v1"
@@ -1066,7 +1007,7 @@ class StandardTwoStepPipeline(AnalysisPipeline):
                     "prompt": user_prompt,
                     "content": content,
                     "api_key": provider_config.get("api_key", ""),
-                    "ollama_url": provider_config.get("url", ""),
+                    "litellm_url": provider_config.get("url", ""),
                 }
                 response = requests.post(f"{app_url}/api/llm/chat", json=llm_request, timeout=10)
                 if response.status_code == 200:

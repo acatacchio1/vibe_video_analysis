@@ -72,14 +72,14 @@ def models(ctx, url, as_json):
     ctx.obj["as_json"] = as_json
 
 
-@models.command(name="ollama")
-@click.argument("url")
+@models.command(name="litellm")
+@click.argument("url", required=False, default="http://172.16.17.3:4000/v1")
 @click.pass_context
-def models_ollama(ctx, url):
+def models_litellm(ctx, url):
     client = ctx.obj["client"]
     fmt = ctx.obj["fmt"]
     try:
-        result = client.get_ollama_models(url)
+        result = client.get_litellm_status()
     except Exception as e:
         fmt.error(str(e))
         return
@@ -87,14 +87,12 @@ def models_ollama(ctx, url):
         fmt.print_json(result)
         return
     models_list = result.get("models", [])
-    fmt.info(f"Models on {url}: {len(models_list)}")
+    fmt.info(f"Models via LiteLLM: {len(models_list)}")
     for m in models_list:
-        name = m.get("name", m) if isinstance(m, dict) else str(m)
-        size = ""
-        if isinstance(m, dict) and m.get("size"):
-            size_mb = m["size"] / (1024 ** 3)
-            size = f"{size_mb:.1f}GB"
-        print(f"  {name:<50s} {size}")
+        name = m.get("id", m.get("name", str(m))) if isinstance(m, dict) else str(m)
+        print(f"  {name[:60]}")
+    if len(models_list) > 50:
+        fmt.info(f"  ... and {len(models_list) - 50} more")
     print()
 
 

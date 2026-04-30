@@ -279,79 +279,82 @@ This document provides solutions to common issues encountered when using Video A
    - Use smaller LLM models (3B instead of 7B+)
    - Process fewer frames per job
 
-## Ollama Issues
+## LiteLLM Proxy Issues
 
-### Ollama Not Connecting
+### LiteLLM Proxy Not Connecting
 
 **Symptoms:**
-- "Ollama provider offline" message
-- Models not loading
+- "Provider offline" message
+- Models not appearing in UI
 - Connection timeout errors
 
 **Solutions:**
 
-1. **Verify Ollama Running**
-   ```bash
-   # Check Ollama service
-   systemctl status ollama
-   
-   # Start Ollama
-   systemctl start ollama
-   
-   # Check Ollama API
-   curl http://localhost:11434/api/tags
-   ```
+1. **Verify LiteLLM Proxy Running**
+    ```bash
+    # Check proxy health endpoint
+    curl http://172.16.17.3:4000/v1/models
+
+    # Check LiteLLM service on the proxy host
+    # The proxy runs at http://172.16.17.3:4000/v1
+    # Verify the backend GPU instances are running
+    ```
 
 2. **Docker Network Configuration**
-   ```bash
-   # For Docker, use host.docker.internal
-   # Check app.py OllamaProvider initialization
-   
-   # Test connection from Docker
-   docker exec -it video-analyzer-web curl http://host.docker.internal:11434/api/tags
-   ```
+    ```bash
+    # For Docker, use host.docker.internal
+    # Verify LITELLM_API_BASE in config (default: http://172.16.17.3:4000/v1)
+
+    # Test connection from Docker container
+    docker exec -it video-analyzer-web curl http://host.docker.internal:4000/v1/models
+    ```
 
 3. **Firewall Issues**
-   ```bash
-   # Check firewall
-   sudo ufw status
-   
-   # Allow port 11434
-   sudo ufw allow 11434
-   ```
+    ```bash
+    # Check firewall on proxy host (172.16.17.3)
+    sudo ufw status
 
-### Models Not Loading
+    # Allow port 4000 on the proxy host
+    sudo ufw allow 4000
+    ```
+
+4. **Configure Custom Proxy URL**
+    ```bash
+    # If your LiteLLM proxy is at a different address:
+    va config set litellm_api_base http://your-proxy:4000/v1
+
+    # Or via environment variable:
+    export LITELLM_API_BASE=http://your-proxy:4000/v1
+    ```
+
+### Models Not Available
 
 **Symptoms:**
 - "Model not found" errors
-- Models not appearing in UI
-- VRAM insufficient for model
+- Empty model list in UI
+- Wrong model names
 
 **Solutions:**
 
-1. **Pull Model**
-   ```bash
-   # Pull model via Ollama CLI
-   ollama pull llama3.2:3b
-   
-   # List available models
-   ollama list
-   ```
+1. **List Available Models**
+    ```bash
+    # Via CLI
+    va providers list
+    va models litellm
 
-2. **Check Model Compatibility**
-   - Verify model fits in available VRAM
-   - 3B models need ~4GB VRAM
-   - 7B models need ~8GB VRAM
-   - 13B+ models need 16GB+ VRAM
+    # Via API
+    curl http://localhost:10000/api/providers/litellm/models
+    ```
 
-3. **Model Cache**
-   ```bash
-   # Clear Ollama cache
-   ollama rm $(ollama list | awk 'NR>1 {print $1}')
-   
-   # Restart Ollama
-   systemctl restart ollama
-   ```
+2. **Check Backend GPU Instances**
+    - Models depend on backend GPU instances behind the LiteLLM proxy
+    - Available models: `qwen3-27b-q8`, `qwen3-27b-best`, `vision-best`
+    - Contact your ops team if models are unavailable
+
+3. **Provider Configuration**
+    - Default provider type is `litellm`
+    - No API key needed (network-trusted deployment)
+    - To change: `va config set litellm_api_base http://172.16.17.3:4000/v1`
 
 ## Job Processing Issues
 
@@ -452,9 +455,9 @@ This document provides solutions to common issues encountered when using Video A
    ```
 
 3. **Network Latency**
-   - Use local Ollama instead of OpenRouter
-   - Check internet connection speed
-   - Use wired instead of WiFi
+    - Use LiteLLM proxy instead of OpenRouter
+    - Check internet connection speed
+    - Use wired instead of WiFi
 
 ## OpenWebUI Knowledge Base Issues
 

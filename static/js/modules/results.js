@@ -122,10 +122,10 @@ function initChatProviderSelect(context = 'live') {
     if (!select) return;
 
     select.innerHTML = '<option value="">Select provider...</option>' +
-        '<optgroup label="Ollama">' +
+        '<optgroup label="LiteLLM">' +
         Object.values(state.providers)
-            .filter(p => p.type === 'ollama')
-            .map(p => `<option value="ollama" data-url="${p.url}">${p.name} (${p.status})</option>`)
+            .filter(p => p.type === 'litellm')
+            .map(p => `<option value="litellm" data-url="${p.url}">${p.name} (${p.status})</option>`)
             .join('') +
         '</optgroup>' +
         '<optgroup label="Cloud">' +

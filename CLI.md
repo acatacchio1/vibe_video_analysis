@@ -144,10 +144,10 @@ va jobs frames <job_id> --limit 10 --offset 0
 
 ### Start Analysis (SocketIO)
 ```bash
-va jobs start video.mp4 --model qwen3.5:8b --provider-type ollama
-va jobs start video.mp4 --model meta-llama/llama-3.2-11b --provider-type openrouter
-va jobs start video.mp4 --model qwen3.5:8b --provider-type ollama \
-  --provider-name Ollama-Local --priority 5 \
+va jobs start video.mp4 --model qwen3-27b-q8 --provider-type litellm
+va jobs start video.mp4 --model meta-llama/llama-3.2-11b-vision-instruct --provider-type openrouter
+va jobs start video.mp4 --model qwen3-27b-q8 --provider-type litellm \
+  --priority 5 \
   --whisper-model large --language en \
   --frames-per-minute 60 --similarity-threshold 10
 ```
@@ -163,28 +163,18 @@ The `start` command connects via SocketIO for real-time progress (frame-by-frame
 va providers list
 ```
 
-### Discover Ollama Instances
+### Configure LiteLLM Proxy
 ```bash
-va providers discover
-```
-
-### Add Ollama Instance
-```bash
-va providers add-ollama http://192.168.1.237:11434
-```
-
-### View Ollama Instances
-```bash
-va providers instances
+va config set litellm_api_base http://172.16.17.3:4000/v1
 ```
 
 ---
 
 ## Model Commands
 
-### List Ollama Models
+### List LiteLLM Models
 ```bash
-va models ollama http://127.0.0.1:11434
+va models litellm
 ```
 
 ### List OpenRouter Models
@@ -229,8 +219,8 @@ va system debug --disable
 
 ### Send Chat Message
 ```bash
-va llm chat qwen3.5:8b "Summarize this video" --provider-type ollama
-va llm chat qwen3.5:8b "What are the key points?" --provider-type ollama --ollama-url http://237:11434
+va llm chat qwen3-27b-q8 "Summarize this video" --provider-type litellm
+va llm chat qwen3-27b-q8 "What are the key points?" --provider-type litellm
 ```
 
 The chat command submits to the rate-limited queue (30 req/min, 5 concurrent) and polls for completion.
@@ -304,7 +294,7 @@ va videos scenes presentation.mp4
 va videos scene-dedup presentation.mp4 --threshold 10
 
 # 3. Start analysis
-va jobs start presentation_dedup.mp4 --model qwen3.5:8b --provider-type ollama
+va jobs start presentation_dedup.mp4 --model qwen3-27b-q8 --provider-type litellm
 
 # 4. View results
 va results get <job_id>
@@ -320,7 +310,7 @@ for vid in /data/videos/*.mp4; do
   va videos upload "$vid" --whisper-model large
   # Wait a bit for processing
   sleep 30
-  va jobs start "$(basename $vid)" --model qwen3.5:8b --provider-type ollama &
+  va jobs start "$(basename $vid)" --model qwen3-27b-q8 --provider-type litellm &
 done
 wait
 echo "All jobs submitted"

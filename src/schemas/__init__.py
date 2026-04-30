@@ -10,7 +10,7 @@ from .config import (
     AnalysisParams,
     JobConfig,
     ProviderConfig,
-    OllamaProviderConfig,
+    LiteLLMProviderConfig,
     OpenRouterProviderConfig,
     ProviderConfigUnion,
 )
@@ -23,7 +23,7 @@ __all__ = [
     "AnalysisParams",
     "JobConfig",
     "ProviderConfig",
-    "OllamaProviderConfig",
+    "LiteLLMProviderConfig",
     "OpenRouterProviderConfig",
     "ProviderConfigUnion",
 ]

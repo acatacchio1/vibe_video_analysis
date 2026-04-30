@@ -40,7 +40,7 @@ class GPUInfo:
 @dataclass
 class Job:
     job_id: str
-    provider_type: str  # "ollama" or "openrouter"
+    provider_type: str  # "ollama" or "litellm" or "openrouter"
     provider_name: str
     model_id: str
     vram_required: int  # bytes, 0 for cloud providers
@@ -146,7 +146,7 @@ class VRAMManager:
         If the model is already loaded in Ollama, only a small context
         overhead is needed instead of the full model size.
         """
-        if job.provider_type != "ollama" or job.vram_required == 0:
+        if job.provider_type not in ("ollama", "litellm") or job.vram_required == 0:
             return job.vram_required
 
         loaded_models = self._get_loaded_ollama_models()
@@ -212,7 +212,7 @@ class VRAMManager:
         for running_job in self.running.values():
             if running_job.gpu_assigned is not None:
                 if (
-                    running_job.provider_type == "ollama"
+                    running_job.provider_type in ("ollama", "litellm")
                     and running_job.model_id in loaded_ollama_models
                 ):
                     continue
@@ -384,7 +384,7 @@ class VRAMManager:
             for job in self.running.values():
                 if job.gpu_assigned is not None:
                     if (
-                        job.provider_type == "ollama"
+                        job.provider_type in ("ollama", "litellm")
                         and job.model_id in loaded_ollama_models
                     ):
                         continue

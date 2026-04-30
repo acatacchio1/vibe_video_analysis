@@ -1,6 +1,7 @@
 """SocketIO client for start_analysis + job progress events."""
 import json
 import time
+import threading
 import sys
 from typing import Callable, Optional
 
@@ -30,12 +31,27 @@ class SocketIOAnalyzer:
         self._connected = False
         self._handlers = {}
         self._wait_event = None
+        self._done = False
+        self._wait_thread = None
 
     def connect(self):
         self.sio.on("connect", self._on_connect)
         self.sio.on("disconnect", self._on_disconnect)
         self.sio.connect(self.url, wait_timeout=15)
+        # Keep the event loop alive in a background thread so emits don't kill the connection
+        self._wait_event = threading.Event()
+        self._wait_thread = threading.Thread(target=self._wait_loop, daemon=True)
+        self._wait_thread.start()
         return self._connected
+
+    def _wait_loop(self):
+        """Background loop to keep the SocketIO event loop alive."""
+        while not self._wait_event.is_set():
+            try:
+                if self.sio.connected:
+                    self.sio.wait()
+            except Exception:
+                break
 
     def _on_connect(self):
         self._connected = True
@@ -44,35 +60,45 @@ class SocketIOAnalyzer:
         self._connected = False
 
     def disconnect(self):
+        if self._wait_event is not None:
+            self._wait_event.set()
         if self.sio and self.sio.connected:
             self.sio.disconnect()
 
     def start_analysis(self, payload: dict) -> Optional[str]:
         """Emit start_analysis and return the job_id from job_created event."""
-        import threading
         result = [None]
         got_event = threading.Event()
+        job_created_handled = [False]
+        error_handled = [False]
 
         def on_job_created(data):
+            if job_created_handled[0]:
+                return
+            job_created_handled[0] = True
             result[0] = data.get("job_id")
+            self.job_id = data.get("job_id")
+            self._done = False
             got_event.set()
 
         def on_error(data):
+            if error_handled[0]:
+                return
+            error_handled[0] = True
             self.formatter.error(data.get("message", "Analysis failed"))
             got_event.set()
 
-        self.sio.once("job_created", on_job_created)
-        self.sio.once("error", on_error)
+        # Register handlers before emitting (python-socketio v5 compat)
+        self.sio.on("job_created", on_job_created)
+        self.sio.on("error", on_error)
         self._handle_realtime_analysis(payload)
         self.sio.emit("start_analysis", payload)
 
-        max_wait = 30
+        # Wait for job_created event (background _wait_thread pumps the event loop)
+        max_wait = 60
         deadline = time.time() + max_wait
         while not got_event.is_set() and time.time() < deadline:
-            if self.sio.connected:
-                self.sio.wait(seconds=0.5)
-            else:
-                time.sleep(0.5)
+            time.sleep(0.2)
 
         if not got_event.is_set():
             self.formatter.error("Timed out waiting for job creation response")
@@ -111,6 +137,7 @@ class SocketIOAnalyzer:
     def _on_job_complete(self, data):
         if self._is_my_job(data):
             self.formatter.print_job_complete(data, data.get("success", False))
+            self._done = True
 
     def _is_my_job(self, data) -> bool:
         jid = data.get("job_id")
