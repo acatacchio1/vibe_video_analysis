@@ -557,9 +557,12 @@ class StandardTwoStepPipeline(AnalysisPipeline):
             try:
                 if meta_path.exists():
                     meta = json.loads(meta_path.read_text())
+                    original_frame_count = meta.get("frame_count", total_frames)
                 else:
                     meta = {}
-                meta["frame_count"] = total_frames
+                    original_frame_count = total_frames
+                meta["analysis_frame_count"] = total_frames
+                meta["frame_count"] = original_frame_count
                 meta_path.write_text(json.dumps(meta))
             except Exception as e:
                 logger.warning(f"Failed to update frames_meta.json: {e}")

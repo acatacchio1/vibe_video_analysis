@@ -63,6 +63,10 @@ def run_analysis(job_dir: Path):
 
     logger.info(f"Using pipeline: {pipeline_type}")
 
+    # Patch GenericOpenAIAPIClient to handle reasoning_content when content is null
+    from src.worker.patch_reasoning import patch_reasoning_content
+    patch_reasoning_content()
+
     from src.worker.pipelines import create_pipeline
 
     pipeline = create_pipeline(pipeline_type, job_dir, config)

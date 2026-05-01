@@ -4,6 +4,7 @@ Main Flask application for Video Analyzer Web GUI
 """
 
 import os
+import sys
 import json
 import uuid
 import signal
@@ -484,6 +485,9 @@ def recover_stale_jobs():
         return
     for job_dir in jobs_dir.iterdir():
         if not job_dir.is_dir():
+            continue
+        # Skip hidden dirs (e.g. .root_XXXX from Docker-era jobs)
+        if job_dir.name.startswith('.'):
             continue
         status_file = job_dir / "status.json"
         if not status_file.exists():

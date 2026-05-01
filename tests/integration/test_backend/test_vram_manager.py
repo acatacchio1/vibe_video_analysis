@@ -254,8 +254,8 @@ class TestJobQueue:
         ):
             job = manager.submit_job(
                 job_id="job1",
-                provider_type="litellm",
-                provider_name="LiteLLM-Proxy",
+                provider_type="ollama",
+                provider_name="Ollama",
                 model_id="test-model",
                 vram_required=100 * (1024**3),  # Very high, won't fit
                 video_path="/test.mp4",
@@ -271,12 +271,14 @@ class TestJobQueue:
         """Test that higher priority jobs are queued first"""
         manager = setup_vram_manager
 
+        manager.set_ollama_running_models_provider(lambda: set())
+
         # Submit low priority first
         job_low = manager.submit_job(
             job_id="job_low",
-            provider_type="litellm",
-            provider_name="LiteLLM-Proxy",
-            model_id="test",
+            provider_type="ollama",
+            provider_name="Ollama",
+            model_id="test-model",
             vram_required=100 * (1024**3),
             video_path="/test.mp4",
             params={},
@@ -286,9 +288,9 @@ class TestJobQueue:
         # Submit high priority second
         job_high = manager.submit_job(
             job_id="job_high",
-            provider_type="litellm",
-            provider_name="LiteLLM-Proxy",
-            model_id="test",
+            provider_type="ollama",
+            provider_name="Ollama",
+            model_id="test-model",
             vram_required=100 * (1024**3),
             video_path="/test.mp4",
             params={},
@@ -303,12 +305,14 @@ class TestJobQueue:
         """Test queue position numbers update correctly"""
         manager = setup_vram_manager
 
+        manager.set_ollama_running_models_provider(lambda: set())
+
         # Queue multiple jobs
         manager.submit_job(
             job_id="job1",
-            provider_type="litellm",
-            provider_name="LiteLLM-Proxy",
-            model_id="test",
+            provider_type="ollama",
+            provider_name="Ollama",
+            model_id="test-model",
             vram_required=100 * (1024**3),
             video_path="/test.mp4",
             params={},
@@ -316,9 +320,9 @@ class TestJobQueue:
         )
         manager.submit_job(
             job_id="job2",
-            provider_type="litellm",
-            provider_name="LiteLLM-Proxy",
-            model_id="test",
+            provider_type="ollama",
+            provider_name="Ollama",
+            model_id="test-model",
             vram_required=100 * (1024**3),
             video_path="/test.mp4",
             params={},
@@ -326,9 +330,9 @@ class TestJobQueue:
         )
         manager.submit_job(
             job_id="job3",
-            provider_type="litellm",
-            provider_name="LiteLLM-Proxy",
-            model_id="test",
+            provider_type="ollama",
+            provider_name="Ollama",
+            model_id="test-model",
             vram_required=100 * (1024**3),
             video_path="/test.mp4",
             params={},
@@ -515,16 +519,16 @@ class TestVRAMManagerStatus:
         assert job2 in queued
 
 
-class TestLiteLLMAlreadyLoaded:
-    """Tests for LiteLLM integration - already-loaded model detection"""
+class TestAlreadyLoadedModels:
+    """Tests for already-loaded model detection via set_ollama_running_models_provider"""
 
     def test_effective_vram_full_when_model_not_loaded(self, setup_vram_manager):
         """When model is not loaded, effective VRAM equals full requirement"""
         manager = setup_vram_manager
-        manager.set_litellm_running_models_provider(lambda: set())
+        manager.set_ollama_running_models_provider(lambda: set())
 
         job = MagicMock()
-        job.provider_type = "litellm"
+        job.provider_type = "ollama"
         job.model_id = "llava:7b"
         job.vram_required = 8 * (1024**3)
 
@@ -534,10 +538,10 @@ class TestLiteLLMAlreadyLoaded:
     def test_effective_vram_reduced_when_model_already_loaded(self, setup_vram_manager):
         """When model is already loaded, effective VRAM is just context overhead"""
         manager = setup_vram_manager
-        manager.set_litellm_running_models_provider(lambda: {"llava:7b", "gemma3:4b"})
+        manager.set_ollama_running_models_provider(lambda: {"llava:7b", "gemma3:4b"})
 
         job = MagicMock()
-        job.provider_type = "litellm"
+        job.provider_type = "ollama"
         job.model_id = "llava:7b"
         job.vram_required = 8 * (1024**3)
 
@@ -545,9 +549,9 @@ class TestLiteLLMAlreadyLoaded:
         assert effective == manager.CONTEXT_VRAM_OVERHEAD
 
     def test_effective_vram_cloud_provider_unchanged(self, setup_vram_manager):
-        """Cloud providers (vram=0) are not affected by litellm ps check"""
+        """Cloud providers (vram=0) are not affected by ollama ps check"""
         manager = setup_vram_manager
-        manager.set_litellm_running_models_provider(lambda: {"some-model"})
+        manager.set_ollama_running_models_provider(lambda: {"some-model"})
 
         job = MagicMock()
         job.provider_type = "openrouter"
@@ -558,19 +562,31 @@ class TestLiteLLMAlreadyLoaded:
         assert effective == 0
 
     def test_effective_vram_without_provider(self, setup_vram_manager):
-        """Without litellm provider, full VRAM is required"""
+        """Without ollama provider set, full VRAM is required for ollama jobs"""
         manager = setup_vram_manager
 
         job = MagicMock()
-        job.provider_type = "litellm"
+        job.provider_type = "ollama"
         job.model_id = "llava:7b"
         job.vram_required = 8 * (1024**3)
 
         effective = manager._get_effective_vram_required(job)
         assert effective == 8 * (1024**3)
 
+    def test_effective_vram_litellm_always_reduced(self, setup_vram_manager):
+        """LiteLLM provider always gets reduced VRAM (remote model assumption)"""
+        manager = setup_vram_manager
+
+        job = MagicMock()
+        job.provider_type = "litellm"
+        job.model_id = "qwen3-27b-q8"
+        job.vram_required = 20 * (1024**3)
+
+        effective = manager._get_effective_vram_required(job)
+        assert effective == manager.CONTEXT_VRAM_OVERHEAD
+
     def test_submit_job_starts_immediately_when_model_loaded(self, setup_vram_manager):
-        """A second job with an already-loaded model should start, not queue"""
+        """A job with an already-loaded ollama model should start, not queue"""
         manager = setup_vram_manager
 
         mock_gpu = GPUInfo(
@@ -581,13 +597,13 @@ class TestLiteLLMAlreadyLoaded:
             free_vram=2 * (1024**3),
         )
 
-        manager.set_litellm_running_models_provider(lambda: {"llava:7b"})
+        manager.set_ollama_running_models_provider(lambda: {"llava:7b"})
 
         with patch.object(manager, "_get_gpu_status", return_value=[mock_gpu]):
             job = manager.submit_job(
                 job_id="job1",
-                provider_type="litellm",
-                provider_name="LiteLLM-Proxy",
+                provider_type="ollama",
+                provider_name="Ollama",
                 model_id="llava:7b",
                 vram_required=8 * (1024**3),
                 video_path="/test.mp4",
@@ -612,13 +628,13 @@ class TestLiteLLMAlreadyLoaded:
             free_vram=2 * (1024**3),
         )
 
-        manager.set_litellm_running_models_provider(lambda: set())
+        manager.set_ollama_running_models_provider(lambda: set())
 
         with patch.object(manager, "_get_gpu_status", return_value=[mock_gpu]):
             job = manager.submit_job(
                 job_id="job1",
-                provider_type="litellm",
-                provider_name="LiteLLM-Proxy",
+                provider_type="ollama",
+                provider_name="Ollama",
                 model_id="llava:7b",
                 vram_required=8 * (1024**3),
                 video_path="/test.mp4",
@@ -641,11 +657,11 @@ class TestLiteLLMAlreadyLoaded:
             free_vram=14 * (1024**3),
         )
 
-        manager.set_litellm_running_models_provider(lambda: {"llava:7b"})
+        manager.set_ollama_running_models_provider(lambda: {"llava:7b"})
 
         running_job = MagicMock()
         running_job.job_id = "running_job"
-        running_job.provider_type = "litellm"
+        running_job.provider_type = "ollama"
         running_job.model_id = "llava:7b"
         running_job.vram_required = 10 * (1024**3)
         running_job.gpu_assigned = 0
@@ -653,21 +669,23 @@ class TestLiteLLMAlreadyLoaded:
         manager.running_per_gpu[0] = ["running_job"]
 
         new_job = MagicMock()
-        new_job.provider_type = "litellm"
+        new_job.provider_type = "ollama"
         new_job.model_id = "llava:7b"
         new_job.vram_required = 10 * (1024**3)
 
         with patch.object(manager, "_get_gpu_status", return_value=[mock_gpu]):
             gpu = manager._find_best_gpu(10 * (1024**3), job=new_job)
-            assert gpu is not None, "Should find a GPU since model is already loaded and no double-counting"
+            assert gpu is not None
 
     def test_provider_callback_exception_returns_empty(self, setup_vram_manager):
         """If the provider callback raises, treat as no models loaded"""
         manager = setup_vram_manager
-        manager.set_litellm_running_models_provider(lambda: (_ for _ in ()).throw(RuntimeError("fail")))
+        manager.set_ollama_running_models_provider(
+            lambda: (_ for _ in ()).throw(RuntimeError("fail"))
+        )
 
         job = MagicMock()
-        job.provider_type = "litellm"
+        job.provider_type = "ollama"
         job.model_id = "llava:7b"
         job.vram_required = 8 * (1024**3)
 

@@ -70,7 +70,7 @@ class TestHandleConnect:
     def test_connect_emits_connected_event(self, flask_request_context, mock_sio):
         with patch("monitor.monitor") as mock_mon:
             mock_mon.get_latest.return_value = {
-                "nvidia_smi": "", "litellm_ps": "", "nvidia_gpus": [], "timestamp": 0
+                "nvidia_smi": "", "ollama_ps": "", "nvidia_gpus": [], "timestamp": 0
             }
             mock_socket_request = Mock(sid="test_sid_123")
 
@@ -87,7 +87,7 @@ class TestHandleConnect:
         with patch("monitor.monitor") as mock_mon:
             mock_mon.get_latest.return_value = {
                 "nvidia_smi": "GPU 0: 8GB used",
-                "litellm_ps": "",
+                "ollama_ps": "",
                 "nvidia_gpus": [{"index": 0, "name": "RTX 3080"}],
                 "timestamp": 1234567890.0,
             }
@@ -108,7 +108,7 @@ class TestHandleConnect:
     def test_connect_skips_system_status_when_empty(self, flask_request_context, mock_sio):
         with patch("monitor.monitor") as mock_mon:
             mock_mon.get_latest.return_value = {
-                "nvidia_smi": "", "litellm_ps": "", "nvidia_gpus": [], "timestamp": 0
+                "nvidia_smi": "", "ollama_ps": "", "nvidia_gpus": [], "timestamp": 0
             }
             mock_socket_request = Mock(sid="test_sid_123")
 

@@ -158,6 +158,14 @@ class VRAMManager:
             )
             return self.CONTEXT_VRAM_OVERHEAD
 
+        if job.provider_type == "litellm":
+            logger.info(
+                f"LiteLLM provider (remote model), "
+                f"reducing VRAM requirement from {job.vram_required / (1024**3):.2f}GB "
+                f"to {self.CONTEXT_VRAM_OVERHEAD / (1024**3):.2f}GB"
+            )
+            return self.CONTEXT_VRAM_OVERHEAD
+
         return job.vram_required
 
     def _get_gpu_status(self) -> List[GPUInfo]:

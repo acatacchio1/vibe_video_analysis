@@ -140,7 +140,7 @@ class TestWorkerProcessIntegration:
         loaded = json.loads(input_file.read_text())
 
         assert loaded["job_id"] == "test_worker"
-        assert loaded["model"] == "llava:7b"
+        assert loaded["model"] == "qwen3-27b-q8"
 
     def test_status_updates_visible_to_monitor(self, temp_job_dir):
         """Test status updates are visible to monitoring process"""

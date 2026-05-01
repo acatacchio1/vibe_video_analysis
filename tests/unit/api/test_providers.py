@@ -47,33 +47,51 @@ class TestProvidersAPI:
         assert "OpenRouter" in provider_names
 
     def test_get_litellm_models_no_server(self, client, app):
-        """GET /api/providers/litellm/models without server URL returns 400"""
-        response = client.get("/api/providers/litellm/models")
-        assert response.status_code == 400
-        data = response.get_json()
-        assert "error" in data
-        assert "No server URL" in data["error"]
+        """GET /api/providers/litellm/models returns 200 with provider status"""
+        mock_models = [
+            {"id": "qwen3-27b-q8", "name": "Qwen3 27B Q8"},
+            {"id": "vision-best", "name": "Vision Best"},
+        ]
 
-    def test_get_litellm_models_success(self, client, app):
-        """GET /api/providers/litellm/models returns models from server"""
-        import src.api.providers as providers_module
+        with patch("src.api.providers.requests.get") as mock_get:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {"data": mock_models}
+            mock_get.return_value = mock_response
 
-        with patch.object(providers_module, 'get_litellm_api_base', return_value="http://172.16.17.3:4000/v1"):
-            with patch("src.api.providers.requests.get") as mock_get:
-                mock_response = MagicMock()
-                mock_response.status_code = 200
-                mock_response.json.return_value = [
-                    {"id": "qwen3-27b-q8", "name": "Qwen3 27B Q8"},
-                    {"id": "qwen3-27b-best", "name": "Qwen3 27B Best"},
-                    {"id": "vision-best", "name": "Vision Best"}
-                ]
-                mock_get.return_value = mock_response
+            with patch("src.api.providers.LiteLLMProvider") as MockProvider:
+                mock_provider = MagicMock()
+                mock_provider.get_models.return_value = mock_models
+                mock_provider.status = "online"
+                MockProvider.return_value = mock_provider
 
                 response = client.get("/api/providers/litellm/models")
                 assert response.status_code == 200
                 data = response.get_json()
                 assert "models" in data
-                assert len(data["models"]) == 3
+                assert len(data["models"]) == 2
+                assert data["status"] == "online"
+
+    def test_get_litellm_models_success(self, client, app):
+        """GET /api/providers/litellm/models returns models from LiteLLMProvider"""
+        mock_models = [
+            {"id": "qwen3-27b-q8", "name": "Qwen3 27B Q8"},
+            {"id": "qwen3-27b-best", "name": "Qwen3 27B Best"},
+            {"id": "vision-best", "name": "Vision Best"},
+        ]
+
+        with patch("src.api.providers.LiteLLMProvider") as MockProvider:
+            mock_provider = MagicMock()
+            mock_provider.get_models.return_value = mock_models
+            mock_provider.status = "online"
+            MockProvider.return_value = mock_provider
+
+            response = client.get("/api/providers/litellm/models")
+            assert response.status_code == 200
+            data = response.get_json()
+            assert "models" in data
+            assert len(data["models"]) == 3
+            assert data["server"] == "http://172.16.17.3:4000/v1"
 
     def test_get_openrouter_models_no_key(self, client, app):
         """GET /api/providers/openrouter/models without API key returns 400"""

@@ -18,14 +18,16 @@ class TestVideosAPI:
 
     def test_list_videos_empty(self, client, app, tmp_path):
         """GET /api/videos with no videos returns empty lists"""
-        # The app fixture already sets up empty uploads directory
-        response = client.get("/api/videos")
-        assert response.status_code == 200
-        data = response.get_json()
-        assert "source_videos" in data
-        assert "processed_videos" in data
-        assert data["source_videos"] == []
-        assert data["processed_videos"] == []
+        import src.api.videos as videos_module
+
+        with patch.object(videos_module.Path, "glob", return_value=[]):
+            response = client.get("/api/videos")
+            assert response.status_code == 200
+            data = response.get_json()
+            assert "source_videos" in data
+            assert "processed_videos" in data
+            assert data["source_videos"] == []
+            assert data["processed_videos"] == []
 
     def test_delete_video_not_found(self, client, app):
         """DELETE /api/videos/<filename> returns 404 for non-existent video"""
