@@ -16,6 +16,7 @@ def test_get_available_pipelines():
     pipelines = get_available_pipelines()
     assert "standard_two_step" in pipelines
     assert "linkedin_extraction" in pipelines
+    assert "native_video" in pipelines
 
 
 def test_job_config_defaults():
